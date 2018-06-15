@@ -18,7 +18,7 @@ You can write plugins by your favorite language on NCRT framework. Since NCRT ne
 1. clone or unzip.
 
 ```
-    % git clone https://github.com/frisky-gh/panopticd.git
+    % git clone https://github.com/frisky-gh/ncrtbuilder.git
 ```
 
 2. setup config files.
