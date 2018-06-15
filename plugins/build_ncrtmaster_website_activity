@@ -1,0 +1,111 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+#### load global conf.
+my %ncrtconf;
+if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die unless m"^(\w+)=(.*)$";
+		$ncrtconf{$1} = $2;
+	}
+	close $f;
+}
+
+#### load ncrt masters conf.
+my @ncrtmasters;
+if( open my $f, '<', "$CONFDIR/ncrtmasters.conf" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		push @ncrtmasters, $_;
+	}
+	close $f;
+}
+
+#### load website targets
+my @websites;
+if( open my $f, '<', "$CONFDIR/website.targets" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		push @websites, $_;
+	}
+	close $f;
+}
+
+#### load detector conf.
+my @rules;
+my $f = "$CONFDIR/website_activity.rules";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$f:$.: illegal format, stopped" unless m"^
+			(\S+)\s+
+			(
+				http(s)?://
+				(?:([^\s:]+):([^\s\@]+)\@)?
+				([-0-9a-zA-Z.]+)
+				(?::(\d+))?
+				((/[^\s\?]*)?(?:\?(\S*))?)
+			)\s+ 
+			(\d+)
+		$"x;
+		my $website_re = qr"^$1$";
+		my $url = $2;
+		my $status = $3;
+		# same url string to the url in ncrtmaster_website_activity
+		my $url = $3 ? "https" : "http";
+		$url .= "://";
+		$url .= "$4\@" if $4;
+		$url .= $6;
+		$url .= ":$7" if $7;
+		$url .= $8 if $8;
+		$url =~ s{[^-.\w:/@%=&+?]}{"#".uc unpack("H2",$&)}eg;
+		push @rules, [$website_re, $url, $status];
+	}
+	close $h;
+}
+
+my %website2infos;
+foreach my $website ( @websites ){
+	foreach my $rule ( @rules ){
+		next unless $website =~ $rule->[0];
+		push @{$website2infos{$website}}, [$rule->[1], $rule->[2]];
+	}
+}
+
+#### append detector info.
+if( open my $h, '>>', "$WORKDIR/detectors" ){
+	print $h "website_activity\n";
+	close $h;
+}
+
+#### append detector mapping
+if( open my $h, '>>', "$WORKDIR/ncrtmaster_host2service" ){
+	foreach my $website ( @websites ){
+		my $index = "0000";
+		foreach my $info ( @{$website2infos{$website}} ){
+			my $url = $info->[0];
+			print $h "$website/website\twebsite_activity#$index\t",
+				"display_name=\"$url\"\n";
+			$index++;
+		}
+	}
+	close $h;
+}
+
+
+
+

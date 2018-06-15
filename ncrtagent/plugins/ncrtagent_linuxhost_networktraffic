@@ -1,0 +1,141 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+####
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+
+sub nc ($) {
+	return sprintf "%d", $_[0];
+}
+
+#### load detector conf. for agents
+my @ignore_rules;
+my $f = "$CONFDIR/linuxhost_networktraffic.rules";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$f:$.:$_: illegal format, stopped" unless m"^!(\S+)$";
+		push @ignore_rules, qr"^$2$";
+	}
+	close $f;
+}
+
+####
+# data
+my %d;
+my %lastd;
+
+# load last data
+if( open my $f, '<', "$WORKDIR/linuxhost_networktraffic.status" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		next unless m"^([^=]+)=(.*)$";
+		my $k = $1;
+		my $v = $2;
+		$lastd{$k} = $v;
+	}
+	close $f;
+}
+
+# load curr data
+if( open my $f, '-|', "ip -s link" ){
+	my $ifname;
+	my $mode;
+	while( <$f> ){
+		chomp;
+		next unless m"^(?:
+			(\d+:\s+(?: (\w+) | \w+\@(if\d+) ):\s+<[^>]*>((?:\s+\S+\s+\S+)*)) |
+			(\s+RX:) |
+			(\s+TX:) |
+			(\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+))
+		).*$"x;
+		# new link
+		if    ( $1 ne '' ){
+			$ifname = $2 || $3;
+			foreach my $r ( @ignore_rules ){
+				next unless $ifname =~ $r;
+				$ifname = undef;
+				last;
+			}
+		# rx
+		}elsif( $5 ne '' ){
+			$mode = 'rx';
+		# tx
+		}elsif( $6 ne '' ){
+			$mode = 'tx';
+		# statistics
+		}elsif( $7 ne '' && $mode eq 'rx' ){
+			next unless defined $ifname;
+			$d{"link[$ifname]_rx_bytes_cnt"}   = nc $8;
+			$d{"link[$ifname]_rx_packets_cnt"} = nc $9;
+			$d{"link[$ifname]_rx_errors_cnt"}  = nc $10;
+			$d{"link[$ifname]_rx_dropped_cnt"} = nc $11;
+			$d{"link[$ifname]_rx_overrun_cnt"} = nc $12;
+			$d{"link[$ifname]_rx_mcast_cnt"}   = nc $13;
+		# statistics
+		}elsif( $7 ne '' && $mode eq 'tx' ){
+			next unless defined $ifname;
+			$d{"link[$ifname]_tx_bytes_cnt"}   = nc $8;
+			$d{"link[$ifname]_tx_packets_cnt"} = nc $9;
+			$d{"link[$ifname]_tx_errors_cnt"}  = nc $10;
+			$d{"link[$ifname]_tx_dropped_cnt"} = nc $11;
+			$d{"link[$ifname]_tx_carrier_cnt"} = nc $12;
+			$d{"link[$ifname]_tx_collsns_cnt"} = nc $13;
+		}
+	}
+}
+
+# store curr data as last data
+my $timestamp = time;
+if( open my $f, '>', "$WORKDIR/linuxhost_networktraffic.status" ){
+	print $f "timestamp=$timestamp\n";
+	while( my ($k, $v) = each %d ){
+		print $f "$k=$v\n";
+	}
+	close $f;
+}
+
+# diff
+my %diff;
+my $lasttimestamp = $lastd{'timestamp'};
+my $deltas = $timestamp - $lasttimestamp;
+my $deltam = int( ($deltas+59) / 60 );
+delete $lastd{'timestamp'};
+foreach my $k ( keys %d ){
+	die unless $k =~ m"^(link\[.*\]_(tx|rx)_(bytes|packets|errors|dropped|overrun|mcast|carrier|collsns))_cnt$";
+	my $v1 = $d{$k};
+	my $v2 = $lastd{$k};
+	my $base = $1;
+	next unless defined $v2;
+	next if $deltam < 1;
+	next if $deltas < 1;
+	if( $k =~ m"^link\[.*\]_(?:tx|rx)_(?:bytes)_cnt$" ){
+		my $v = ($v1 - $v2) / $deltas / 8 / 1000000;
+		$d{"${base}_mbps"} = n $v;
+	}else{
+		my $v = ($v1 - $v2) / $deltam;
+		$d{"${base}_ppm"} = n $v;
+	}
+}
+
+# output
+foreach my $k ( sort keys %d ){
+	my $v = $d{$k};
+	print "$k=$v\n";
+}
+
+exit 0;
+

@@ -1,0 +1,8 @@
+# hostpattern	itempattern			severit	range
+
+.*		port\\[.*\\]_conns		warn	[0,10]
+.*		port\\[.*\\]_conns		crit	[0,20000]
+
+.*		port\[(22|5666)\]/tcp		crit	[0,10]
+rosetta		port\[(80|443)\]/tcp		crit	[0,10]
+

@@ -1,0 +1,3 @@
+# hostpattern	categorypattern	
+.*		nullmailer
+rosetta		postfix

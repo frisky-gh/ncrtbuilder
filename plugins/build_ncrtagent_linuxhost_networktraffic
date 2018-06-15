@@ -1,0 +1,72 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+#### load global conf.
+my %ncrtconf;
+if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die unless m"^(\w+)=(.*)$";
+		$ncrtconf{$1} = $2;
+	}
+	close $f;
+}
+
+#### load conf. for ncrt masters
+my @ncrtmasters;
+if( open my $f, '<', "$CONFDIR/ncrtmasters.conf" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		push @ncrtmasters, $_;
+	}
+	close $f;
+}
+
+#### load conf. for ncrt agents
+my @ncrtagents;
+if( open my $f, '<', "$CONFDIR/ncrtagents.conf" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		push @ncrtagents, $_;
+	}
+	close $f;
+}
+
+#### load conf. for linuxhosts
+my @linuxhosts;
+if( open my $f, '<', "$CONFDIR/linuxhost.targets" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		push @linuxhosts, $_;
+	}
+	close $f;
+}
+
+#### append detector info.
+if( open my $f, '>>', "$WORKDIR/detectors" ){
+	print $f "linuxhost_networktraffic	display_name=\"Network Traffic\"\n";
+	close $f;
+}
+
+#### append detector mapping
+if( open my $f, '>>', "$WORKDIR/ncrtagent_host2service" ){
+	foreach my $i ( @linuxhosts ){
+		print $f "$i/linuxhost\tlinuxhost_networktraffic\n";
+	}
+	close $f;
+}
+
+

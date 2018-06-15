@@ -1,0 +1,137 @@
+#!/usr/bin/perl
+
+use strict;
+
+$0 =~ m"^(.*)/";
+our $TOOLHOME = "$1/..";
+while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+our $PLUGINSDIR = "$TOOLHOME/plugins";
+our $CONFDIR = "$TOOLHOME/conf";
+
+if( @ARGV < 1 ){
+	print "usage: % $0 DETECTOR_NAME [INDEX]\n";
+	exit 3;
+}
+my $detector = $ARGV[0];
+my $index = $ARGV[1];
+
+# setup work directory
+our $WORKDIR;
+if( $ENV{'HOME'} ){ $WORKDIR = $ENV{'HOME'} . "/.ncrt"; }
+else{
+	my ($name, $passwd, $uid, $gid, $quota, $comment, $gcos, $home, $shell, $expire ) = getpwuid $<;
+	$WORKDIR = "$home/.ncrt";
+}
+unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
+
+# metrics
+my %m;
+#
+my @w;
+my @c;
+
+# read from detector's output
+if( open my $e, '-|', "$PLUGINSDIR/ncrtagent_$detector $CONFDIR $WORKDIR $index" ){
+	while( <$e> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$_, stopped" unless m"^([-\w/\[\]]+)=(\S+)$";
+		my $k = $1;
+		my $v = $2;
+		$m{$k} = $v;
+	}
+	close $e;
+}else{
+	print "UNKNOWN $PLUGINSDIR/ncrtagent_$detector: not found.\n";
+	exit 3;
+}
+
+# thresholds
+my @wt;
+my @ct;
+# load thresholds
+if( open my $f, '<', "$CONFDIR/$detector.thresholds" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die unless m"^(\S+)\s+(crit|warn)\s+\[\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\]$";
+		my $itempattern = qr"^$1$";
+		my $severity = $2;
+		my $lower = $3;
+		my $upper = $4;
+		if    ( $severity eq 'crit' ){
+			push @ct, [ $itempattern, $lower, $upper ];
+		}elsif( $severity eq 'warn' ){
+			push @wt, [ $itempattern, $lower, $upper ];
+		}
+	}
+	close $f;
+}
+
+# threshold per metric
+my %wm;
+my %cm;
+
+# select thretholds
+foreach my $k ( keys %m ){
+	foreach my $t ( @wt ){
+		my ($re, $lower, $upper) = @$t;
+		next unless $k =~ $re;
+		$wm{$k} = [$lower, $upper];
+	}
+	foreach my $t ( @ct ){
+		my ($re, $lower, $upper) = @$t;
+		next unless $k =~ $re;
+		$cm{$k} = [$lower, $upper];
+	}
+}
+
+#
+my @p;
+foreach my $k ( sort keys %m ){
+	my $v = $m{$k};
+	my $c;
+	my $critical_occurred;
+	my ($min, $max);
+	
+	if( $v =~ m"(%|MB)$" ){
+		if   ( $1 eq '%' ) { $min = '0.00'; $max = '100.00'; }
+		elsif( $1 eq 'MB' ){ $min = '0.00'; }
+	}
+	if( $cm{$k} ){
+		my ($lower, $upper) = @{$cm{$k}};
+		$c = "$lower:$upper";
+		if    ( $v < $lower ){
+			push @c, "$k:$v<$lower";
+			$critical_occurred = 1;
+		}elsif( $v > $upper ){
+			push @c, "$k:$v>$upper";
+			$critical_occurred = 1;
+		}
+	}
+	my $w;
+	if( $wm{$k} ){
+		my ($lower, $upper) = @{$wm{$k}};
+		$w = "$lower:$upper";
+		if    ( $critical_occurred ){
+			# ignore
+		}elsif( $v < $lower ){
+			push @w, "$k:$v<$lower";
+		}elsif( $v > $upper ){
+			push @w, "$k:$v>$upper";
+		}
+	}
+	my $p = "$k=$v;$w;$c;$min;$max";
+	push @p, $p;
+}
+
+#
+my $r = 'OK';
+my $rc = 0;
+if( @c )   { $r = 'CRIT'; $rc = 2; }
+elsif( @w ){ $r = 'WARN';  $rc = 1; }
+
+print "$r ", join(' ', @c, @w), "| ", join(' ', @p), "\n";
+exit $rc;
+
+

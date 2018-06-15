@@ -1,0 +1,4 @@
+# hostpattern		portlist
+.*			22,5666/tcp
+rosetta			80,443/tcp
+

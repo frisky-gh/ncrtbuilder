@@ -1,0 +1,70 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+#### load global conf.
+my %ncrtconf;
+if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die unless m"^(\w+)=(.*)$";
+		$ncrtconf{$1} = $2;
+	}
+	close $f;
+}
+
+#### load linuxhost conf.
+my %targets;
+if( open my $f, '<', "$CONFDIR/linuxhost.targets" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die unless m"^([-.\w]+)$";
+		$targets{$1} = 1;
+	}
+	close $f;
+}
+
+#### append targettype info.
+if( open my $f, '>>', "$WORKDIR/targettypes" ){
+	print $f "linuxhost	display_name=LinuxHost:%targetname% address=%targetname%\n";
+	close $f;
+}
+
+####
+if( opendir my $d, $CONFDIR ){
+	while( my $f = readdir $d ){
+		next unless $f =~ m"^(linuxhost_\w+).(thresholds|rules|ignores)$";
+		my $detector = $1;
+		my $ext = $2;
+		my @rules;
+		if( open my $h, '<', "$CONFDIR/$detector.$ext" ){
+			while( <$h> ){
+				chomp;
+				next if m"^\s*(#|$)";
+				die unless m"^(\S+)\s+(.*)";
+				push @rules, [qr"$1", $2];
+			}
+			close $h;
+		}
+		while( my ($host, undef) = each %targets ){
+			if( open my $h, '>', "$WORKDIR/ncrtagent/$host/$detector.$ext" ){
+				foreach my $rule ( @rules ){
+					next unless $host =~ $rule->[0];
+					print $h $rule->[1], "\n";
+				}
+				close $h;
+			}
+		}
+	}
+}
+

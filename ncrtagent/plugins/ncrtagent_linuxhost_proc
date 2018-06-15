@@ -1,0 +1,125 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+        print "usage: % $0 CONFDIR WORKDIR\n";
+        exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+####
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+
+sub nc ($) {
+	return sprintf "%d", $_[0];
+}
+
+####
+my @category_rules;
+my $f = "$CONFDIR/linuxhost_proc.categories";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*($|#)";
+		die "$f:$.: illegal format, stopped" unless m"^(\w+)\s+(\S+)\s+(\S+)$";
+		my $category = $1;
+		my $userre = qr"^$2$";
+		my $argsre = qr"^$3$";
+		push @category_rules, [$category, $userre, $argsre];
+	}
+	close $h;
+}
+
+my @elapsed_rules;
+my $f = "$CONFDIR/linuxhost_proc_elapsed.rules";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*($|#)";
+		die "$f:$.: illegal format, stopped" unless m"^(\S+)$";
+		my $category_re = qr"^$1$";
+		push @elapsed_rules, $category_re;
+	}
+	close $h;
+}
+
+my @count_rules;
+my $f = "$CONFDIR/linuxhost_proc_count.rules";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*($|#)";
+		die "$f:$.: illegal format, stopped" unless m"^(\S+)$";
+		my $category_re = qr"^$1$";
+		push @count_rules, $category_re;
+	}
+	close $h;
+}
+
+my %must_check_count;
+my %must_check_elapsed;
+foreach my $category_rule ( @category_rules ){
+	my $category = $category_rule->[0];
+	foreach my $rule ( @count_rules ){
+		next unless $category =~ $rule;
+		$must_check_count{$category} = 1;
+	}
+	foreach my $rule ( @elapsed_rules ){
+		next unless $category =~ $rule;
+		$must_check_elapsed{$category} = 1;
+	}
+}
+
+####
+my %procs;
+my %threads;
+my %elapsed;
+if( open my $h, '-|', "ps -eLo 'pid,etimes,user:32,args'" ){
+	my $ifname;
+	my $mode;
+	while( <$h> ){
+		chomp;
+		next if $. == 1;
+		next unless m"^
+			\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S.*)
+		$"x;
+		my $pid = $1;
+		my $elapsed = $2;
+		my $user = $3;
+		my $args = $4;
+		my %category;
+		foreach my $rule ( @category_rules ){
+			next unless $user =~ $rule->[1];
+			next unless $args =~ $rule->[2];
+			$category{$rule->[0]} = 1;
+		}
+		while( my ($category, undef) = each %category ){
+			$threads{$category}++;
+			$procs{$category}->{$pid} = 1;
+			$elapsed{$category} = $elapsed if $elapsed > $elapsed{$category};
+		}
+	}
+	close $h;
+}
+
+# output
+foreach my $category ( sort keys %must_check_count ){
+	my $procs = 0;
+	$procs = int keys %{$procs{$category}} if defined $procs{$category};
+	my $threads = int $threads{$category};
+	print "proc[$category]_procs=$procs\n";
+	print "proc[$category]_threads=$threads\n";
+}
+foreach my $category ( sort keys %must_check_elapsed ){
+	my $elapsed = $elapsed{$category} + 0;
+	my $elapsed_min = n $elapsed / 60;
+	print "proc[$category]_elapsed=$elapsed_min\n";
+}
+
+exit 0;
+

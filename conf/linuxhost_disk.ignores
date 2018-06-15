@@ -1,0 +1,5 @@
+# hostpattern		pathpattern
+
+mizuhasu		/sys/.*
+mizuhasu		/run/.*
+

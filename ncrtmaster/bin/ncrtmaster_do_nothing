@@ -1,0 +1,38 @@
+#!/usr/bin/perl
+
+use strict;
+
+$0 =~ m"^(.*)/";
+our $TOOLHOME = "$1/..";
+while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+our $PLUGINSDIR = "$TOOLHOME/plugins";
+our $CONFDIR = "$TOOLHOME/conf";
+
+#if( @ARGV < 2 ){
+#	print "usage: % $0 DETECTOR_NAME TARGET_NAME [OPTION]\n";
+#	exit 3;
+#}
+#my $detector = $ARGV[0];
+#my $target = $ARGV[1];
+#my $option = $ARGV[2];
+
+# setup work directory
+our $WORKDIR;
+if( $ENV{'HOME'} ){ $WORKDIR = $ENV{'HOME'} . "/.ncrt"; }
+else{
+	my ($name, $passwd, $uid, $gid, $quota, $comment, $gcos, $home, $shell, $expire ) = getpwuid $<;
+	$WORKDIR = "$home/.ncrt";
+}
+unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
+
+if( open my $e, '>>', "$WORKDIR/notify.log" ){
+	my ($sec, $min, $hour, $day, $mon, $year) = localtime time;
+	my $now = sprintf "%04d-%02d-%02d_%02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec;
+	while( my ($k, $v) = each %ENV ){
+		print $e "$now $k=$v\n";
+	}
+	close $e;
+}
+
+exit 0;
+

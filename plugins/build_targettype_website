@@ -1,0 +1,86 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+#### load global conf.
+my %ncrtconf;
+if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die unless m"^(\w+)=(.*)$";
+		$ncrtconf{$1} = $2;
+	}
+	close $f;
+}
+
+#### load ncrt masters conf.
+my @ncrtmasters;
+if( open my $f, '<', "$CONFDIR/ncrtmasters.conf" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		push @ncrtmasters, $_;
+	}
+	close $f;
+}
+
+#### load website targets
+my @websites;
+my $f = "$CONFDIR/website.targets";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$f:$.: illegal format, stopped" unless m"^([-.\w]+)$";
+		push @websites, $1;
+	}
+	close $h;
+}
+
+#### append targettype info.
+if( open my $f, '>>', "$WORKDIR/targettypes" ){
+	print $f "website	display_name=WebSite:%targetname% address=127.0.0.1\n";
+	close $f;
+}
+
+####
+if( opendir my $d, $CONFDIR ){
+	while( my $e = readdir $d ){
+		next unless $e =~ m"^(website_\w+).(thresholds|rules|ignores)$";
+		my $detector = $1;
+		my $ext = $2;
+		my @rules;
+		my $f = "$CONFDIR/$detector.$ext";
+		if( open my $h, '<', $f ){
+			while( <$h> ){
+				chomp;
+				next if m"^\s*(#|$)";
+				die "$f:$.: illegal format, stopped" unless m"^(\S+)\s+(\S.*)$";
+				push @rules, [qr"^$1$", $2];
+			}
+			close $h;
+		}
+		foreach my $host ( @ncrtmasters ){
+			foreach my $website ( @websites ){
+				my $f = "$WORKDIR/ncrtmaster/$host/$detector.$website.$ext";
+				if( open my $h, '>', $f ){
+					foreach my $rule ( @rules ){
+						next unless $website =~ $rule->[0];
+						print $h $rule->[1], "\n";
+					}
+					close $h;
+				}
+			}
+		}
+	}
+}
+

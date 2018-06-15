@@ -1,0 +1,121 @@
+#!/usr/bin/perl
+
+use strict;
+
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+sub nP ($) {
+	return sprintf "%.2f%%", $_[0];
+}
+sub nMB ($) {
+	return sprintf "%.2fMB", $_[0];
+}
+
+# metrics
+my %m;
+# thresholds
+my @wt;
+my @ct;
+#
+my @w;
+my @c;
+
+# cpu
+if( open my $f, '<', '/proc/stat' ){
+	while( <$f> ){
+		chomp;
+		next unless m"^cpu\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)";
+		my $user_jf = $1;
+		my $nice_jf = $2;
+		my $system_jf = $3;
+		my $idle_jf = $4;
+		my $iowait_jf = $5;
+		my $irq_jf = $6;
+		my $softirq_jf = $7;
+		my $all_jf = $user_jf + $nice_jf + $system_jf + $idle_jf + $iowait_jf + $irq_jf + $softirq_jf;
+		$m{'cpu_user_pct'}   = nP 100 * $user_jf / $all_jf;
+		$m{'cpu_system_pct'} = nP 100 * $system_jf / $all_jf;
+		$m{'cpu_idle_pct'}   = nP 100 * $idle_jf / $all_jf;
+		$m{'cpu_iowait_pct'} = nP 100 * $iowait_jf / $all_jf;
+		$m{'cpu_other_pct'}  = nP 100 * ($nice_jf + $irq_jf + $softirq_jf) / $all_jf;
+		last;
+	}
+	close $f;
+}
+
+# memory/swap
+if( open my $f, '<', '/proc/meminfo' ){
+	while( <$f> ){
+		chomp;
+		next unless m"^(MemTotal|MemAvailable|MemFree|Buffers|Cached|SwapCached|SReclaimable|Shmem|SwapTotal|SwapFree):\s+(\d+) kB";
+		if   ( $1 eq 'MemTotal'     ){ $m{'mem_total'}        = nMB $2 / 1024; }
+		elsif( $1 eq 'MemAvalablel' ){ $m{'mem_available'}    = nMB $2 / 1024; }
+		elsif( $1 eq 'MemFree'      ){ $m{'mem_free'}         = nMB $2 / 1024; }
+		elsif( $1 eq 'Buffers'      ){ $m{'mem_buffers'}      = nMB $2 / 1024; }
+		elsif( $1 eq 'Cached'       ){ $m{'mem_cached'}       = nMB $2 / 1024; }
+		elsif( $1 eq 'SwapCached'   ){ $m{'mem_swapcached'}   = nMB $2 / 1024; }
+		elsif( $1 eq 'SReclaimable' ){ $m{'mem_sreclaimable'} = nMB $2 / 1024; }
+		elsif( $1 eq 'Shmem'        ){ $m{'mem_shmem'}        = nMB $2 / 1024; }
+		elsif( $1 eq 'SwapTotal'    ){ $m{'swap_total'}       = nMB $2 / 1024; }
+		elsif( $1 eq 'SwapFree'     ){ $m{'swap_free'}        = nMB $2 / 1024; }
+	}
+	close $f;
+	unless( defined $m{'mem_available'} ){
+		$m{'mem_available'} = nMB $m{'mem_buffers'} + $m{'mem_cached'} + $m{'mem_free'} + $m{'mem_sreclaimable'} - $m{'mem_shmem'};
+	}
+	$m{'mem_available_pct'} = nP 100 * $m{'mem_available'} / $m{'mem_total'};
+	$m{'swap_free_pct'} = nP 100 * $m{'swap_free'} / $m{'swap_total'};
+}
+
+# proc/thread
+if( opendir my $d, '/proc' ){
+	my $procs;
+	my $threads;
+	while( my $e = readdir $d ){
+		next unless $e =~ m"^\d+$";
+		$procs++;
+		if( opendir my $d2, "/proc/$e/task" ){
+			while( my $e2 = readdir $d2 ){
+				next unless $e2 =~ m"^\d+$";
+				$threads++;
+			}
+			closedir $d2;
+		}
+	}
+	closedir $d;
+	$m{'procs'} = $procs;
+	$m{'threads'} = $threads;
+}
+
+# loadavg
+if( open my $f, '<', '/proc/loadavg' ){
+	my $loadavg;
+	while( <$f> ){
+		chomp;
+		next unless m"^(\d+\.\d+)\s+(\d+\.\d+)\s+(\d+\.\d+)";
+		$loadavg = $1;
+	}
+	close $f;
+	$m{'loadavg'} = n $loadavg;
+}
+
+# loadavg
+if( open my $f, '-|', 'LANG=C sar -b 1 5' ){
+	while( <$f> ){}
+	close $f;
+	my @avg = split m"\s+";
+	$m{'io_tps'} = n $avg[1];
+	$m{'io_rtps'} = n $avg[2];
+	$m{'io_wtps'} = n $avg[3];
+	$m{'io_brps'} = n $avg[4];
+	$m{'io_bwps'} = n $avg[5];
+}
+
+#
+foreach my $k ( sort keys %m ){
+	my $v = $m{$k};
+	print "$k=$v\n";
+}
+
+

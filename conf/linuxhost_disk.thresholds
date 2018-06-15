@@ -1,0 +1,9 @@
+# hostpattern		itempattern				sever	threshold
+
+.*			disk\[.*\]_avail_pct			warn	[   5.00,  100.00]
+.*			disk\[.*\]_iavail_pct			warn	[  40.00,  100.00]
+.*			disk\[/\]_avail_pct			crit	[   0.01,  100.00]
+.*			disk\[/\]_iavail_pct			crit	[   0.01,  100.00]
+
+mizuhasu		disk\[/vol/bitcoin\]_avail_pct		warn	[0,100]
+

@@ -1,0 +1,20 @@
+#!/usr/bin/perl
+
+use strict;
+
+my $args = $ARGV[0];
+my $max = 0;
+
+foreach my $v ( split ',', $args ){
+	$max = $v if $v > $max;
+}
+
+if( $max > 0 ){
+	print "NG $args\n";
+	exit 2;
+}
+
+print "OK $args\n";
+exit 0;
+
+

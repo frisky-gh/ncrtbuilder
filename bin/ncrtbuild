@@ -1,0 +1,707 @@
+#!/usr/bin/perl
+
+use strict;
+use Cwd 'abs_path';
+
+$0 =~ m"^(.*)/";
+our $TOOLHOME = abs_path("$1/..");
+our $PLUGINSDIR = "$TOOLHOME/plugins";
+our $PLAYBOOKSDIR = "$TOOLHOME/playbooks";
+our $CONFDIR = "$TOOLHOME/conf";
+our $SRCDIR = "$TOOLHOME/src";
+our $TMPDIR = "/tmp";
+our $WORKDIR = "$TMPDIR/ncrt_work";
+
+#if( @ARGV < 1 ){
+#	print "usage: % $0 CHECK_PLUGIN_NAME\n";
+#	exit 3;
+#}
+
+####
+sub rm_r ($) {
+	my ($r) = @_;
+	if( opendir my $d, $r ){
+		my @e = readdir $d;
+		foreach my $e ( @e ){
+			next if $e eq '..' || $e eq '.';
+			if( -d "$r/$e" ){
+				rm_r( "$r/$e" );
+			}else{
+				unlink "$r/$e" or die "$r/$e, stopped";
+			}
+		}
+		closedir $d;
+	}
+	rmdir $r or die "$r, stopped";
+}
+
+sub parse_itementry ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef if m"^\s*(#|$)";
+	return undef, "illegal format" unless m"^(\w+)"g;
+	my $item = $1;
+	my %opt;
+	my %templateopt;
+	while( m{\G
+		($|\s+
+			(\@)?(\w+)=
+			(?:
+				"([^\\"]*(?:(?:\\\\|\\")+[^\\"]*)*)"|
+				([\w\!\#-\&\(-\/\:-\@\[-\_\{-\~]+)
+			)
+		)
+	}gx ){
+		return $item, \%opt, \%templateopt if $1 eq '';
+
+		my $template = $2;
+		my $key = $3;
+		my $value = $4 ne '' ? $4 : $5;
+
+		if( $template ){ $templateopt{$key} = $value; }
+		else{ $opt{$key} = $value; }
+	}
+	return undef;
+}
+
+sub parse_addressentry ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef if m"^\s*(#|$)";
+	return undef, "illegal format" unless m"^(\S+\@[-.a-zA-Z0-9]+)"g;
+	my $item = $1;
+	my %opt;
+	my %templateopt;
+	while( m{\G
+		($|\s+
+			(\@)?(\w+)=
+			(?:
+				"([^\\"]*(?:(?:\\\\|\\")+[^\\"]*)*)"|
+				([\w\!\#-\&\(-\/\:-\@\[-\_\{-\~]+)
+			)
+		)
+	}gx ){
+		return $item, \%opt, \%templateopt if $1 eq '';
+
+		my $template = $2;
+		my $key = $3;
+		my $value = $4 ne '' ? $4 : $5;
+
+		if( $template ){ $templateopt{$key} = $value; }
+		else{ $opt{$key} = $value; }
+	}
+	return undef;
+}
+
+sub parse_mapping ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef, undef if m"^\s*(#|$)";
+	return undef, undef, "illegal format" unless m"^(\S+/\w+)\s+(\w+(#\d+)?)"g;
+	my $from = $1;
+	my $to = $2;
+	my %opt;
+	while( m{\G
+		($|\s+
+			(\w+)=
+			(?:
+				"([^\\"]*(?:(?:\\\\|\\")+[^\\"]*)*)"|
+				([\w\!\#-\&\(-\/\:-\@\[-\_\{-\~]+)
+			)
+		)
+	}gx ){
+		return $from, $to, \%opt if $1 eq '';
+
+		my $key = $2;
+		my $value = $3 ne '' ? $3 : $4;
+		$opt{$key} = $value;
+	}
+	return undef, undef, undef;
+}
+
+sub parse_host2item_mapping ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef, undef if m"^\s*(#|$)";
+	return undef, undef, "illegal format" unless m"^(\S+/\w+)\s+(\S+)$";
+	return $1, $2, undef;
+}
+
+sub parse_hostservice2item_mapping ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef, undef, undef if m"^\s*(#|$)";
+	return undef, undef, undef, "illegal format" unless m"^(\S+/\w+)\s+(\w+(?:#\d+)?)\s+(\S+)$";
+	return $1, $2, $3, undef;
+}
+
+# hostname = targetname + "/" + targettype
+sub parse_hostname ($) {
+	if( $_[0] =~ m"^(.*)/(\w+)$" ){
+		return	'targettype' => $2,
+			'targetname' => $1;
+	}else{
+		return	'targetname' => $_[0];
+	}
+}
+
+# servicedesc = detector + "#" + detectorindex
+sub parse_servicedesc ($) {
+	if( $_[0] =~ m"^(\w+)(?:\#(\d+))?$" ){
+		my $detector = $1;
+		my $detectorindex = $2;
+		return	'detectorindex' => $detectorindex,
+			'detector' => $detector;
+	}else{
+		return	'detector' => $_[0];
+	}
+}
+
+sub expand_params ($\%) {
+	my ($text, $params) = @_;
+	$text =~ s{ \%(\w+)\% }{ $params->{$1}; }egx;
+	return $text;
+}
+
+#END { rm_r $WORKDIR if -d $WORKDIR; }
+
+#### load template conf.
+my %ncrtconf;
+if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die unless m"^(\w+)=(.*)$";
+		$ncrtconf{$1} = $2;
+	}
+	close $f;
+}
+our $ANSIBLEOPTIONS = $ncrtconf{'ANSIBLEOPTIONS'};
+our $NCRTAGENTHOME  = $ncrtconf{'NCRTAGENTHOME'};
+our $NCRTMASTERHOME = $ncrtconf{'NCRTMASTERHOME'};
+our $GRAFANAURL     = $ncrtconf{'GRAFANAURL'};
+our $GRAFANADB      = $ncrtconf{'GRAFANADB'};
+our $GRAFANAUSER    = $ncrtconf{'GRAFANAUSER'};
+our $GRAFANAPASSWD  = $ncrtconf{'GRAFANAPASSWD'};
+
+
+#### setup naemon2influx
+our $NAEMON2INFLUX_DEB;
+if( opendir my $d, $CONFDIR ){
+	while( my $e = readdir $d ){
+		next unless $e =~ m"^naemon2influx-.*\.deb$";
+		$NAEMON2INFLUX_DEB = $e;
+		last;
+	}
+	closedir $d;
+}
+if( not defined $NAEMON2INFLUX_DEB ){
+	unless( -d "$SRCDIR/naemon2influx" ){
+		my $r = system "git clone --depth=1 https://github.com/hakong/naemon2influx.git $SRCDIR/naemon2influx";
+		die unless $r == 0;
+	}
+	my $r = system "make deb -C $SRCDIR/naemon2influx";
+	die unless $r == 0;
+	if( opendir my $d, "$SRCDIR/naemon2influx" ){
+		while( my $e = readdir $d ){
+			next unless $e =~ m"^naemon2influx-.*\.deb$";
+			$NAEMON2INFLUX_DEB = $e;
+			last;
+		}
+		closedir $d;
+	}
+	die unless defined $NAEMON2INFLUX_DEB;
+	my $r = system "cp $SRCDIR/naemon2influx/$NAEMON2INFLUX_DEB $CONFDIR/$NAEMON2INFLUX_DEB";
+	die unless $r == 0;
+}
+
+####
+my @ncrtmasters;
+if( open my $f, '<', "$CONFDIR/ncrtmasters.conf" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		push @ncrtmasters, $_;
+	}
+	close $f;
+}
+
+####
+my @ncrtagents;
+if( open my $f, '<', "$CONFDIR/ncrtagents.conf" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		push @ncrtagents, $_;
+	}
+	close $f;
+}
+
+#### create server cert. if not exists
+if( ! -f "$CONFDIR/ncrt_key.pem" ){
+	my $r = system "openssl req -verbose -subj '/C=JP/ST=Kanagawa-ken/O=Watao Family/CN=*' -x509 -newkey rsa:2048 -nodes -keyout $CONFDIR/ncrt_key.pem -out $CONFDIR/ncrt_cert.pem -days 36525";
+	die unless $r == 0;
+}
+
+#### initialize work dirs
+rm_r $WORKDIR if -d $WORKDIR;
+mkdir $WORKDIR or die;
+mkdir "$WORKDIR/ncrtmaster" or die;
+mkdir "$WORKDIR/ncrtagent" or die;
+foreach my $h ( @ncrtmasters ){
+	mkdir "$WORKDIR/ncrtmaster/$h" or die;
+}
+foreach my $h ( @ncrtagents ){
+	mkdir "$WORKDIR/ncrtagent/$h" or die;
+}
+open my $f, '>', "$WORKDIR/targettypes" or die; close $f;
+open my $f, '>', "$WORKDIR/detectors" or die; close $f;
+open my $f, '>', "$WORKDIR/ncrtmaster_host2service" or die; close $f;
+open my $f, '>', "$WORKDIR/ncrtagent_host2service" or die; close $f;
+open my $f, '>', "$WORKDIR/host2contact" or die; close $f;
+open my $f, '>', "$WORKDIR/hostservice2contact" or die; close $f;
+open my $f, '>', "$WORKDIR/host2group" or die; close $f;
+open my $f, '>', "$WORKDIR/hostservice2group" or die; close $f;
+open my $f, '>', "$WORKDIR/users" or die; close $f;
+open my $f, '>', "$WORKDIR/addresses" or die; close $f;
+
+####
+open my $f, '>', "$WORKDIR/ncrt_hosttemplates.cfg" or die;
+print $f <<"EOF";
+# host settings for Nagios / Naemon
+
+define host {
+	name				ncrt-generic-host
+
+	display_name			\$HOSTNAME\$
+
+	check_command			ncrt-check-host
+	check_interval			5
+	retry_interval			1
+	max_check_attempts		3
+	check_period			24x7
+
+	notifications_enabled		1
+	notification_interval		120
+	notification_options		d,u,r
+	notification_period		24x7
+	contact_groups			admins
+
+	process_perf_data		1
+	event_handler_enabled		1	; Host event handler is enabled
+	flap_detection_enabled		1	; Flap detection is enabled
+	retain_nonstatus_information	1       ; Retain non-status information across program restarts
+	retain_status_information	1       ; Retain status information across program restarts
+
+	register			0	; DONT REGISTER THIS DEFINITION - ITS NOT A REAL HOST, JUST A TEMPLATE!
+
+}
+
+EOF
+open my $f, '>', "$WORKDIR/ncrt_servicetemplates.cfg" or die;
+print $f <<"EOF";
+# service settings for Nagios / Naemon
+
+define service {
+	name				ncrt-generic-service
+
+	display_name			Service:\$SERVICEDESC\$
+
+	active_checks_enabled		1
+	passive_checks_enabled		1
+	check_freshness			0       ; Default is to NOT check service 'freshness'
+	check_interval			10
+	retry_interval			1
+	max_check_attempts		3
+	check_period			24x7
+
+	notifications_enabled		1
+	notification_interval		60
+	notification_options		w,u,c,r
+	notification_period		24x7
+	contact_groups			admins
+
+	is_volatile			0       ; The service is not volatile
+	obsess_over_service		1       ; We should obsess over this service (if necessary)
+	process_perf_data		1
+	event_handler_enabled		1       ; Service event handler is enabled
+	flap_detection_enabled		1       ; Flap detection is enabled
+	retain_nonstatus_information	1       ; Retain non-status information across program restarts
+	retain_status_information	1       ; Retain status information across program restarts
+
+	action_url			${GRAFANAURL}dashboard/script/naemon2influx-grafana-helper.js?hostname=\$HOSTNAME\$&servicedesc=\$SERVICEDESC\$
+
+	register			0	; DONT REGISTER THIS DEFINITION - ITS NOT A REAL SERVICE, JUST A TEMPLATE!
+}
+
+EOF
+close $f;
+open my $f, '>', "$WORKDIR/vars.yml" or die;
+print $f <<"EOF";
+---
+
+ GRAFANAURL:        "$GRAFANAURL"
+ GRAFANADB:         "$GRAFANADB"
+ GRAFANAUSER:       "$GRAFANAUSER"
+ GRAFANAPASSWD:     "$GRAFANAPASSWD"
+ NCRTAGENTHOME:     "$NCRTAGENTHOME"
+ NCRTMASTERHOME:    "$NCRTMASTERHOME"
+ NAEMON2INFLUX_DEB: "$NAEMON2INFLUX_DEB"
+EOF
+close $f;
+
+#### run all plugins
+my @detector_plugins;
+my @contact_plugins;
+opendir my $d, $PLUGINSDIR or die;
+while( my $e = readdir $d ){
+	next unless $e =~ m"^build_(?:(ncrtagent|ncrtmaster|targettype)|(contact))_";
+	push @detector_plugins, $e if $1;
+	push @contact_plugins, $e if $2;
+}
+closedir $d;
+foreach my $e ( sort @detector_plugins ){
+	print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
+	my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
+	print "r=", $r, "\n";
+	die unless $r == 0;
+}
+foreach my $e ( sort @contact_plugins ){
+	print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
+	my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
+	print "r=", $r, "\n";
+	die unless $r == 0;
+}
+
+#### read settings generated by plugins
+my %targettype2opts;
+my %targettype2templateopts;
+my $f = "$WORKDIR/targettypes";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		my ($targettype, $opts, $templateopts) = parse_itementry $_;
+		print "$f:$.:$opts\n" if !defined $targettype && defined $opts;
+		next unless $targettype;
+		$targettype2opts{$targettype} = $opts;
+		$targettype2templateopts{$targettype} = $templateopts;
+	}
+	close $h;
+}
+my %detector2opts;
+my %detector2templateopts;
+my $f = "$WORKDIR/detectors";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		my ($detector, $opts, $templateopts) = parse_itementry $_;
+		print "$f:$.:$opts\n" if !defined $detector && defined $opts;
+		next unless $detector;
+		$detector2opts{$detector} = $opts;
+		$detector2templateopts{$detector} = $templateopts;
+	}
+	close $h;
+}
+my %host2services;
+my @ncrtagent_host_service_opts;
+my $f = "$WORKDIR/ncrtagent_host2service";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		my ($host, $service, $opts) = parse_mapping $_;
+		print "$f:$.:$opts\n" if !defined $host && defined $opts;
+		next unless $host;
+		push @{$host2services{$host}}, $service;
+		push @ncrtagent_host_service_opts, [$host, $service, $opts];
+	}
+	close $h;
+}
+my @ncrtmaster_host_service_opts;
+my $f = "$WORKDIR/ncrtmaster_host2service";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		my ($host, $service, $opts) = parse_mapping $_;
+		print "$f:$.:$opts\n" if !defined $host && defined $opts;
+		next unless $host;
+		push @{$host2services{$host}}, $service;
+		push @ncrtmaster_host_service_opts, [$host, $service, $opts];
+	}
+	close $h;
+}
+my %host2contact;
+my $f = "$WORKDIR/host2contact";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		my ($host, $contact, $opts) = parse_host2item_mapping $_;
+		print "$f:$.:$opts\n" if !defined $host && defined $opts;
+		next unless $host;
+		push @{$host2contact{$host}}, $contact;
+	}
+	close $h;
+}
+my %hostservice2contact;
+my $f = "$WORKDIR/hostservice2contact";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		my ($host, $service, $contact, $opts) = parse_hostservice2item_mapping $_;
+		print "$f:$.:$opts\n" if !defined $host && defined $opts;
+		next unless $host;
+		push @{$hostservice2contact{$host, $service}}, $contact;
+	}
+	close $h;
+}
+my %group2host;
+my $f = "$WORKDIR/host2group";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		my ($host, $group, $opts) = parse_host2item_mapping $_;
+		print "$f:$.:$opts\n" if !defined $host && defined $opts;
+		next unless $host;
+		push @{$group2host{$group}}, $host;
+	}
+	close $h;
+}
+my %group2hostservice;
+my $f = "$WORKDIR/hostservice2group";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		my ($host, $service, $group, $opts) = parse_hostservice2item_mapping $_;
+		print "$f:$.:$opts\n" if !defined $host && defined $opts;
+		next unless $host;
+		push @{$group2hostservice{$group}}, [$host, $service];
+	}
+	close $h;
+}
+my %users;
+my $f = "$WORKDIR/users";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		my ($user, $opts) = parse_itementry $_;
+		print "$f:$.:$opts\n" if !defined $user && defined $opts;
+		next unless $user;
+		$users{$user} = $opts;
+	}
+	close $h;
+}
+my %addresses;
+my $f = "$WORKDIR/addresses";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		my ($address, $opts) = parse_addressentry $_;
+		print "$f:$.:$opts\n" if !defined $address && defined $opts;
+		next unless $address;
+		$addresses{$address} = $opts;
+	}
+	close $h;
+}
+
+#### write template settings
+sub generate_settings (\%\%) {
+	my ($opts, $params) = @_;
+	my @settings;
+	foreach my $k ( sort keys %{$opts} ){
+		my $v = $opts->{$k};
+		push @settings, sprintf "\t%-23s\t%s\n",
+			$k, expand_params $v, %$params;
+	}
+	return @settings;
+}
+
+if( open my $f, '>>', "$WORKDIR/ncrt_hosttemplates.cfg" ){
+	foreach my $targettype ( sort keys %targettype2templateopts ){
+		my %param = ( 'targettype' => $targettype );
+		my @settings = generate_settings
+			%{$targettype2templateopts{$targettype}}, %param;
+		####
+		print $f
+		"define host {\n",
+		"	name			ncrt-targettype-$targettype\n",
+		"	use			ncrt-generic-host\n",
+		"	check_command		ncrtmaster_hostcheck\n",
+		@settings,
+		"	register		0\n",
+		"}\n";
+	}
+	close $f;
+}
+if( open my $f, '>>', "$WORKDIR/ncrt_servicetemplates.cfg" ){
+	foreach my $detector ( sort keys %detector2templateopts ){
+		my %p = ( 'detector' => $detector );
+		my @settings = generate_settings
+			%{$detector2templateopts{$detector}}, %p;
+		####
+		print $f
+		"define service {\n",
+		"	name			ncrtagent-$detector\n",
+		"	check_command		ncrtagent_check\n",
+		"	_detector		$detector\n",
+		"	use			ncrt-generic-service\n",
+		@settings,
+		"	register		0\n",
+		"}\n",
+		"define service {\n",
+		"	name			ncrtmaster-$detector\n",
+		"	check_command		ncrtmaster_check\n",
+		"	_detector		$detector\n",
+		"	use			ncrt-generic-service\n",
+		@settings,
+		"	register		0\n",
+		"}\n";
+	}
+	close $f;
+}
+
+#### write settings
+sub generate_servicestateidmacros ($@) {
+	my ($host, @detectors) = @_;
+	my @macros;
+	foreach my $detector ( @detectors ){
+		push @macros, "\$SERVICESTATEID:$host:$detector\$";
+	}
+	return join ',', @macros;
+}
+sub generate_shortnamelist ($) {
+	return '' unless defined $_[0];
+	return join ',', @{$_[0]};
+}
+
+if( open my $f, '>', "$WORKDIR/ncrt_hosts.cfg" ){
+	foreach my $host ( sort keys %host2services ){
+		my %p = ( parse_hostname $host );
+		my @settings = generate_settings
+			%{$targettype2opts{$p{targettype}}}, %p;
+		my $servicestates = generate_servicestateidmacros $host,
+			@{$host2services{$host}};
+		my $contacts = generate_shortnamelist $host2contact{$host};
+		####
+		print $f
+		"define host {\n",
+		"	host_name		$host\n",
+		"	use			ncrt-targettype-$p{targettype}\n",
+		"	contacts		$contacts\n",
+		"	_targettype		$p{targettype}\n",
+		"	_targetname		$p{targetname}\n",
+		"	_servicestates		$servicestates\n",
+		@settings,
+		"}\n";
+	}
+	close $f;
+}
+my %hscount;
+if( open my $f, '>', "$WORKDIR/ncrt_services.cfg" ){
+	foreach my $host_service_opts ( @ncrtagent_host_service_opts ){
+		my ($host, $service, $opts) = @$host_service_opts;
+		my %p = ( parse_hostname $host, parse_servicedesc $service );
+		my @settings = (
+			generate_settings(%{$detector2opts{$p{detector}}}, %p),
+			generate_settings(%$opts, %p)
+		);
+		my $contacts = generate_shortnamelist $hostservice2contact{$host, $service};
+		####
+		print $f
+		"define service {\n",
+		"	host_name		$host\n",
+		"	service_description	$service\n",
+		"	use			ncrtagent-$p{detector}\n",
+		"	contacts		$contacts\n",
+		"	_detectorindex		$p{detectorindex}\n",
+		@settings,
+		"}\n";
+	}
+	foreach my $host_service_opts ( @ncrtmaster_host_service_opts ){
+		my ($host, $service, $opts) = @$host_service_opts;
+		my %p = ( parse_hostname $host, parse_servicedesc $service );
+		my @settings = (
+			generate_settings(%{$detector2opts{$p{detector}}}, %p),
+			generate_settings(%$opts, %p)
+		);
+		####
+		print $f
+		"define service {\n",
+		"	host_name		$host\n",
+		"	service_description	$service\n",
+		"	use			ncrtmaster-$p{detector}\n",
+		"	contacts		$hostservice2contact{$host,$p{detector}}\n",
+		"	_detectorindex		$p{detectorindex}\n",
+		@settings,
+		"}\n";
+	}
+	close $f;
+}
+my $f = "$WORKDIR/ncrt_hostgroups.cfg";
+if( open my $h, '>', $f ){
+	foreach my $group ( sort keys %group2host ){
+		my $hosts = generate_shortnamelist $group2host{$group};
+		print $h
+		"define hostgroup {\n",
+		"	hostgroup_name		$group\n",
+		"	members			$hosts\n",
+		"}\n";
+	}
+	close $h;
+}
+my $f = "$WORKDIR/ncrt_servicegroups.cfg";
+if( open my $h, '>', $f ){
+	foreach my $group ( sort keys %group2hostservice ){
+		my $hostservices;
+		foreach my $hostservice ( @{$group2hostservice{$group}} ){
+			$hostservices .= ',' if $hostservices;
+			$hostservices .= $hostservice->[0] . ',' . $hostservice->[1];
+		}
+		print $h
+		"define servicegroup {\n",
+		"	servicegroup_name	$group\n",
+		"	members			$hostservices\n",
+		"}\n";
+	}
+	close $h;
+}
+my $f = "$WORKDIR/ncrt_users.cfg";
+if( open my $h, '>', $f ){
+	foreach my $user ( sort keys %users ){
+		print $h
+		"define contact {\n",
+		"	contact_name		$user\n",
+		"	host_notification_commands	ncrtmaster_do_nothing\n",
+		"	service_notification_commands	ncrtmaster_do_nothing\n",
+		"	service_notification_period	ncrt_notime\n",
+		"	host_notification_period	ncrt_notime\n",
+		"	host_notifications_enabled	0\n",
+		"	service_notifications_enabled	0\n",
+		"}\n";
+	}
+	close $h;
+}
+my $f = "$WORKDIR/ncrt_addresses.cfg";
+if( open my $h, '>', $f ){
+	foreach my $address ( sort keys %addresses ){
+		print $h
+		"define contact {\n",
+		"	contact_name		$address\n",
+		"	email			$address\n",
+		"	host_notification_commands	ncrtmaster_notify\n",
+		"	service_notification_commands	ncrtmaster_notify\n",
+		"	service_notification_period	ncrt_anytime\n",
+		"	host_notification_period	ncrt_anytime\n",
+		"	service_notification_options	w,u,c,r\n",
+		"	host_notification_options	d,r\n",
+		"}\n";
+	}
+	close $h;
+}
+
+#exit 0;
+#### run ansible for nagios master
+my $hosts = join( ',', @ncrtmasters, '' );
+my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -i %s",
+	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $hosts;
+my $r = system "ansible-playbook -v $options $PLAYBOOKSDIR/build_ncrtmaster.yml";
+die unless $r == 0;
+
+#### run ansible for nrpe agent
+my $hosts = join( ',', @ncrtagents, '' );
+my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -i %s",
+	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $hosts;
+my $r = system "ansible-playbook -v $options $PLAYBOOKSDIR/build_ncrtagent.yml";
+die unless $r == 0;
+
+
+
+

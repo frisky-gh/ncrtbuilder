@@ -1,0 +1,98 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 4 ){
+        print "usage: % $0 CONFDIR WORKDIR TARGETNAME INDEX\n";
+        exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $TARGETNAME = $ARGV[2];
+our $INDEX = $ARGV[3];
+
+####
+sub ns ($) {
+	return sprintf "%.2fs", $_[0];
+}
+
+sub nB ($) {
+	return sprintf "%dB", $_[0];
+}
+
+#### load detector conf.
+my @rules;
+my $f = "$CONFDIR/website_activity.$TARGETNAME.rules";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*($|#)";
+		die "$f:$.: illegal format, stopped" unless m"^
+			http(s)?://
+			(?:([^\s:]+):([^\s\@]+)\@)?
+			([-0-9a-zA-Z.]+)
+			(?::(\d+))?
+			((/[^\s\?]*)?(?:\?(\S*))?)
+			\s+
+			(\d+)
+		$"x;
+		my $secure = $1;
+		my $user = $2;
+		my $passwd = $3;
+		my $host = $4;
+		my $port = $5 || $secure ? 443 : 80;
+		my $path_query = $6;
+		my $path = $7;
+		my $query = $8;
+		my $status = $9;
+		my $args = "-H $host -p $port";
+		$args .= " -S" if $secure;
+		$args .= " -a \Q$user:$passwd\E" if $user;
+		$args .= " -u \Q$path_query\E" if $path_query;
+		# same url string to the influx_url in build_ncrtmaster_website_activity
+		my $url = $secure ? "https" : "http";
+		$url .= "://";
+		$url .= "$user\@" if $user;
+		$url .= $host;
+		$url .= ":$5" if $5;
+		$url .= $path_query if $path_query;
+		my $output_url = $url;
+		$output_url =~ s{[^-.\w:%/]}{"#".uc unpack("H2",$&)}eg;
+		push @rules, [$url, $status, $args, $output_url];
+	}
+	close $h;
+}
+
+####
+my ($url, $wantstatus, $args, $output_url) = @{$rules[$INDEX]};
+my %d;
+if( open my $h, '-|', "/usr/lib/nagios/plugins/check_http $args" ){
+	my $r = <$h>;
+	chomp $r;
+	$r =~ m"^
+		HTTP\ (
+		    (?:
+			(OK|WARNING|CRITICAL):
+			\ HTTP/\S+\ (\d+)\ (.*)\ -\ (.*)
+			\|time=(\d+\.\d+)s\;.*\ size=(\d+)B\;.*
+		    ) |
+		    CRITICAL\ -\ (.*)
+		)
+	$"x or do {
+		print "web[$output_url]_status=2\n";
+	};
+	my $result = $2;
+	my $statuscode = $3;
+	my $statusmessage = $4 || $8;
+	my $message = $5;
+	my $elapsed = ns $6;
+	my $size = nB $7;
+	my $status = $statuscode eq $wantstatus ? 0 : 1;
+	print "web[$output_url]_size=$size\n";
+	print "web[$output_url]_elapsed=$elapsed\n";
+	print "web[$output_url]_status=$status\n";
+}
+
+exit 0;
+

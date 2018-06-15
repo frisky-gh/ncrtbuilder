@@ -1,0 +1,4 @@
+# category	userpattern	argspattern
+nullmailer	mail		/usr/sbin/nullmailer-send(\s.*)?
+postfix		root		/usr/lib/postfix/sbin/master
+thruk		www-data	.*/thruk_fastcgi.pl

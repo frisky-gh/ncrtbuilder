@@ -1,0 +1,93 @@
+---
+
+- hosts: all
+  tasks:
+    - include_vars: "{{WORKDIR}}/vars.yml"
+
+    - name: install packages for nrpe
+      apt:
+        name:
+          - nagios-nrpe-server
+          - nrpe-ng
+          - monitoring-plugins
+          - monitoring-plugins-basic
+          - monitoring-plugins-common
+          - monitoring-plugins-standard
+
+    - file:
+        path: /opt
+        state: directory
+        owner: root
+        group: root
+
+    - name: setup modules in ncrt agent
+      synchronize:
+        checksum: yes
+        rsync_opts: [ "-OJ", "--chown=root:root" ]
+        src: "{{TOOLHOME}}/ncrtagent/"
+        dest: "{{NCRTAGENTHOME}}/"
+
+    - name: setup nrpe server cert/key
+      copy:
+        dest:  /etc/nagios/ncrt_cert.pem
+        src:   "{{TOOLHOME}}/conf/ncrt_cert.pem"
+
+    - name: setup nrpe server cert/key
+      copy:
+        dest:  /etc/nagios/ncrt_key.pem
+        src:   "{{TOOLHOME}}/conf/ncrt_key.pem"
+
+    - name: setup nrpe server cert/key
+      lineinfile:
+        dest:   /etc/nagios/nrpe-ng.cfg
+        regexp: "^ssl_cert_file="
+        line:   "ssl_cert_file=/etc/nagios/ncrt_cert.pem"
+        insertafter: EOF
+      notify: restart nrpe-ng
+
+    - name: setup nrpe server cert/key
+      lineinfile:
+        dest:   /etc/nagios/nrpe-ng.cfg
+        regexp: "^ssl_key_file="
+        line:   "ssl_key_file=/etc/nagios/ncrt_key.pem"
+        insertafter: EOF
+      notify: restart nrpe-ng
+
+    - name: setup settings in ncrt agent
+      lineinfile:
+        dest:   /etc/nagios/nrpe-ng.cfg
+        regexp: "^dont_blame_nrpe="
+        line:   "dont_blame_nrpe=1"
+        insertafter: EOF
+      notify: restart nrpe-ng
+
+    - name: setup settings in ncrt agent
+      synchronize:
+        checksum: yes
+        delete: yes
+        rsync_opts: [ "-OJ", "--chown=root:root" ]
+        src: "{{WORKDIR}}/ncrtagent/{{ansible_hostname}}/"
+        dest: "{{NCRTAGENTHOME}}/conf/"
+      notify: restart nrpe-ng
+
+    - name: setup settings in ncrt agent
+      template:
+        src: ncrt_nrpe_commands.cfg
+        dest: /etc/nagios/nrpe.d/ncrt_nrpe_commands.cfg
+      notify: restart nrpe-ng
+
+  handlers:
+    - name: update ssl certs
+      shell: "update-ca-certificates -f"
+
+    - name: restart nrpe-ng
+      service:
+        name:  nrpe-ng
+        state: restarted
+
+
+
+
+
+
+

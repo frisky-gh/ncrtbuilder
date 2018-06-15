@@ -1,0 +1,14 @@
+# hostpattern		itempattern			sever	threshold
+
+.*			link\\[.*\\]_rx_bytes_mbps	warn	[0,10]
+.*			link\\[.*\\]_rx_errors_ppm	warn	[0,0.01]
+.*			link\\[.*\\]_rx_dropped_ppm	warn	[0,0.01]
+.*			link\\[.*\\]_rx_overrun_ppm	warn	[0,0.01]
+.*			link\\[.*\\]_tx_bytes_mbps	warn	[0,10]
+.*			link\\[.*\\]_tx_errors_ppm	warn	[0,0.01]
+.*			link\\[.*\\]_tx_dropped_ppm	warn	[0,0.01]
+.*			link\\[.*\\]_tx_overrun_ppm	warn	[0,0.01]
+.*			link\\[.*\\]_tx_collsns_ppm	warn	[0,0.01]
+
+mizuhasu		link\[wlan2\]_rx_dropped_ppm	warn	[0,100]
+
