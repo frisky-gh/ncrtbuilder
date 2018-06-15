@@ -1,10 +1,11 @@
-# ncrtbuilder
-Nagios / Naemon CRT Monitor : Plugin-based simple framework of Naemon. You can write plugins by your favorite language.
+NCRT Builder
 ====
 
 ## Description
 
-NCRT (Nagios / Naemon CRT Monitor) is a plugin-based simple framework. It bases from 3 parts: Builder, Master, and Agent. ncrtbuilder is the Builder part, and builds Master and Agent part.
+NCRT (Nagios / Naemon CRT Monitor) is a plugin-based simple framework. It bases from 3 parts: Builder, Master, and Agent. ncrtbuilder is the Builder part, and deployes Master and Agent part on each nodes by Ansible.
+
+You can write plugins by your favorite language on NCRT framework. Since NCRT needs only simple rules for plugins, plugins can be also described by shell script.
 
 ## Requirement
 
