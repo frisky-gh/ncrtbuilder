@@ -5,9 +5,11 @@
 #    - include: "{{WORKDIR}}/vars.yml"
   tasks:
     - include_vars: "{{WORKDIR}}/vars.yml"
+      tags: [ common ]
     - name: install packages for apt-key
       apt:
         name: [ dirmngr, nrpe-ng, pynag ]
+      tags: [ common ]
 
     #### DEBUG
     - name: setup modules in ncrt master
@@ -16,6 +18,7 @@
         rsync_opts: [ "-OJ", "--chown=root:root" ]
         src: "{{TOOLHOME}}/ncrtmaster/"
         dest: "{{NCRTMASTERHOME}}/"
+      tags: [ common ]
 
     #### Naemon
     - name: add repository key
@@ -23,10 +26,12 @@
         keyserver: keys.gnupg.net
         id: F8C1CA08A57B9ED7
         keyring: /etc/apt/trusted.gpg.d/labs.consol.de_key.gpg
+      tags: [ common ]
 
     - name: add naemon repository
       apt_repository:
         repo: 'deb http://labs.consol.de/repo/stable/debian {{ansible_distribution_release}} main'
+      tags: [ common ]
 
     - name: install naemon and dependancies
       apt:
@@ -37,6 +42,7 @@
           - nagios-plugins
           - naemon-thruk
           - python-passlib
+      tags: [ common ]
 
 #      notify: restart naemon
 
@@ -68,24 +74,29 @@
         owner:   root
         group:   root
         recurse: yes
+      tags: [ common ]
 
     - file:
         dest:    "{{NCRTMASTERHOME}}/debs"
         state:   directory
         owner:   root
         group:   root
+      tags: [ common ]
 
     - copy:
         dest:    "{{NCRTMASTERHOME}}/debs/{{NAEMON2INFLUX_DEB}}"
         src:     "{{TOOLHOME}}/conf/{{NAEMON2INFLUX_DEB}}"
+      tags: [ common ]
 
     - name: install naemon2influx
       apt:
         deb:     "{{NCRTMASTERHOME}}/debs/{{NAEMON2INFLUX_DEB}}"
+      tags: [ common ]
 
     - name: install naemon2influx
       apt:
         name: [ influxdb, influxdb-client, libwww-perl ]
+      tags: [ common ]
 
     - name: setup Nagios / Naemon with naemon2influx
       lineinfile:
@@ -101,18 +112,20 @@
         - key:   service_perfdata_file_mode
           value: a
         - key:   service_perfdata_file_processing_interval
-          value: 1500
+          value: 5
         - key:   service_perfdata_file_template
           value: '$TIMET$\t$HOSTNAME$\t$SERVICEDESC$\t$SERVICESTATE$\t$SERVICEPERFDATA$'
         - key:   service_perfdata_file
           value: /var/lib/naemon/service-perfdata
       notify: restart naemon
+      tags: [ common ]
 
     - name: setup Nagios / Naemon with naemon2influx
       template:
         src: ncrt_naemon2influx.cfg
         dest: /etc/naemon/conf.d/ncrt_naemon2influx.cfg
       notify: restart naemon
+      tags: [ common ]
 
     - name: setup naemon2influx
       file:
@@ -121,18 +134,59 @@
         owner: naemon
         group: naemon
       notify: restart naemon
+      tags: [ common ]
+
+    - name: setup naemon2influx
+      lineinfile:
+        dest: /etc/naemon/naemon2influx.cfg
+        regexp: "^{{item.key}}="
+        line:   "{{item.key}}={{item.value}}"
+        insertafter: EOF
+      with_items:
+        - key:   output
+          value: "http://{{INFLUXDBHOST}}:{{INFLUXDBPORT}}"
+        - key:   username
+          value: "{{INFLUXDBUSER}}"
+        - key:   password
+          value: "{{INFLUXDBPASSWD}}"
+      tags: [ common ]
+
+    #### InfluxDB
+    - name: install packages for influxdb client
+      apt:
+        name: [ python-requests, python-influxdb ]
+      tags: [ common ]
+
+    - name: setup influxdb database for naemon2influx
+      influxdb_database:
+        hostname:      "{{INFLUXDBHOST}}"
+        port:          "{{INFLUXDBPORT}}"
+        username:      "{{INFLUXDBADMINUSER}}"
+        password:      "{{INFLUXDBADMINPASSWD}}"
+        database_name: "{{INFLUXDBDATABASE}}"
+      tags: [ common ]
+
+    - name: setup influxdb user for naemon2influx
+      influxdb_user:
+        hostname:      "{{INFLUXDBHOST}}"
+        port:          "{{INFLUXDBPORT}}"
+        username:      "{{INFLUXDBADMINUSER}}"
+        password:      "{{INFLUXDBADMINPASSWD}}"
+        user_name:     "{{INFLUXDBUSER}}"
+        user_password: "{{INFLUXDBPASSWD}}"
+      tags: [ common ]
 
     - name: setup influxdb for naemon2influx
-      shell: "influx -execute \"create user naemon with password 'naemon'\""
-      notify: restart naemon
-
-    - name: setup influxdb for naemon2influx
-      shell: "influx -execute \"create database naemon\""
-      notify: restart naemon
-
-    - name: setup influxdb for naemon2influx
-      shell: "influx -execute \"grant all on naemon to naemon\""
-      notify: restart naemon
+      #influxdb_query:
+      #  hostname:      "{{INFLUXDBHOST}}"
+      #  port:          "{{INFLUXDBPORT}}"
+      #  username:      "{{INFLUXDBADMINUSER}}"
+      #  password:      "{{INFLUXDBADMINPASSWD}}"
+      #  database_name: "{{INFLUXDBDATABASE}}"
+      #  query:         "grant all on {{INFLUXDBDATABASE}} to {{INFLUXDBUSER}}"
+      #failed_when: False
+      shell: "influx -host {{INFLUXDBHOST}} -port {{INFLUXDBPORT}} -username {{INFLUXDBADMINUSER}} -password \"{{INFLUXDBADMINPASSWD}}\" -execute \"grant all on naemon to naemon\""
+      tags: [ common ]
 
     #### Grafana
     - name: fix #843263
@@ -140,6 +194,7 @@
         dest: /usr/share/grafana/public/app/app.js
         regexp: "'ang-drag-drop',"
         line:   "    //'ang-drag-drop',"
+      tags: [ common ]
 
     #### NCRT
     - name: setup modules in ncrt master
@@ -148,14 +203,16 @@
         rsync_opts: [ "-OJ", "--chown=root:root" ]
         src: "{{TOOLHOME}}/ncrtmaster/"
         dest: "{{NCRTMASTERHOME}}/"
+      tags: [ common ]
 
     - name: setup settings in ncrt master
       synchronize:
         checksum: yes
         delete: yes
         rsync_opts: [ "-OJ", "--chown=root:root" ]
-        src: "{{WORKDIR}}/ncrtmaster/{{ansible_hostname}}/"
+        src: "{{WORKDIR}}/ncrtmaster/{{inventory_hostname}}/"
         dest: "{{NCRTMASTERHOME}}/conf/"
+      tags: [ common ]
 
     - name: setup settings in ncrt master
       template:
@@ -164,12 +221,14 @@
       with_items:
         - ncrt_naemon_commands.cfg
         - ncrt_naemon_timeperiods.cfg
+      tags: [ common ]
 
     - name: setup nrpe server cert/key
       copy:
         dest:  /etc/ssl/certs/ncrt_cert.pem
         src:   "{{TOOLHOME}}/conf/ncrt_cert.pem"
       notify: update ssl certs
+      tags: [ common ]
 
     - name: setup settings in Nagios / Naemon
       shell: "test -f /etc/naemon/conf.d/{{item}} && mv /etc/naemon/conf.d/{{item}} /etc/naemon/conf.d/{{item}}.unused"
@@ -179,10 +238,12 @@
         - printer.cfg
         - switch.cfg
         - windows.cfg
+      tags: [ common ]
 
     - name: setup settings in Nagios / Naemon
       shell: "test -f /etc/naemon/conf.d/printerlocalhost.cfg && mv /etc/naemon/conf.d/localhost.cfg /etc/naemon/conf.d/localhost.cfg.unused"
       failed_when: False
+      tags: [ common ]
 
     - name: setup settings in Nagios / Naemon
       template:
@@ -197,19 +258,19 @@
         - ncrt_addresses.cfg
         - ncrt_hostgroups.cfg
         - ncrt_servicegroups.cfg
+      notify: restart naemon
+      tags: [ common ]
 
   handlers:
     - name: update ssl certs
       shell: "update-ca-certificates -f"
+      tags: [ common ]
 
     - name: restart naemon
       service:
         name:  naemon
         state: restarted
+      tags: [ common ]
 
-    - name: restart nrpe-ng
-      service:
-        name:  nrpe-ng
-        state: restarted
 
 

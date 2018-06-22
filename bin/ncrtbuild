@@ -183,13 +183,23 @@ our $GRAFANAURL     = $ncrtconf{'GRAFANAURL'};
 our $GRAFANADB      = $ncrtconf{'GRAFANADB'};
 our $GRAFANAUSER    = $ncrtconf{'GRAFANAUSER'};
 our $GRAFANAPASSWD  = $ncrtconf{'GRAFANAPASSWD'};
+our $INFLUXDBHOST        = $ncrtconf{'INFLUXDBHOST'} || 'localhost';
+our $INFLUXDBPORT        = $ncrtconf{'INFLUXDBPORT'} || '8086';
+our $INFLUXDBADMINUSER   = $ncrtconf{'INFLUXDBADMINUSER'} || 'admin';
+our $INFLUXDBADMINPASSWD = $ncrtconf{'INFLUXDBADMINPASSWD'} || 'admin';
+our $INFLUXDBUSER        = $ncrtconf{'INFLUXDBUSER'} || 'naemon';
+our $INFLUXDBPASSWD      = $ncrtconf{'INFLUXDBPASSWD'} || 'naemon';
+our $INFLUXDBDATABASE    = $ncrtconf{'INFLUXDBDATABASE'} || 'naemon';
+our $AGENTPACKAGE        = $ncrtconf{'AGENTPACKAGE'} || 'nrpe';
+our $NRPEPORT            = $ncrtconf{'NRPEPORT'} || '5666';
+our $NRPETLS             = $ncrtconf{'NRPETLS'} || 'yes';
 
 
 #### setup naemon2influx
 our $NAEMON2INFLUX_DEB;
 if( opendir my $d, $CONFDIR ){
 	while( my $e = readdir $d ){
-		next unless $e =~ m"^naemon2influx-.*\.deb$";
+		next unless $e =~ m"^naemon2influx-\d.*\.deb$";
 		$NAEMON2INFLUX_DEB = $e;
 		last;
 	}
@@ -204,7 +214,7 @@ if( not defined $NAEMON2INFLUX_DEB ){
 	die unless $r == 0;
 	if( opendir my $d, "$SRCDIR/naemon2influx" ){
 		while( my $e = readdir $d ){
-			next unless $e =~ m"^naemon2influx-.*\.deb$";
+			next unless $e =~ m"^naemon2influx-\d.*\.deb$";
 			$NAEMON2INFLUX_DEB = $e;
 			last;
 		}
@@ -212,6 +222,36 @@ if( not defined $NAEMON2INFLUX_DEB ){
 	}
 	die unless defined $NAEMON2INFLUX_DEB;
 	my $r = system "cp $SRCDIR/naemon2influx/$NAEMON2INFLUX_DEB $CONFDIR/$NAEMON2INFLUX_DEB";
+	die unless $r == 0;
+}
+
+#### setup naemon2influx-grafana-helper
+our $NAEMON2INFLUX_GRAFANA_HELPER_DEB;
+if( opendir my $d, $CONFDIR ){
+	while( my $e = readdir $d ){
+		next unless $e =~ m"^naemon2influx-grafana-helper_.*\.deb$";
+		$NAEMON2INFLUX_GRAFANA_HELPER_DEB = $e;
+		last;
+	}
+	closedir $d;
+}
+if( not defined $NAEMON2INFLUX_GRAFANA_HELPER_DEB ){
+	unless( -d "$SRCDIR/naemon2influx-grafana-helper" ){
+		my $r = system "git clone --depth=1 https://github.com/frisky-gh/naemon2influx-grafana-helper.git $SRCDIR/naemon2influx-grafana-helper";
+		die unless $r == 0;
+	}
+	my $r = system "cd $SRCDIR/naemon2influx-grafana-helper && dpkg-buildpackage --no-sign";
+	die unless $r == 0;
+	if( opendir my $d, "$SRCDIR" ){
+		while( my $e = readdir $d ){
+			next unless $e =~ m"^naemon2influx-grafana-helper_.*\.deb$";
+			$NAEMON2INFLUX_GRAFANA_HELPER_DEB = $e;
+			last;
+		}
+		closedir $d;
+	}
+	die unless defined $NAEMON2INFLUX_GRAFANA_HELPER_DEB;
+	my $r = system "cp $SRCDIR/$NAEMON2INFLUX_GRAFANA_HELPER_DEB $CONFDIR/$NAEMON2INFLUX_GRAFANA_HELPER_DEB";
 	die unless $r == 0;
 }
 
@@ -285,7 +325,7 @@ define host {
 	notification_interval		120
 	notification_options		d,u,r
 	notification_period		24x7
-	contact_groups			admins
+	contact_groups			
 
 	process_perf_data		1
 	event_handler_enabled		1	; Host event handler is enabled
@@ -319,7 +359,7 @@ define service {
 	notification_interval		60
 	notification_options		w,u,c,r
 	notification_period		24x7
-	contact_groups			admins
+	contact_groups			
 
 	is_volatile			0       ; The service is not volatile
 	obsess_over_service		1       ; We should obsess over this service (if necessary)
@@ -340,13 +380,23 @@ open my $f, '>', "$WORKDIR/vars.yml" or die;
 print $f <<"EOF";
 ---
 
- GRAFANAURL:        "$GRAFANAURL"
- GRAFANADB:         "$GRAFANADB"
- GRAFANAUSER:       "$GRAFANAUSER"
- GRAFANAPASSWD:     "$GRAFANAPASSWD"
- NCRTAGENTHOME:     "$NCRTAGENTHOME"
- NCRTMASTERHOME:    "$NCRTMASTERHOME"
- NAEMON2INFLUX_DEB: "$NAEMON2INFLUX_DEB"
+ GRAFANAURL:          "$GRAFANAURL"
+ GRAFANADB:           "$GRAFANADB"
+ GRAFANAUSER:         "$GRAFANAUSER"
+ GRAFANAPASSWD:       "$GRAFANAPASSWD"
+ NCRTAGENTHOME:       "$NCRTAGENTHOME"
+ NCRTMASTERHOME:      "$NCRTMASTERHOME"
+ NAEMON2INFLUX_DEB:   "$NAEMON2INFLUX_DEB"
+ INFLUXDBHOST:        "$INFLUXDBHOST"
+ INFLUXDBPORT:        "$INFLUXDBPORT"
+ INFLUXDBADMINUSER:   "$INFLUXDBADMINUSER"
+ INFLUXDBADMINPASSWD: "$INFLUXDBADMINPASSWD"
+ INFLUXDBUSER:        "$INFLUXDBUSER"
+ INFLUXDBPASSWD:      "$INFLUXDBPASSWD"
+ INFLUXDBDATABASE:    "$INFLUXDBDATABASE"
+ AGENTPACKAGE:        "$AGENTPACKAGE"
+ NRPEPORT:            "$NRPEPORT"
+ NRPETLS:             "$NRPETLS"
 EOF
 close $f;
 
@@ -612,13 +662,14 @@ if( open my $f, '>', "$WORKDIR/ncrt_services.cfg" ){
 			generate_settings(%{$detector2opts{$p{detector}}}, %p),
 			generate_settings(%$opts, %p)
 		);
+		my $contacts = generate_shortnamelist $hostservice2contact{$host, $service};
 		####
 		print $f
 		"define service {\n",
 		"	host_name		$host\n",
 		"	service_description	$service\n",
 		"	use			ncrtmaster-$p{detector}\n",
-		"	contacts		$hostservice2contact{$host,$p{detector}}\n",
+		"	contacts		$contacts\n",
 		"	_detectorindex		$p{detectorindex}\n",
 		@settings,
 		"}\n";
@@ -688,17 +739,27 @@ if( open my $h, '>', $f ){
 }
 
 #exit 0;
+
+####
+my $tags = 'common';
+if   ( $AGENTPACKAGE eq 'nrpe' )   { $tags .= ',nrpe'; }
+elsif( $AGENTPACKAGE eq 'nrpe-ng' ){ $tags .= ',nrpe-ng'; }
+else{ die; }
+if   ( $NRPETLS eq 'yes' ){ $tags .= ',nrpetls'; }
+elsif( $NRPETLS eq 'no' ) {}
+else{ die; }
+
 #### run ansible for nagios master
 my $hosts = join( ',', @ncrtmasters, '' );
-my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -i %s",
-	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $hosts;
+my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -i %s -t \"%s\"",
+	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $hosts, $tags;
 my $r = system "ansible-playbook -v $options $PLAYBOOKSDIR/build_ncrtmaster.yml";
 die unless $r == 0;
 
 #### run ansible for nrpe agent
 my $hosts = join( ',', @ncrtagents, '' );
-my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -i %s",
-	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $hosts;
+my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -i %s -t \"%s\"",
+	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $hosts, $tags;
 my $r = system "ansible-playbook -v $options $PLAYBOOKSDIR/build_ncrtagent.yml";
 die unless $r == 0;
 
