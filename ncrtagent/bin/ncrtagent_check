@@ -31,7 +31,7 @@ my @w;
 my @c;
 
 # read from detector's output
-if( open my $e, '-|', "$PLUGINSDIR/ncrtagent_$detector $CONFDIR $WORKDIR $index" ){
+if( open my $e, '-|', "$PLUGINSDIR/ncrtagentdetector_$detector $CONFDIR $WORKDIR $index" ){
 	while( <$e> ){
 		chomp;
 		next if m"^\s*(#|$)";
@@ -42,7 +42,7 @@ if( open my $e, '-|', "$PLUGINSDIR/ncrtagent_$detector $CONFDIR $WORKDIR $index"
 	}
 	close $e;
 }else{
-	print "UNKNOWN $PLUGINSDIR/ncrtagent_$detector: not found.\n";
+	print "UNKNOWN $PLUGINSDIR/ncrtagentdetector_$detector: not found.\n";
 	exit 3;
 }
 

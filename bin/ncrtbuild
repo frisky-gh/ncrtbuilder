@@ -406,7 +406,7 @@ my @detector_plugins;
 my @contact_plugins;
 opendir my $d, $PLUGINSDIR or die;
 while( my $e = readdir $d ){
-	next unless $e =~ m"^build_(?:(ncrtagent|ncrtmaster|targettype)|(contact))_";
+	next unless $e =~ m"^ncrtbuild(?:(detector|targettype)|(contact))_";
 	push @detector_plugins, $e if $1;
 	push @contact_plugins, $e if $2;
 }
