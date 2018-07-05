@@ -26,7 +26,7 @@ if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
 		next if m"^\s*($|#)";
-		die "$f:$.: illegal format, stopped" unless m"^(\w+)\s+(\S+)\s+(\S+)$";
+		die "$f:$.: illegal format, stopped" unless m"^([-.\w]+)\s+(\S+)\s+(\S+)$";
 		my $category = $1;
 		my $userre = qr"^$2$";
 		my $argsre = qr"^$3$";

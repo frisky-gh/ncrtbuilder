@@ -2,19 +2,28 @@
 
 use strict;
 
-my $args = $ARGV[0];
-my $max = 0;
-
-foreach my $v ( split ',', $args ){
-	$max = $v if $v > $max;
+if( @ARGV < 5 ){
+	print "usage: % $0 TOTAL OK WARN CRIT UNKNOWN\n";
+	exit 1;
 }
 
-if( $max > 0 ){
-	print "NG $args\n";
-	exit 2;
+my ($total, $ok, $warn, $crit, $unknown) = @ARGV;
+
+my $status;
+my $rc;
+if( $total == ($ok+$warn) ){
+	$status = 'OK';
+	$rc = 0;
+}else{
+	$status = 'NG';
+	$rc = 2;
 }
 
-print "OK $args\n";
-exit 0;
+my @r;
+push @r, "warn=$warn" if $warn > 0;
+push @r, "crit=$crit" if $crit > 0;
+push @r, "unknown=$unknown" if $unknown > 0;
+print "$status @r\n";
+exit $rc;
 
 

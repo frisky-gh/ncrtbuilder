@@ -22,13 +22,25 @@ sub nMB ($) {
 }
 
 #### load detector conf.
+my @exist_rules;
+my $f = "$CONFDIR/linuxhost_disk.rules";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)$";
+		push @exist_rules, $1;
+	}
+	close $h;
+}
+
 my @ignore_rules;
 my $f = "$CONFDIR/linuxhost_disk.ignores";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
 		next if m"^\s*(#|$)";
-		die "$f:$.:$_: illegal format, stopped" unless m"^!(\S+)$";
+		die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)$";
 		push @ignore_rules, qr"^$1$";
 	}
 	close $h;
@@ -68,6 +80,17 @@ if( open my $f, '-|', "df -k --output='source,fstype,itotal,iused,iavail,size,us
 		];
 	}
 	close $f;
+
+	foreach my $path ( @exist_rules ){
+		next if exists $d{$path};
+		$d{$path} = [
+			undef, 'none',
+			0, 0, 0,
+			nP 0,
+			nMB 0, nMB 0, nMB 0,
+			nP 0
+		];
+	}
 
 	foreach my $k ( sort keys %d ){
 		my $v = $d{$k};
