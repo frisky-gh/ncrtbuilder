@@ -1,0 +1,63 @@
+#!/usr/bin/perl
+
+use utf8;
+use strict;
+use Email::Sender::Simple 'sendmail';
+use Email::MIME;
+use Template;
+
+binmode STDIN,  ":utf8";
+binmode STDOUT, ":utf8";
+binmode STDERR, ":utf8";
+
+if( @ARGV < 3 ){
+        print "usage: % $0 CONFDIR WORKDIR EMAIL [KEY1=VALUE1 ...]\n";
+        exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+my $mailto = $ARGV[2];
+my %var = (
+	'MAILTO' => $mailto,
+	'match' => sub {
+		my ($text, $re) = @_;
+		if( $text =~ m"$re" ){ return 1; }
+		else                 { return undef; }
+	}
+);
+foreach my $key_value ( @ARGV[3..$#ARGV] ){
+	next unless $key_value =~ m"^(\w+)=(.*)$";
+	$var{$1} = $2;
+}
+
+####
+my $tt = Template->new({ ENCODING => 'utf8' });
+my $output;
+unless( $tt->process( "$CONFDIR/smtp.tt", \%var, \$output ) ){
+	die $tt->error . ", stopped";
+}
+my %head;
+while( $output =~ m"^(?:([-\w]+):\s*(.*)|)$"cmg ){
+	if( $1 ){ $head{$1} = $2; }
+	else    { last; }
+}
+my $body = substr($output, pos($output) + 1);
+
+my $email = Email::MIME->create(
+	'header_str' => [ %head ],
+	'attributes' => {
+		'content_type' => 'text/plain',
+		'charset'      => 'UTF-8',
+		'encoding'     => 'base64',
+	},
+	'body_str' => $body,
+);
+my %param = (
+	'to' => [$mailto]
+);
+
+sendmail($email, \%param);
+
+exit 0;
+

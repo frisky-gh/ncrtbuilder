@@ -13,6 +13,9 @@ our $SRCDIR = "$TOOLHOME/src";
 our $TMPDIR = "/tmp";
 our $WORKDIR = "$TMPDIR/ncrt_work";
 
+our $AGENTCONFDIR = "$TOOLHOME/ncrtagent/conf";
+our $MASTERCONFDIR = "$TOOLHOME/ncrtmaster/conf";
+
 #if( @ARGV < 1 ){
 #	print "usage: % $0 CHECK_PLUGIN_NAME\n";
 #	exit 3;
@@ -291,9 +294,13 @@ mkdir "$WORKDIR/ncrtmaster" or die;
 mkdir "$WORKDIR/ncrtagent" or die;
 foreach my $h ( @ncrtmasters ){
 	mkdir "$WORKDIR/ncrtmaster/$h" or die;
+	my $r = system "rsync -aSvx $MASTERCONFDIR/ $WORKDIR/ncrtmaster/$h/";
+	die unless $r == 0;
 }
 foreach my $h ( @ncrtagents ){
 	mkdir "$WORKDIR/ncrtagent/$h" or die;
+	my $r = system "rsync -aSvx $AGENTCONFDIR/ $WORKDIR/ncrtagent/$h/";
+	die unless $r == 0;
 }
 open my $f, '>', "$WORKDIR/targettypes" or die; close $f;
 open my $f, '>', "$WORKDIR/detectors" or die; close $f;

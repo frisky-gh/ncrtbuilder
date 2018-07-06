@@ -25,9 +25,9 @@ else{
 }
 unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
 
+my $now = sprintf "%04d-%02d-%02d_%02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec;
 if( open my $e, '>>', "$WORKDIR/notify.log" ){
 	my ($sec, $min, $hour, $day, $mon, $year) = localtime time;
-	my $now = sprintf "%04d-%02d-%02d_%02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec;
 	foreach my $a (@ARGV){
 		print $e "$now ARGV $a\n";
 	}
@@ -35,6 +35,22 @@ if( open my $e, '>>', "$WORKDIR/notify.log" ){
 		print $e "$now ENV $k=$v\n";
 	}
 	close $e;
+}
+
+my @argv;
+foreach my $a ( @ARGV ){
+	push @argv, quotemeta $a;
+}
+
+my @messenger_plugins;
+opendir my $d, $PLUGINSDIR or die;
+while( my $e = readdir $d ){
+	next unless $e =~ m"^ncrtmaster(messenger)_";
+        push @messenger_plugins, $e if $1;
+}
+closedir $d;
+foreach my $plugin ( @messenger_plugins ){
+	my $r = system "$PLUGINSDIR/$plugin $CONFDIR $WORKDIR @argv";
 }
 
 exit 0;

@@ -42,6 +42,9 @@
           - nagios-plugins
           - naemon-thruk
           - python-passlib
+          - libemail-sender-perl
+          - libemail-mime-perl
+          - libtemplate-perl
       tags: [ common ]
 
 #      notify: restart naemon
