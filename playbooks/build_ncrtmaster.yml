@@ -12,6 +12,11 @@
       tags: [ common ]
 
     #### DEBUG
+    - name: restart naemon
+      service:
+        name:  naemon
+        state: restarted
+      tags: [ common ]
     - name: setup modules in ncrt master
       synchronize:
         checksum: yes

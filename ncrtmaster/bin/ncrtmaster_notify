@@ -25,9 +25,9 @@ else{
 }
 unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
 
+my ($sec, $min, $hour, $day, $mon, $year) = localtime time;
 my $now = sprintf "%04d-%02d-%02d_%02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec;
 if( open my $e, '>>', "$WORKDIR/notify.log" ){
-	my ($sec, $min, $hour, $day, $mon, $year) = localtime time;
 	foreach my $a (@ARGV){
 		print $e "$now ARGV $a\n";
 	}

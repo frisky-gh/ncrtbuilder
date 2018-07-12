@@ -24,6 +24,20 @@ my %var = (
 		my ($text, $re) = @_;
 		if( $text =~ m"$re" ){ return 1; }
 		else                 { return undef; }
+	},
+	'sub' => sub {
+		my ($text, $re, $replace) = @_;
+		$text =~ s/$re/$replace/;
+		return $text;
+	},
+	'gsub' => sub {
+		my ($text, $re, $replace) = @_;
+		$text =~ s/$re/$replace/g;
+		return $text;
+	},
+	'split' => sub {
+		my ($text, $re) = @_;
+		return split m"$re", $text;
 	}
 );
 foreach my $key_value ( @ARGV[3..$#ARGV] ){
@@ -32,9 +46,12 @@ foreach my $key_value ( @ARGV[3..$#ARGV] ){
 }
 
 ####
-my $tt = Template->new({ ENCODING => 'utf8' });
+my $tt = Template->new({
+	'ENCODING'     => 'utf8',
+	'INCLUDE_PATH' => $CONFDIR
+});
 my $output;
-unless( $tt->process( "$CONFDIR/smtp.tt", \%var, \$output ) ){
+unless( $tt->process( "smtp.tt", \%var, \$output ) ){
 	die $tt->error . ", stopped";
 }
 my %head;
