@@ -11,20 +11,6 @@
         name: [ dirmngr, nrpe-ng, pynag ]
       tags: [ common ]
 
-    #### DEBUG
-    - name: restart naemon
-      service:
-        name:  naemon
-        state: restarted
-      tags: [ common ]
-    - name: setup modules in ncrt master
-      synchronize:
-        checksum: yes
-        rsync_opts: [ "-OJ", "--chown=root:root" ]
-        src: "{{TOOLHOME}}/ncrtmaster/"
-        dest: "{{NCRTMASTERHOME}}/"
-      tags: [ common ]
-
     #### Naemon
     - name: add repository key
       apt_key:

@@ -95,18 +95,22 @@ foreach my $k ( sort keys %m ){
 	my $critical_occurred;
 	my ($min, $max);
 	
-	if( $v =~ m"(%|MB)$" ){
-		if   ( $1 eq '%' ) { $min = '0.00'; $max = '100.00'; }
-		elsif( $1 eq 'MB' ){ $min = '0.00'; }
-	}
+	next unless $v =~ m"^([-+]?\d+(?:\.\d+)?)(.*)$";
+	my $value = $1;
+	my $unit = $2;
+	if   ( $unit eq '%' ) { $min = '0.00'; $max = '100.00'; }
+	elsif( $unit eq 'MB' ){ $min = '0.00'; }
+
+	my $key_text = $unit ? "$k\[$unit\]" : "$k";
+
 	if( $cm{$k} ){
 		my ($lower, $upper) = @{$cm{$k}};
 		$c = "$lower:$upper";
 		if    ( $v < $lower ){
-			push @c, "$k:$v<$lower";
+			push @c, "$key_text:${value}(lower_crit_thr:$lower)";
 			$critical_occurred = 1;
 		}elsif( $v > $upper ){
-			push @c, "$k:$v>$upper";
+			push @c, "$key_text:${value}(upper_crit_thr:$upper)";
 			$critical_occurred = 1;
 		}
 	}
@@ -117,9 +121,9 @@ foreach my $k ( sort keys %m ){
 		if    ( $critical_occurred ){
 			# ignore
 		}elsif( $v < $lower ){
-			push @w, "$k:$v<$lower";
+			push @w, "$key_text:${value}(lower_warn_thr:$lower)";
 		}elsif( $v > $upper ){
-			push @w, "$k:$v>$upper";
+			push @w, "$key_text:${value}(upper_warn_thr:$upper)";
 		}
 	}
 	my $p = "$k=$v;$w;$c;$min;$max";
@@ -132,7 +136,7 @@ my $rc = 0;
 if( @c )   { $r = 'CRIT'; $rc = 2; }
 elsif( @w ){ $r = 'WARN';  $rc = 1; }
 
-print "$r ", join(' ', @c, @w), "| ", join(' ', @p), "\n";
+print join(' / ', $r, @c, @w), "| ", join(' ', @p), "\n";
 exit $rc;
 
 

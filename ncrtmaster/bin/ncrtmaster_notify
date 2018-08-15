@@ -8,6 +8,17 @@ while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
 our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $CONFDIR = "$TOOLHOME/conf";
 
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
+	foreach my $k ( sort keys %$var ){
+		next if $k eq 'timestamp';
+		push @ltsv, "$k:".$var->{$k};
+	}
+	return join "\t", @ltsv;
+}
+
 #if( @ARGV < 2 ){
 #	print "usage: % $0 DETECTOR_NAME TARGET_NAME [OPTION]\n";
 #	exit 3;
@@ -25,8 +36,64 @@ else{
 }
 unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
 
+#### load detector conf. for agents
+my @notify_rules;
+my $f = "$CONFDIR/ncrtmaster_notify.rules";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(notify|daily|weekly)$";
+		my $host_re    = qr"^$1$";
+		my $service_re = qr"^$2$";
+		my $state_re   = qr"^$3$";
+		my $address_re = qr"^$4$";
+		my $action     = $5;
+		push @notify_rules, [$host_re, $service_re, $state_re, $address_re, $action];
+	}
+	close $f;
+}
+
+####
 my ($sec, $min, $hour, $day, $mon, $year) = localtime time;
 my $now = sprintf "%04d-%02d-%02d_%02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec;
+my $target = $ARGV[0];
+my @argv;
+my %var = ('timestamp' => $now);
+foreach my $a ( @ARGV[1..$#ARGV] ){
+	push @argv, quotemeta $a;
+	next unless $a =~ m"^(\w+)=(.*)$";
+        $var{$1} = $2;
+}
+
+my $last_action;
+foreach my $rule ( @notify_rules ){
+	my ($host_re, $service_re, $state_re, $address_re, $action) = @$rule;
+	next unless $var{HOSTNAME} =~ m"$host_re";
+	next unless $var{SERVICEDESC} =~ m"$service_re";
+	next unless $var{SERVICESTATE} =~ m"$state_re";
+	next unless $target =~ m"$address_re";
+	$last_action = $action;
+}
+if( $last_action eq 'notify' ){
+	#
+}elsif( $last_action eq 'daily' ){
+	if( open my $h, '>>', "$WORKDIR/notify_daily.$target.log" ){
+		print $h var2ltsv(%var), "\n";
+		close $h;
+	}
+	exit 0;
+}elsif( $last_action eq 'weekly' ){
+	if( open my $h, '>>', "$WORKDIR/notify_weekly.$target.log" ){
+		print $h var2ltsv(%var), "\n";
+		close $h;
+	}
+	exit 0;
+}else{
+	exit 0;
+}
+
+####
 if( open my $e, '>>', "$WORKDIR/notify.log" ){
 	foreach my $a (@ARGV){
 		print $e "$now ARGV $a\n";
@@ -35,11 +102,6 @@ if( open my $e, '>>', "$WORKDIR/notify.log" ){
 		print $e "$now ENV $k=$v\n";
 	}
 	close $e;
-}
-
-my @argv;
-foreach my $a ( @ARGV ){
-	push @argv, quotemeta $a;
 }
 
 my @messenger_plugins;

@@ -358,13 +358,13 @@ define service {
 	active_checks_enabled		1
 	passive_checks_enabled		1
 	check_freshness			0       ; Default is to NOT check service 'freshness'
-	check_interval			10
+	check_interval			5
 	retry_interval			1
 	max_check_attempts		3
 	check_period			24x7
 
 	notifications_enabled		1
-	notification_interval		60
+	notification_interval		360
 	notification_options		w,u,c,r
 	notification_period		24x7
 	contact_groups			

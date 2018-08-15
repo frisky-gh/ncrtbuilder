@@ -123,7 +123,7 @@ foreach my $k ( keys %d ){
 	next if $deltam < 1;
 	next if $deltas < 1;
 	if( $k =~ m"^link\[.*\]_(?:tx|rx)_(?:bytes)_cnt$" ){
-		my $v = ($v1 - $v2) / $deltas / 8 / 1000000;
+		my $v = ($v1 - $v2) * 8 / $deltas / 1000000;
 		$d{"${base}_mbps"} = n $v;
 	}else{
 		my $v = ($v1 - $v2) / $deltam;

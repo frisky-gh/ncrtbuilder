@@ -135,7 +135,7 @@ my $rc = 0;
 if( @c )   { $r = 'CRIT'; $rc = 2; }
 elsif( @w ){ $r = 'WARN';  $rc = 1; }
 
-print "$r ", join(' ', @c, @w), "| ", join(' ', @p), "\n";
+print join(' / ', $r, @c, @w), "| ", join(' ', @p), "\n";
 exit $rc;
 
 
