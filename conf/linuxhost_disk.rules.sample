@@ -1,0 +1,9 @@
+# hostpattern		path
+
+.*			/
+.*			/boot
+.*			/dev
+.*			/dev/shm
+.*			/run
+.*			/run/shm
+

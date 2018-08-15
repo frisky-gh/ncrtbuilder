@@ -55,7 +55,7 @@ if( open my $h, '-|', "LANG=C netstat -anut" ){
 		my $p = "$localport/$proto";
 		next unless $rules{$p};
 		if( $foreignport eq '*' ){ $listen{$p}++; }
-		else{ $connections{$p}++; }
+		elsif( $state eq 'ESTABLISHED' ){ $connections{$p}++; }
 		$sendq{$p} += $sendq;
 		$recvq{$p} += $recvq;
 	}

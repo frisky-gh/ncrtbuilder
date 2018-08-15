@@ -2,6 +2,7 @@
 
 use strict;
 use Cwd 'abs_path';
+use URI::Escape;
 
 $0 =~ m"^(.*)/";
 our $TOOLHOME = abs_path("$1/..");
@@ -11,6 +12,9 @@ our $CONFDIR = "$TOOLHOME/conf";
 our $SRCDIR = "$TOOLHOME/src";
 our $TMPDIR = "/tmp";
 our $WORKDIR = "$TMPDIR/ncrt_work";
+
+our $AGENTCONFDIR = "$TOOLHOME/ncrtagent/conf";
+our $MASTERCONFDIR = "$TOOLHOME/ncrtmaster/conf";
 
 #if( @ARGV < 1 ){
 #	print "usage: % $0 CHECK_PLUGIN_NAME\n";
@@ -290,9 +294,13 @@ mkdir "$WORKDIR/ncrtmaster" or die;
 mkdir "$WORKDIR/ncrtagent" or die;
 foreach my $h ( @ncrtmasters ){
 	mkdir "$WORKDIR/ncrtmaster/$h" or die;
+	my $r = system "rsync -aSvx $MASTERCONFDIR/ $WORKDIR/ncrtmaster/$h/";
+	die unless $r == 0;
 }
 foreach my $h ( @ncrtagents ){
 	mkdir "$WORKDIR/ncrtagent/$h" or die;
+	my $r = system "rsync -aSvx $AGENTCONFDIR/ $WORKDIR/ncrtagent/$h/";
+	die unless $r == 0;
 }
 open my $f, '>', "$WORKDIR/targettypes" or die; close $f;
 open my $f, '>', "$WORKDIR/detectors" or die; close $f;
@@ -350,13 +358,13 @@ define service {
 	active_checks_enabled		1
 	passive_checks_enabled		1
 	check_freshness			0       ; Default is to NOT check service 'freshness'
-	check_interval			10
+	check_interval			5
 	retry_interval			1
 	max_check_attempts		3
 	check_period			24x7
 
 	notifications_enabled		1
-	notification_interval		60
+	notification_interval		360
 	notification_options		w,u,c,r
 	notification_period		24x7
 	contact_groups			
@@ -369,7 +377,7 @@ define service {
 	retain_nonstatus_information	1       ; Retain non-status information across program restarts
 	retain_status_information	1       ; Retain status information across program restarts
 
-	action_url			${GRAFANAURL}dashboard/script/naemon2influx-grafana-helper.js?hostname=\$HOSTNAME\$&servicedesc=\$SERVICEDESC\$
+	action_url			${GRAFANAURL}dashboard/script/naemon2influx-grafana-helper.js?hostname=\$_HOSTURLENCODED\$&servicedesc=\$_SERVICEURLENCODED\$
 
 	register			0	; DONT REGISTER THIS DEFINITION - ITS NOT A REAL SERVICE, JUST A TEMPLATE!
 }
@@ -405,7 +413,7 @@ my @detector_plugins;
 my @contact_plugins;
 opendir my $d, $PLUGINSDIR or die;
 while( my $e = readdir $d ){
-	next unless $e =~ m"^build_(?:(ncrtagent|ncrtmaster|targettype)|(contact))_";
+	next unless $e =~ m"^ncrtbuild(?:(detector|targettype)|(contact))_";
 	push @detector_plugins, $e if $1;
 	push @contact_plugins, $e if $2;
 }
@@ -599,14 +607,6 @@ if( open my $f, '>>', "$WORKDIR/ncrt_servicetemplates.cfg" ){
 }
 
 #### write settings
-sub generate_servicestateidmacros ($@) {
-	my ($host, @detectors) = @_;
-	my @macros;
-	foreach my $detector ( @detectors ){
-		push @macros, "\$SERVICESTATEID:$host:$detector\$";
-	}
-	return join ',', @macros;
-}
 sub generate_shortnamelist ($) {
 	return '' unless defined $_[0];
 	return join ',', @{$_[0]};
@@ -617,18 +617,17 @@ if( open my $f, '>', "$WORKDIR/ncrt_hosts.cfg" ){
 		my %p = ( parse_hostname $host );
 		my @settings = generate_settings
 			%{$targettype2opts{$p{targettype}}}, %p;
-		my $servicestates = generate_servicestateidmacros $host,
-			@{$host2services{$host}};
 		my $contacts = generate_shortnamelist $host2contact{$host};
+		my $e_host = uri_escape_utf8($host);
 		####
 		print $f
 		"define host {\n",
 		"	host_name		$host\n",
 		"	use			ncrt-targettype-$p{targettype}\n",
 		"	contacts		$contacts\n",
+		"	_urlencoded		$e_host\n",
 		"	_targettype		$p{targettype}\n",
 		"	_targetname		$p{targetname}\n",
-		"	_servicestates		$servicestates\n",
 		@settings,
 		"}\n";
 	}
@@ -644,6 +643,7 @@ if( open my $f, '>', "$WORKDIR/ncrt_services.cfg" ){
 			generate_settings(%$opts, %p)
 		);
 		my $contacts = generate_shortnamelist $hostservice2contact{$host, $service};
+		my $e_service = uri_escape_utf8($service);
 		####
 		print $f
 		"define service {\n",
@@ -651,6 +651,7 @@ if( open my $f, '>', "$WORKDIR/ncrt_services.cfg" ){
 		"	service_description	$service\n",
 		"	use			ncrtagent-$p{detector}\n",
 		"	contacts		$contacts\n",
+		"	_urlencoded	 	$e_service\n",
 		"	_detectorindex		$p{detectorindex}\n",
 		@settings,
 		"}\n";
@@ -663,6 +664,7 @@ if( open my $f, '>', "$WORKDIR/ncrt_services.cfg" ){
 			generate_settings(%$opts, %p)
 		);
 		my $contacts = generate_shortnamelist $hostservice2contact{$host, $service};
+		my $e_service = uri_escape_utf8($service);
 		####
 		print $f
 		"define service {\n",
@@ -670,6 +672,7 @@ if( open my $f, '>', "$WORKDIR/ncrt_services.cfg" ){
 		"	service_description	$service\n",
 		"	use			ncrtmaster-$p{detector}\n",
 		"	contacts		$contacts\n",
+		"	_urlencoded	 	$e_service\n",
 		"	_detectorindex		$p{detectorindex}\n",
 		@settings,
 		"}\n";
@@ -712,8 +715,10 @@ if( open my $h, '>', $f ){
 		"	contact_name		$user\n",
 		"	host_notification_commands	ncrtmaster_do_nothing\n",
 		"	service_notification_commands	ncrtmaster_do_nothing\n",
-		"	service_notification_period	ncrt_notime\n",
 		"	host_notification_period	ncrt_notime\n",
+		"	service_notification_period	ncrt_notime\n",
+		"	host_notification_options	n\n",
+		"	service_notification_options	n\n",
 		"	host_notifications_enabled	0\n",
 		"	service_notifications_enabled	0\n",
 		"}\n";
@@ -725,14 +730,16 @@ if( open my $h, '>', $f ){
 	foreach my $address ( sort keys %addresses ){
 		print $h
 		"define contact {\n",
-		"	contact_name		$address\n",
-		"	email			$address\n",
-		"	host_notification_commands	ncrtmaster_notify\n",
+		"	contact_name			$address\n",
+		"	email				$address\n",
+		"	host_notification_commands	ncrtmaster_do_nothing\n",
 		"	service_notification_commands	ncrtmaster_notify\n",
-		"	service_notification_period	ncrt_anytime\n",
 		"	host_notification_period	ncrt_anytime\n",
+		"	service_notification_period	ncrt_anytime\n",
+		"	host_notification_options	n\n",
 		"	service_notification_options	w,u,c,r\n",
-		"	host_notification_options	d,r\n",
+		"	host_notifications_enabled	0\n",
+		"	service_notifications_enabled	1\n",
 		"}\n";
 	}
 	close $h;
