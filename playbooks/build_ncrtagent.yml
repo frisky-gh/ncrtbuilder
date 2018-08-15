@@ -77,7 +77,7 @@
         insertafter: EOF
       with_items:
         - { key: dont_blame_nrpe, value: 1 }
-      notify: restart nrpe
+      notify: "restart {{AGENTPACKAGE}}"
       tags: [ nrpe ]
 
     - name: setup nrpe server tls
@@ -89,7 +89,7 @@
       with_items:
         - { key: ssl_cert_file, value: /etc/nagios/ncrt_cert.pem }
         - { key: ssl_privatekey_file, value: /etc/nagios/ncrt_key.pem }
-      notify: restart nrpe
+      notify: "restart {{AGENTPACKAGE}}"
       tags: [ nrpetls ]
 
     - name: setup nrpe-ng server
@@ -102,7 +102,7 @@
         - { key: ssl_cert_file, value: /etc/nagios/ncrt_cert.pem }
         - { key: ssl_key_file, value: /etc/nagios/ncrt_key.pem }
         - { key: dont_blame_nrpe, value: 1 }
-      notify: restart nrpe
+      notify: "restart {{AGENTPACKAGE}}"
       tags: [ nrpe-ng ]
 
     - name: setup settings in ncrt agent
@@ -112,14 +112,14 @@
         rsync_opts: [ "-OJ", "--chown=root:root" ]
         src: "{{WORKDIR}}/ncrtagent/{{ansible_hostname}}/"
         dest: "{{NCRTAGENTHOME}}/conf/"
-      notify: restart nrpe
+      notify: "restart {{AGENTPACKAGE}}"
       tags: [ common ]
 
     - name: setup settings in ncrt agent
       template:
         src: ncrt_nrpe_commands.cfg
         dest: "{{ nrpeconfdir[ansible_os_family] }}/ncrt_nrpe_commands.cfg"
-      notify: restart nrpe
+      notify: "restart {{AGENTPACKAGE}}"
       tags: [ common ]
 
   handlers:
@@ -131,13 +131,11 @@
       service:
         name:  nrpe
         state: restarted
-      tags: [ nrpe ]
 
-    - name: restart nrpe
+    - name: restart nrpe-ng
       service:
         name:  nrpe-ng
         state: restarted
-      tags: [ nrpe-ng ]
 
 
 

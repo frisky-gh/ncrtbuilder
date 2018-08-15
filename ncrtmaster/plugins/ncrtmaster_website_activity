@@ -58,7 +58,7 @@ if( open my $h, '<', $f ){
 		$url .= ":$5" if $5;
 		$url .= $path_query if $path_query;
 		my $output_url = $url;
-		$output_url =~ s{[^-.\w:%/]}{"#".uc unpack("H2",$&)}eg;
+		$output_url =~ s{[^-.\w:%/]}{"*".uc unpack("H2",$&)}eg;
 		push @rules, [$url, $status, $args, $output_url];
 	}
 	close $h;
