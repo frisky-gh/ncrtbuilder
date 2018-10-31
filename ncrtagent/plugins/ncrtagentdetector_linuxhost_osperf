@@ -100,11 +100,12 @@ if( open my $f, '<', '/proc/loadavg' ){
 	$m{'loadavg'} = n $loadavg;
 }
 
-# loadavg
+# io
 if( open my $f, '-|', 'LANG=C sar -b 1 5' ){
-	while( <$f> ){}
+	my $last;
+	while( <$f> ){ $last = $_; }
 	close $f;
-	my @avg = split m"\s+";
+	my @avg = split m"\s+", $last;
 	$m{'io_tps'} = n $avg[1];
 	$m{'io_rtps'} = n $avg[2];
 	$m{'io_wtps'} = n $avg[3];

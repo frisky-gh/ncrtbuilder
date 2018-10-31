@@ -187,6 +187,7 @@ our $GRAFANAURL     = $ncrtconf{'GRAFANAURL'};
 our $GRAFANADB      = $ncrtconf{'GRAFANADB'};
 our $GRAFANAUSER    = $ncrtconf{'GRAFANAUSER'};
 our $GRAFANAPASSWD  = $ncrtconf{'GRAFANAPASSWD'};
+our $GRAFANAORGID   = $ncrtconf{'GRAFANAORGID'};
 our $INFLUXDBHOST        = $ncrtconf{'INFLUXDBHOST'} || 'localhost';
 our $INFLUXDBPORT        = $ncrtconf{'INFLUXDBPORT'} || '8086';
 our $INFLUXDBADMINUSER   = $ncrtconf{'INFLUXDBADMINUSER'} || 'admin';
@@ -314,6 +315,8 @@ open my $f, '>', "$WORKDIR/users" or die; close $f;
 open my $f, '>', "$WORKDIR/addresses" or die; close $f;
 
 ####
+my $action_url = "${GRAFANAURL}dashboard/script/naemon2influx-grafana-helper.js?hostname=\$_HOSTURLENCODED\$&servicedesc=\$_SERVICEURLENCODED\$";
+$action_url .= "&orgId=$GRAFANAORGID" if $GRAFANAORGID;
 open my $f, '>', "$WORKDIR/ncrt_hosttemplates.cfg" or die;
 print $f <<"EOF";
 # host settings for Nagios / Naemon
@@ -377,7 +380,7 @@ define service {
 	retain_nonstatus_information	1       ; Retain non-status information across program restarts
 	retain_status_information	1       ; Retain status information across program restarts
 
-	action_url			${GRAFANAURL}dashboard/script/naemon2influx-grafana-helper.js?hostname=\$_HOSTURLENCODED\$&servicedesc=\$_SERVICEURLENCODED\$
+	action_url			$action_url
 
 	register			0	; DONT REGISTER THIS DEFINITION - ITS NOT A REAL SERVICE, JUST A TEMPLATE!
 }
@@ -392,6 +395,7 @@ print $f <<"EOF";
  GRAFANADB:           "$GRAFANADB"
  GRAFANAUSER:         "$GRAFANAUSER"
  GRAFANAPASSWD:       "$GRAFANAPASSWD"
+ GRAFANAORGID:        "$GRAFANAORGID"
  NCRTAGENTHOME:       "$NCRTAGENTHOME"
  NCRTMASTERHOME:      "$NCRTMASTERHOME"
  NAEMON2INFLUX_DEB:   "$NAEMON2INFLUX_DEB"
@@ -733,7 +737,7 @@ if( open my $h, '>', $f ){
 		"	contact_name			$address\n",
 		"	email				$address\n",
 		"	host_notification_commands	ncrtmaster_do_nothing\n",
-		"	service_notification_commands	ncrtmaster_notify\n",
+		"	service_notification_commands	ncrtmaster_alertspooler\n",
 		"	host_notification_period	ncrt_anytime\n",
 		"	service_notification_period	ncrt_anytime\n",
 		"	host_notification_options	n\n",
