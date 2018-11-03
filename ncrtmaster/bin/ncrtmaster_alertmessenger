@@ -1,0 +1,99 @@
+#!/usr/bin/perl
+
+use strict;
+
+$0 =~ m"^(.*)/";
+our $TOOLHOME = "$1/..";
+while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+our $PLUGINSDIR = "$TOOLHOME/plugins";
+our $CONFDIR = "$TOOLHOME/conf";
+
+####
+if( @ARGV < 1 ){
+	print "usage: % $0 ACTION [OPTION]\n";
+	print "    \"incidentlist\" is a list of incident that occured in target system.\n";
+	print "    \"incidentchangelog\" is a history of changes which incidentlist.\n";
+	print "    \"alertmessenger\" updates incidentlists and incidentchangelog in all target systems by alertlogs.\n";
+	print "    alertcategory from alertlogs.\n";
+	print "    alertcategory has 3 states,  from alertlogs.\n";
+	print "    alertmessenger sendes incidentlist and incidentchangelog\n";
+	print "    by mail.\n";
+        exit 3;
+}
+
+# setup work directory
+our $WORKDIR;
+if( $ENV{'HOME'} ){ $WORKDIR = $ENV{'HOME'} . "/.ncrt"; }
+else{
+        my ($name, $passwd, $uid, $gid, $quota, $comment, $gcos, $home, $shell, $expire ) = getpwuid $<;
+        $WORKDIR = "$home/.ncrt";
+}
+unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
+
+####
+sub list_alertsystems () {
+	my %systems;
+	if( opendir my $d, $WORKDIR ){
+		while( my $e = readdir $d ){
+			next unless $e =~ m"^alert\.(\w+)\.(.*)\.(log|status|changelog|priority)$";
+			$systems{"$1 $2"} = 1;
+		}
+		closedir $d;
+	}
+	return sort keys %systems;
+}
+
+sub read_incideninfos ($) {
+	my ($system) = @_;
+}
+
+sub update_incidentinfos ($$$) {
+	my ($log, $last_list, $last_changelog) = @_;
+	my $curr_list    = dup_incidentlist    $last_list;
+	my $curr_changelog = dup_incidentchangelog $last_changelog;
+
+	foreach my $entry ( @$log ){
+		my ($h, $s, $t, $state, $desc) = @$entry;
+		my $curr_state = get_monitoringstate $curr_list, $h, $s;
+		if    ( $state eq 'OK' and $curr_state eq '' ){
+		}elsif( $state eq 'OK' and $curr_state ne '' ){
+			unset_incident $curr_list, $h, $s, $t, $state;
+			append_incident $curr_changelog, $h, $s, $t, $state, $desc;
+		}elsif( $state ne 'OK' and $curr_state eq '' ){
+			set_incident $curr_list, $h, $s, $t, $state;
+			append_incident $curr_changelog, $h, $s, $t, $state, $desc;
+		}elsif( $state eq $curr_state ){
+			set_incident $curr_list, $h, $s, $t, $state, $desc;
+		}else{
+			set_incident $curr_list, $h, $s, $t, $state, $desc;
+			append_incident $curr_changelog, $h, $s, $t, $state, $desc;
+		}
+	}
+
+	return $curr_list, $curr_changelog;
+}
+
+# 
+sub update_aaa {
+	my ($log, $last_list, $curr_list, $last_changelog, $curr_changelog) = @_;
+
+	# priority low: when changelog has been updated.
+	if( cmp_changelog $last_changelog, $curr_changelog ){
+	}
+
+	# priority mid: when status has been updated.
+	if( cmp_status $last_status, $curr_status ){
+	}
+
+	# priority high: when system status has been changed to NG.
+}
+
+foreach my $system ( list_alertsystems ){
+	my ($log, $status, $changelog, $priority) = read_alertinfos $system;
+
+	
+}
+
+
+
+
