@@ -36,6 +36,8 @@
           - libemail-sender-perl
           - libemail-mime-perl
           - libtemplate-perl
+          - libstring-random-perl
+          - libmime-encwords-perl
       tags: [ common ]
 
 #      notify: restart naemon
@@ -183,12 +185,12 @@
       tags: [ common ]
 
     #### Grafana
-    - name: fix #843263
-      lineinfile:
-        dest: /usr/share/grafana/public/app/app.js
-        regexp: "'ang-drag-drop',"
-        line:   "    //'ang-drag-drop',"
-      tags: [ common ]
+    #- name: fix #843263
+    #  lineinfile:
+    #    dest: /usr/share/grafana/public/app/app.js
+    #    regexp: "'ang-drag-drop',"
+    #    line:   "    //'ang-drag-drop',"
+    #  tags: [ common ]
 
     #### NCRT
     - name: setup modules in ncrt master
@@ -264,6 +266,7 @@
       service:
         name:  naemon
         state: restarted
+        use:   service
       tags: [ common ]
 
 

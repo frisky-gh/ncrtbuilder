@@ -1,0 +1,2 @@
+# host		service		recipient	params
+.*		.*		.*		NG_LIMIT=300,NGHISTORY_LIMIT=1440

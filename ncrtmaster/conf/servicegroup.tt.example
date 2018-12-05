@@ -1,0 +1,26 @@
+Subject: [ALERT] "[%SERVICEGROUP%]" Status has Changed
+From: "Naemon" <admin@example.com>
+To: "You" <[%MAILTO%]>
+
+=== Current NG Status ===
+
+host                 service              state
+-------------------- -------------------- ------
+[% FOREACH ng IN ngs -%]
+[%     host_type = split(ng.host, "/") -%]
+[%     host = host_type.0 %][% type = host_type.1 -%]
+[%     detector = sub(ng.service, "^[^_]*_") -%]
+[%     safesprintf("%-20s %-20s %s", host, service, ng.state) %]
+[% END -%]
+
+=== Recent NG Status Changes ===
+
+timestamp           host                 service              state change
+------------------- -------------------- -------------------- -------------
+[% FOREACH ngchange IN nghistory -%]
+[%     host_type = split(ng.host, "/") -%]
+[%     host = host_type.0 %][% type = host_type.1 -%]
+[%     detector = sub(ng.service, "^[^_]*_") -%]
+[%     safesprintf("%-19s %-20s %-20s %s->%s", ngchange.timestamp, host, service, ngchange.laststate, ngchange.state) %]
+[% END -%]
+

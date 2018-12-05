@@ -32,7 +32,7 @@ my ($sec, $min, $hour, $day, $mon, $year) = localtime time;
 my $now = sprintf "%04d-%02d-%02d_%02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec;
 my $recipient = $ARGV[0];
 my @argv;
-my %var = ('timestamp' => $now);
+my %var = ('timestamp' => $now, 'recipient' => $recipient);
 foreach my $a ( @ARGV[1..$#ARGV] ){
 	push @argv, quotemeta $a;
 	next unless $a =~ m"^(\w+)=(.*)$";
@@ -48,63 +48,19 @@ else{
 }
 unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
 
-#### load alertspooler conf.
-my @divide_rules;
-my $f = "$CONFDIR/ncrtmaster_alertspooler.rules";
-if( open my $h, '<', $f ){
-	while( <$h> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(notify|daily|weekly)$";
-		my $host_re    = qr"^$1$";
-		my $service_re = qr"^$2$";
-		my $state_re   = qr"^$3$";
-		my $address_re = qr"^$4$";
-		my $system     = $5;
-		push @divide_rules, [$host_re, $service_re, $state_re, $address_re, $system];
-	}
-	close $f;
+####
+my @servicegroup;
+if( $var{SERVICEGROUPNAMES} ){
+	@servicegroup = split m",", $var{SERVICEGROUPNAMES};
 }
 
-####
-my $last_system;
-foreach my $rule ( @divide_rules ){
-	my ($host_re, $service_re, $state_re, $address_re, $system) = @$rule;
-	next unless $var{HOSTNAME} =~ m"$host_re";
-	next unless $var{SERVICEDESC} =~ m"$service_re";
-	next unless $var{SERVICESTATE} =~ m"$state_re";
-	next unless $recipient =~ m"$address_re";
-	$last_system = $system;
-}
-
-####
-if( open my $h, '>>', "$WORKDIR/alertlog.$last_system.$recipient.log" ){
+foreach my $servicegroup ( @servicegroup ){
+	open my $h, '>>', "$WORKDIR/sg_changes.$servicegroup" or do{
+		next;
+	};
 	print $h var2ltsv(%var), "\n";
 	close $h;
 }
 exit 0;
 
-####
-#if( open my $e, '>>', "$WORKDIR/notify.log" ){
-#	foreach my $a (@ARGV){
-#		print $e "$now ARGV $a\n";
-#	}
-#	while( my ($k, $v) = each %ENV ){
-#		print $e "$now ENV $k=$v\n";
-#	}
-#	close $e;
-#}
-
-#my @messenger_plugins;
-#opendir my $d, $PLUGINSDIR or die;
-#while( my $e = readdir $d ){
-#	next unless $e =~ m"^ncrtmaster(messenger)_";
-#        push @messenger_plugins, $e if $1;
-#}
-#closedir $d;
-#foreach my $plugin ( @messenger_plugins ){
-#	my $r = system "$PLUGINSDIR/$plugin $CONFDIR $WORKDIR @argv";
-#}
-#
-#exit 0;
 

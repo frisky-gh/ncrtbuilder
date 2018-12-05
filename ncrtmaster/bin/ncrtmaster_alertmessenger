@@ -1,99 +1,924 @@
 #!/usr/bin/perl
 
 use strict;
+use String::Random 'random_regex';
+use Encode;
+use MIME::EncWords ':all';
 
 $0 =~ m"^(.*)/";
 our $TOOLHOME = "$1/..";
 while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
 our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $CONFDIR = "$TOOLHOME/conf";
+our $SENDMAILEXE = '/usr/lib/sendmail';
+
 
 ####
 if( @ARGV < 1 ){
-	print "usage: % $0 ACTION [OPTION]\n";
-	print "    \"incidentlist\" is a list of incident that occured in target system.\n";
-	print "    \"incidentchangelog\" is a history of changes which incidentlist.\n";
-	print "    \"alertmessenger\" updates incidentlists and incidentchangelog in all target systems by alertlogs.\n";
-	print "    alertcategory from alertlogs.\n";
-	print "    alertcategory has 3 states,  from alertlogs.\n";
-	print "    alertmessenger sendes incidentlist and incidentchangelog\n";
-	print "    by mail.\n";
-        exit 3;
+	print "usage: % $0 {cron|...}\n";
+	exit 3;
 }
 
 # setup work directory
 our $WORKDIR;
 if( $ENV{'HOME'} ){ $WORKDIR = $ENV{'HOME'} . "/.ncrt"; }
 else{
-        my ($name, $passwd, $uid, $gid, $quota, $comment, $gcos, $home, $shell, $expire ) = getpwuid $<;
-        $WORKDIR = "$home/.ncrt";
+	my ($name, $passwd, $uid, $gid, $quota, $comment, $gcos, $home, $shell, $expire ) = getpwuid $<;
+	$WORKDIR = "$home/.ncrt";
 }
 unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
 
 ####
-sub list_alertsystems () {
-	my %systems;
-	if( opendir my $d, $WORKDIR ){
-		while( my $e = readdir $d ){
-			next unless $e =~ m"^alert\.(\w+)\.(.*)\.(log|status|changelog|priority)$";
-			$systems{"$1 $2"} = 1;
-		}
-		closedir $d;
+my %conf;
+if( open my $h, '<', "$CONFDIR/servicegroup.conf" ){
+	while( <$h> ){
+                chomp;
+                next if m"^\s*(#|$)";
+                die unless m"^(\w+)=(.*)$";
+                $conf{$1} = $2;
+        }
+	close $h;
+}
+
+# for debug
+our $DEBUG = $conf{DEBUG} // 0;
+
+# mail address of admin.
+our $MAILFROM = $conf{MAILFROM} // "admin\@example.com";
+
+# session directory
+our $SESSIONDIR = $conf{SESSIONDIR} // "/var/www/ncrtmaster";
+
+# timestamps
+sub timestamp ($) {
+	my ($sec, $min, $hour, $day, $mon, $year) = localtime shift;
+	return sprintf "%04d-%02d-%02d_%02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec;
+}
+our $NOW = timestamp time;
+our $NG_LIMIT	= timestamp time -  6 * 60 * 60;
+our $NGHISTORY_LIMIT = timestamp time - 24 * 60 * 60;
+our $SESSION_LIMIT   = timestamp time - 24 * 60 * 60;
+our $RECIPIENT_LIMIT = timestamp time -  6 * 60 * 60;
+our $GRAPHS_LIMIT    = timestamp time -      10 * 60;
+our $MINOR_DETECTION_LIMIT = timestamp time - 8 * 60 * 60;
+our $MAJOR_DETECTION_LIMIT = timestamp time -      1 * 60;
+our $CRIT_DETECTION_LIMIT  = timestamp time -      1 * 60;
+our $MINOR_LASTSEND_LIMIT  = timestamp time - 8 * 60 * 60;
+our $MAJOR_LASTSEND_LIMIT  = timestamp time -      1 * 60;
+our $CRIT_LASTSEND_LIMIT   = timestamp time -      5 * 60;
+our $HEALTH_THRESHOLD = 10;
+
+####
+sub safesprintf ( @ ){
+	my ($format, @args) = @_;
+	my $text = sprintf $format, @args;
+	$text =~ s{([\x00-\x1f\x7f])}{"\\x" . unpack('H2', $1);}eg;
+	return $text;
+}
+
+our $LOG_HANDLE;
+sub openlog () {
+	open $LOG_HANDLE, '>>', "$WORKDIR/sg_log" or return;
+	my $old = select $LOG_HANDLE;
+	$| = 1;
+	select $old;
+}
+
+sub debuglog ( $;@ ){
+	return unless $DEBUG;
+	openlog unless defined $LOG_HANDLE;
+	print $LOG_HANDLE timestamp(time), " ", safesprintf(@_), "\n";
+}
+
+sub errorlog ( $;@ ){
+	openlog unless defined $LOG_HANDLE;
+	print $LOG_HANDLE timestamp(time), " ", safesprintf(@_), "\n";
+}
+
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
+	foreach my $k ( sort keys %$var ){
+		next if $k eq 'timestamp';
+		push @ltsv, "$k:".$var->{$k};
 	}
-	return sort keys %systems;
+	return join "\t", @ltsv;
 }
 
-sub read_incideninfos ($) {
-	my ($system) = @_;
+sub ltsv2var ( $ ){
+	my ($ltsv) = @_;
+	my %var;
+	foreach my $kv ( split m"\t", $ltsv ){
+		$kv =~ m"^([-.\w]+):(.*)$" or do {
+			next;
+		};
+		my $k = $1;
+		my $v = $2;
+		$var{$k} = $v;
+	}
+	return %var;
 }
 
-sub update_incidentinfos ($$$) {
-	my ($log, $last_list, $last_changelog) = @_;
-	my $curr_list    = dup_incidentlist    $last_list;
-	my $curr_changelog = dup_incidentchangelog $last_changelog;
+sub sendmail ($$$) {
+	my ($mail, $mailfrom, $mailto) = @_;
+	my $from_quoted = quotemeta $mailfrom;
+	my $to_quoted = quotemeta $mailto;
 
-	foreach my $entry ( @$log ){
-		my ($h, $s, $t, $state, $desc) = @$entry;
-		my $curr_state = get_monitoringstate $curr_list, $h, $s;
-		if    ( $state eq 'OK' and $curr_state eq '' ){
-		}elsif( $state eq 'OK' and $curr_state ne '' ){
-			unset_incident $curr_list, $h, $s, $t, $state;
-			append_incident $curr_changelog, $h, $s, $t, $state, $desc;
-		}elsif( $state ne 'OK' and $curr_state eq '' ){
-			set_incident $curr_list, $h, $s, $t, $state;
-			append_incident $curr_changelog, $h, $s, $t, $state, $desc;
-		}elsif( $state eq $curr_state ){
-			set_incident $curr_list, $h, $s, $t, $state, $desc;
+	open my $h, '|-', "$SENDMAILEXE -f $from_quoted $to_quoted" or die;
+	chomp $mail;
+	my @mail = split m"\n", $mail;
+	while( 1 ){
+		$_ = shift @mail;
+		last if $_ eq '';
+
+		my $text = encode_mimewords $_;
+		print $h encode_utf8($text), "\n";
+	}
+	print $h "MIME-Version: 1.0\n";
+	print $h "Content-Transfer-Encoding: 8bit\n";
+	print $h "Content-Type: text/plain; charset=utf-8\n",
+		"\n";
+	while( 1 ){
+		$_ = shift @mail;
+		last unless defined $_;
+		my $text = decode_utf8( $_ );
+		print $h encode_utf8($text), "\n";
+	}
+	close $h;
+}
+
+#### read / write functions
+sub read_internal_multiline ($$@) {
+	my ($f, $action, @fields) = @_;
+	open my $h, '<', $f or do {
+		die "$f: cannot open,stopped";
+	};
+	my %obj;
+	while( <$h> ){
+		chomp;
+		my %v = ltsv2var $_;
+		foreach my $i ( @fields ){
+			die "$f:$.: illegal format, not exist $i, stopped" unless defined $v{$i};
+		}
+		my $key = &$action( \%v );
+		$obj{$key} = \%v if defined $key;
+	}
+	close $h;
+	return \%obj;
+}
+
+sub read_internal_singleline ($@) {
+	my ($f, @fields) = @_;
+	open my $h, '<', $f or do {
+		die "$f: cannot open,stopped";
+	};
+	my $s = <$h>;
+	chomp $s;
+	my %v = ltsv2var $s;
+	foreach my $i ( @fields ){
+		die "$f:$.: illegal format, stopped" unless defined $v{$i};
+	}
+	close $h;
+	return \%v;
+}
+
+sub read_internal_timestamp ($) {
+	my ($f, $action, @fields) = @_;
+	open my $h, '<', $f or do {
+		die "$f: cannot open,stopped";
+	};
+	my $s = <$h>;
+	chomp $s;
+	my %v = ltsv2var $s;
+	die "$f:$.: illegal format, stopped" unless defined $v{timestamp};
+	close $h;
+	return $v{timestamp};
+}
+
+sub write_internal_multiline ($$) {
+	my ($f, $obj) = @_;
+	if( !defined $obj || %$obj == 0 ){
+		unlink $f if -f $f;
+		return;
+	}
+	open my $h, '>', $f or do {
+		die "$f: cannot open,stopped";
+	};
+	foreach my $k ( sort keys %$obj ){
+		print $h var2ltsv %{$obj->{$k}}, "\n";
+	}
+	close $h;
+}
+
+sub write_internal_singleline ($$) {
+	my ($f, $obj) = @_;
+	if( !defined $obj || %$obj == 0 ){
+		unlink $f if -f $f;
+		return;
+	}
+	open my $h, '>', $f or do {
+		die "$f: cannot open,stopped";
+	};
+	print $h var2ltsv %{$obj}, "\n";
+	close $h;
+}
+
+sub write_internal_timestamp ($$) {
+	my ($f, $timestamp) = @_;
+	if( !defined $timestamp ){
+		unlink $f if -f $f;
+		return;
+	}
+	open my $h, '>', $f or do {
+		die "$f: cannot open,stopped";
+	};
+	my %var = ('timestamp' => $timestamp);
+	print $h var2ltsv %var, "\n";
+	close $h;
+}
+
+sub read_servicegroup_ngs ($) {
+	my ($sg) = @_;
+	my $ngs = read_internal_multiline
+		"$WORKDIR/sg_ngs.$sg",
+		sub {
+			my $v = shift;
+			return undef if $v->{timestamp} lt $NG_LIMIT;
+			return $v->{host}.",".$v->{service};
+		},
+		'timestamp',
+		'host',
+		'service',
+		'state',
+		'output';
+	return $ngs;
+}
+
+sub write_servicegroup_ngs ($$) {
+	my ($sg, $ngs) = @_;
+	write_internal_multiline "$WORKDIR/sg_ngs.$sg", $ngs;
+}
+
+sub read_servicegroup_recipients ($) {
+	my ($sg) = @_;
+	my $recipients = read_internal_multiline
+		"$WORKDIR/sg_recipients.$sg",
+		sub {
+			my $v = shift;
+			return undef if $v->{timestamp} lt $RECIPIENT_LIMIT;
+			return $v->{recipient};
+		},
+		'timestamp',
+		'recipient';
+	return $recipients;
+}
+
+sub write_servicegroup_recipients ($$) {
+	my ($sg, $recipients) = @_;
+	write_internal_multiline "$WORKDIR/sg_recipients.$sg", $recipients;
+}
+
+sub read_servicegroup_session ($) {
+	my ($sg) = @_;
+	my $session = read_internal_singleline
+		"$WORKDIR/sg_session.$sg",
+		'timestamp',
+		'id';
+	$session->{expired} = $session->{timestamp} lt $SESSION_LIMIT;
+	return $session;
+}
+
+sub read_servicegroup_nghistory ($) {
+	my ($sg) = @_;
+	my $nghistory = read_internal_multiline
+		"$WORKDIR/sg_nghistory.$sg",
+		sub {
+			my $v = shift;
+			return undef if $v->{timestamp} lt $NGHISTORY_LIMIT;
+			return join ',', $v->{timetamp}, $v->{host}, $v->{service};
+		},
+		'timestamp',
+		'host',
+		'service',
+		'state',
+		'laststate';
+	return $nghistory;
+}
+
+sub write_servicegroup_nghistory ($$) {
+	my ($sg, $nghistory) = @_;
+	write_internal_multiline "$WORKDIR/sg_nghistory.$sg", $nghistory;
+}
+
+sub read_servicegroup_graphs ($) {
+	my ($sg) = @_;
+	my $f = "$WORKDIR/sg_graphs.$sg";
+	open my $h, '<', $f or do {
+		die;
+	};
+	my $ltsv = <$h>;
+	close $h;
+
+	chomp $ltsv;
+	my %v = ltsv2var $ltsv;
+	my $timestamp = $v{timestamp};
+	my $expired = $timestamp lt $GRAPHS_LIMIT;
+	my $graphs = {
+		'timestamp' => $timestamp,
+		'expired'   => $expired,
+		'id'	=> $v{id},
+	};
+	return $graphs;
+}
+
+sub read_recipient_ngs ($$) {
+	my ($sg, $recipient) = @_;
+	my $ngs = read_internal_multiline
+		"$WORKDIR/sg_recipient_ngs.$sg.$recipient",
+		sub {
+			my $v = shift;
+			return undef if $v->{timestamp} lt $NG_LIMIT;
+			return join ',', $v->{host}, $v->{service};
+		},
+		'timestamp',
+		'host',
+		'service',
+		'state',
+		'output';
+	return $ngs;
+}
+
+sub write_recipient_ngs ($$$) {
+	my ($sg, $recipient, $ngs) = @_;
+	write_internal_multiline "$WORKDIR/sg_recipient_ngs.$sg.$recipient", $ngs;
+}
+
+sub read_servicegroup_lastchange ($) {
+	my ($sg) = @_;
+	return read_internal_timestamp "$WORKDIR/sg_lastchange.$sg";
+}
+
+sub write_servicegroup_lastchange ($$) {
+	my ($sg, $lastchange) = @_;
+	write_internal_timestamp "$WORKDIR/sg_lastchange.$sg", $lastchange;
+}
+
+sub read_recipient_lastchange ($$) {
+	my ($sg, $recipient) = @_;
+	return read_internal_timestamp "$WORKDIR/sg_recipient_lastchange.$sg.$recipient";
+}
+
+sub write_recipient_lastchange ($$$) {
+	my ($sg, $recipient, $lastchange) = @_;
+	write_internal_timestamp "$WORKDIR/sg_recipient_lastchange.$sg.$recipient", $lastchange;
+}
+
+sub read_recipient_lastsend ($$) {
+	my ($sg, $recipient) = @_;
+	return read_internal_timestamp "$WORKDIR/sg_recipient_lastsend.$sg.$recipient";
+}
+
+sub write_recipient_lastsend ($$$) {
+	my ($sg, $recipient, $lastchange) = @_;
+	write_internal_timestamp "$WORKDIR/sg_recipient_lastsend.$sg.$recipient", $lastchange;
+}
+
+sub read_recipient_minor_detection_timestamp ($$) {
+	my ($sg, $recipient) = @_;
+	my $f = "$WORKDIR/sg_recipient_minor_detection.$sg.$recipient";
+	return read_internal_timestamp $f;
+}
+
+sub write_recipient_minor_detection_timestamp ($$$) {
+	my ($sg, $recipient, $timestamp) = @_;
+	write_internal_timestamp "$WORKDIR/sg_recipient_minor_detection.$sg.$recipient", $timestamp;
+}
+
+sub read_recipient_major_detection_timestamp ($$) {
+	my ($sg, $recipient) = @_;
+	my $f = "$WORKDIR/sg_recipient_major_detection.$sg.$recipient";
+	return read_internal_timestamp $f;
+}
+
+sub write_recipient_major_detection_timestamp ($$$) {
+	my ($sg, $recipient, $timestamp) = @_;
+	write_internal_timestamp "$WORKDIR/sg_recipient_major_detection.$sg.$recipient", $timestamp;
+}
+
+sub read_recipient_crit_detection_timestamp ($$) {
+	my ($sg, $recipient) = @_;
+	my $f = "$WORKDIR/sg_recipient_crit_detection.$sg.$recipient";
+	return read_internal_timestamp $f;
+}
+
+sub write_recipient_crit_detection_timestamp ($$$) {
+	my ($sg, $recipient, $timestamp) = @_;
+	write_internal_timestamp "$WORKDIR/sg_recipient_crit_detection.$sg.$recipient", $timestamp;
+}
+
+#### service groups functions
+sub load_servicegroups () {
+	my %sgs;
+	opendir my $d, $WORKDIR or do {
+		return undef;
+	};
+	while( my $e = readdir $d ){
+		if    ( $e =~ m"^sg_changes\.(\w+)$" ){
+			my $sg = $1;
+			$sgs{$sg}->{has_changes} = 1;
+		}elsif( $e =~ m"^sg_lastchange\.(\w+)$" ){
+			my $sg = $1;
+			my $lastchange = read_servicegroup_lastchange $sg;
+			$sgs{$sg}->{lastchange} = $lastchange;
+		}elsif( $e =~ m"^sg_ngs\.(\w+)$" ){
+			my $sg = $1;
+			my $ngs = read_servicegroup_ngs $sg;
+			$sgs{$sg}->{ngs} = $ngs;
+		}elsif( $e =~ m"^sg_nghistory\.(\w+)$" ){
+			my $sg = $1;
+			my $nghistory = read_servicegroup_nghistory $sg;
+			$sgs{$sg}->{nghistory} = $nghistory;
+		}elsif( $e =~ m"^sg_recipients\.(\w+)$" ){
+			my $sg = $1;
+			my $recipients = read_servicegroup_recipients $sg;
+			$sgs{$sg}->{recipients} = $recipients;
+		}elsif( $e =~ m"^sg_session\.(\w+)$" ){
+			my $sg = $1;
+			my $session = read_servicegroup_session $sg;
+			$sgs{$sg}->{session} = $session;
+		}elsif( $e =~ m"^sg_graphs\.(\w+)$" ){
+			my $sg = $1;
+			my $graphs = read_servicegroup_graphs $sg;
+			$sgs{$sg}->{graphs} = $graphs;
+		}
+	}
+	closedir $d;
+	return \%sgs;
+}
+
+sub list_servicegroups ($) {
+	my ($sgs) = @_;
+	return keys %$sgs;
+}
+
+sub servicegroup_has_changes ($$) {
+	my ($sgs, $sg) = @_;
+	return $sgs->{$sg}->{has_changes};
+}
+
+sub servicegroup_has_no_session ($$) {
+	my ($sgs, $sg) = @_;
+	return defined $sgs->{$sg}->{session};
+}
+
+sub servicegroup_has_expired_session ($$) {
+	my ($sgs, $sg) = @_;
+	return undef unless defined $sgs->{$sg}->{session};
+	return $sgs->{$sg}->{session}->{expired};
+}
+
+sub servicegroup_has_no_graphs ($$) {
+	my ($sgs, $sg) = @_;
+	return defined $sgs->{$sg}->{graphs};
+}
+
+sub servicegroup_has_expired_graphs ($$) {
+	my ($sgs, $sg) = @_;
+	return undef unless defined $sgs->{$sg}->{graphs};
+	return $sgs->{$sg}->{graphs}->{expired};
+}
+
+sub get_servicegroup_status ($$) {
+	my ($sgs, $sg) = @_;
+	return undef unless defined $sgs->{$sg};
+	my %status = (
+		'ngs'	     => $sgs->{$sg}->{ngs},
+		'nghistory'  => $sgs->{$sg}->{nghistory},
+		'lastchange' => $sgs->{$sg}->{lastchange},
+	);
+	return \%status;
+}
+
+sub list_servicegroup_recipients ($$) {
+	my ($sgs, $sg) = @_;
+	return () unless defined $sgs->{$sg}->{recipients};
+	return keys %{$sgs->{$sg}->{recipients}};
+}
+
+
+sub update_servicegroup ($$) {
+	my ($sgs, $sg) = @_;
+	my $recipients = $sgs->{$sg}->{recipients};
+	my $ngs	= $sgs->{$sg}->{ngs};
+	my $nghistory  = $sgs->{$sg}->{nghistory};
+	my $lastchange = $sgs->{$sg}->{lastchange};
+	my $f = "$WORKDIR/sg_changes.$sg";
+	my $g = "$WORKDIR/sg_changes.$sg.tmp";
+	rename $f, $g or do {
+		die;
+	};
+	open my $h, '<', $g or do {
+		die;
+	};
+	while( <$h> ){
+		chomp;
+		my %v = ltsv2var $_;
+		my $timestamp = $v{timestamp};
+		my $recipient = $v{recipient};
+		my $host    = $v{HOSTNAME};
+		my $service = $v{SERVICEDESC};
+		my $output  = $v{SERVICEOUTPUT};
+		my $state   = $v{SERVICESTATE};
+		unless( defined $timestamp and defined $recipient and
+			defined $host and defined $service and 
+			defined $output and $state ){
+			print "$f:$.: not exist timestamp.\n" unless defined $timestamp;
+			print "$f:$.: not exist recipient.\n" unless defined $recipient;
+			print "$f:$.: not exist HOSTNAME.\n" unless defined $host;
+			print "$f:$.: not exist SERVICEDESC.\n" unless defined $service;
+			print "$f:$.: not exist SERVICEOUTPUT.\n" unless defined $output;
+			print "$f:$.: not exist SERVICESTATE.\n" unless defined $state;
+			next;
+		}
+
+		# current state = OK, last state = OK
+		if    ( $state eq 'OK' && ! defined $ngs->{"$host,$service"} ){
+			# nothing to do
+		# current state = OK, last state = NG
+		}elsif( $state eq 'OK' && defined $ngs->{"$host,$service"} ){
+			$nghistory->{"$timestamp,$host,$service"} = {
+				'timestamp' => $timestamp,
+				'host' => $host,
+				'service' => $service,
+				'state' => $state,
+				'laststate' => $ngs->{"$host,$service"}->{state},
+			};
+			delete $ngs->{"$host,$service"};
+			$lastchange = $NOW;
+		# current state = NG, last state = OK
+		}elsif( ! defined $ngs->{"$host,$service"} ){
+			$nghistory->{"$timestamp,$host,$service"} = {
+				'timestamp' => $timestamp,
+				'host' => $host,
+				'service' => $service,
+				'state' => $state,
+				'laststate' => 'OK',
+			};
+			$ngs->{"$host,$service"} = {
+				'timestamp' => $timestamp,
+				'host'      => $host,
+				'service'   => $service,
+				'state'     => $state,
+				'output'    => $output,
+			};
+			$lastchange = $NOW;
+		# current state = NG, last state != current state
+		}elsif( $state ne $ngs->{"$host,$service"}->{state} ){
+			$nghistory->{"$timestamp,$host,$service"} = {
+				'timestamp' => $timestamp,
+				'host' => $host,
+				'service' => $service,
+				'state' => $state,
+				'laststate' => $ngs->{"$host,$service"}->{state},
+			};
+			$ngs->{"$host,$service"} = {
+				'timestamp' => $timestamp,
+				'host'      => $host,
+				'service'   => $service,
+				'state'     => $state,
+				'output'    => $output,
+			};
+			$lastchange = $NOW;
+		# current state = NG, last state = current state
 		}else{
-			set_incident $curr_list, $h, $s, $t, $state, $desc;
-			append_incident $curr_changelog, $h, $s, $t, $state, $desc;
+			# nothing to do
+		}
+		$recipients->{$recipient} = {
+			'recipient' => $recipient,
+			'timestamp' => $timestamp,
+		};
+	}
+	close $h;
+	$sgs->{$sg}->{recipients} = $recipients;
+	$sgs->{$sg}->{ngs} = $ngs;
+	$sgs->{$sg}->{nghistory} = $nghistory;
+	write_servicegroup_ngs	$sg, $ngs;
+	write_servicegroup_nghistory  $sg, $nghistory;
+	write_servicegroup_recipients $sg, $recipients;
+	write_servicegroup_lastchange $sg, $lastchange;
+	unlink $g or do {
+		die;
+	};
+	delete $sgs->{$sg}->{has_changes};
+}
+
+sub set_new_session ($$) {
+	my ($sgs, $sg) = @_;
+	my $new_id = random_regex "[0-9a-zA-Z]{32}";
+	$sgs->{$sg}->{session} = $new_id;
+	write_servicegroup_session $sg, $new_id, $NOW;
+}
+
+sub reset_session ($$) {
+	my ($sgs, $sg) = @_;
+	my $new_id = random_regex "[0-9a-zA-Z]{32}";
+	$sgs->{$sg}->{session} = $new_id;
+	write_servicegroup_session $sg, $new_id, $NOW;
+}
+
+sub load_last_report_status ($$) {
+	my ($sg, $recipient) = @_;
+
+	my $ngs;
+	my $lastchange;
+	my $lastsend;
+
+	if( -f "$WORKDIR/sg_recipient_ngs.$sg.$recipient" ){
+		$ngs = read_recipient_ngs $sg, $recipient
+	}
+	if( -f "$WORKDIR/sg_recipient_lastchange.$sg.$recipient" ){
+		$lastchange = read_recipient_lastchange $sg, $recipient
+	}
+	if( -f "$WORKDIR/sg_recipient_lastsend.$sg.$recipient" ){
+		$lastsend = read_recipient_lastsend $sg, $recipient
+	}
+
+	my %status = (
+		'ngs'	=> $ngs,
+		'lastchange' => $lastchange,
+		'lastsend'   => $lastsend,
+	);
+	return \%status;
+}
+
+sub load_next_report ($$) {
+	my ($sg, $recipient) = @_;
+
+	my %report = (
+		'servicegroup' => $sg,
+		'recipient'    => $recipient,
+	);
+	if( -f "$WORKDIR/sg_recipient_minor_detection.$sg.$recipient" ){
+		$report{minor_detection_timestamp} = read_recipient_minor_detection_timestamp $sg, $recipient;
+	}
+	if( -f "$WORKDIR/sg_recipient_major_detection.$sg.$recipient" ){
+		$report{major_detection_timestamp} = read_recipient_major_detection_timestamp $sg, $recipient;
+	}
+	if( -f "$WORKDIR/sg_recipient_crit_detection.$sg.$recipient" ){
+		$report{crit_detection_timestamp} = read_recipient_crit_detection_timestamp $sg, $recipient;
+	}
+	return \%report;
+}
+
+sub update_next_report ($$) {
+	my ($report, $changes) = @_;
+
+	my $sg        = $report->{servicegroup};
+	my $recipient = $report->{recipient};
+
+	if    ( $changes->{minor} and not $report->{minor_detection_timestamp} ){
+		$report->{minor_detection_timestamp} = $NOW;
+		write_recipient_minor_detection_timestamp $sg, $recipient, $NOW;
+	}elsif( not $changes->{minor} and $report->{minor_detection_timestamp} ){
+		delete $report->{minor_detection_timestamp};
+		write_recipient_minor_detection_timestamp $sg, $recipient, undef;
+	}
+	if    ( $changes->{major} and not $report->{major_detection_timestamp} ){
+		$report->{major_detection_timestamp} = $NOW;
+		write_recipient_major_detection_timestamp $sg, $recipient, $NOW;
+	}elsif( $changes->{major} and not $report->{major_detection_timestamp} ){
+		delete $report->{major_detection_timestamp};
+		write_recipient_major_detection_timestamp $sg, $recipient, undef;
+	}
+	if    ( $changes->{crit} and not $report->{crit_detection_timestamp} ){
+		$report->{crit_detection_timestamp} = $NOW;
+		write_recipient_crit_detection_timestamp $sg, $recipient, $NOW;
+	}elsif( $changes->{crit} and not $report->{crit_detection_timestamp} ){
+		delete $report->{crit_detection_timestamp};
+		write_recipient_crit_detection_timestamp $sg, $recipient, undef;
+	}
+
+	$report->{ngs}	                = $changes->{ngs};
+	$report->{nghistory}            = $changes->{nghistory};
+	$report->{nghistory_lastchange} = $changes->{nghistory_lastchange};
+	$report->{report_lastchange}    = $changes->{report_lastchange};
+}
+
+sub download_graphs ($$) {
+	my ($sgs, $sg) = @_;
+}
+
+sub cmp_status ($$) {
+	my ($status, $last_status) = @_;
+	my $ngs      = $status->{ngs};
+	my $last_ngs = $last_status->{ngs};
+	my $nghistory = $status->{nghistory};
+	my $lastchange      = $status->{lastchange};
+	my $last_lastchange = $last_status->{lastchange};
+
+	my $ngnum      = keys %$ngs;
+	my $last_ngnum = keys %$last_ngs;
+	my $health      = $ngnum      < $HEALTH_THRESHOLD;
+	my $last_health = $last_ngnum < $HEALTH_THRESHOLD;
+
+	my %c;
+	while( my ($k, $v) = each %$ngs )     { $c{$k.",",$v->{state}} |= 1; }
+	while( my ($k, $v) = each %$last_ngs ){ $c{$k.",",$v->{state}} |= 2; }
+
+	my $minor_change = $lastchange gt $last_lastchange;
+	my $major_change;
+	while( my ($k, $v) = each %c ){ $major_change = 1 unless $v == 3; }
+	my $crit_change = $health ne $last_health;
+
+	return undef unless $minor_change or $major_change or $crit_change;
+
+	my %changes = (
+		'minor' => $minor_change,
+		'major' => $major_change,
+		'crit'  => $crit_change,
+		'ngs'	=> $ngs,
+		'nghistory'            => $nghistory,
+		'nghistory_lastchange' => $lastchange,
+		'report_lastchange'    => $last_lastchange,
+	);
+	return \%changes;
+}
+
+
+sub report ($$) {
+	my ($next_report, $last_report_status) = @_;
+
+	my $sg         = $next_report->{servicegroup};
+	my $recipient  = $next_report->{recipient};
+	my $ngs        = $next_report->{ngs};
+	my $nghistory  = $next_report->{nghistory};
+	my $nghistory_lastchange = $next_report->{nghistory_lastchange};
+	my $report_lastchange    = $next_report->{report_lastchange};
+
+	my $ngs_text;
+	if( defined $ngs ){
+		$ngs_text .= "host                 service              state\n";
+		$ngs_text .= "-------------------- -------------------- ------\n";
+		foreach my $k ( sort keys %$ngs ){
+			my $v = $ngs->{$k};
+			my $targettype = $v->{host};
+			$targettype =~ s{^.*/}{};
+			my $host       = $v->{host};
+			$host =~ s{/.*$}{};
+			my $service = $v->{service};
+			$service =~ s{^[a-zA-Z0-9]+_}{};
+			$ngs_text .= sprintf "%-20s %-20s %s\n",
+				$host,
+				$service,
+				$v->{state};
 		}
 	}
 
-	return $curr_list, $curr_changelog;
-}
-
-# 
-sub update_aaa {
-	my ($log, $last_list, $curr_list, $last_changelog, $curr_changelog) = @_;
-
-	# priority low: when changelog has been updated.
-	if( cmp_changelog $last_changelog, $curr_changelog ){
+	my $nghistory_text;
+	if( defined $nghistory ){
+		$nghistory_text .= "timestamp           host                 service              state\n";
+		$nghistory_text .= "------------------- -------------------- -------------------- ------\n";
+		foreach my $k ( sort keys %$nghistory ){
+			my $v = $nghistory->{$k};
+			next if defined $report_lastchange and $v->{timestamp} lt $report_lastchange;
+			my $targettype = $v->{host};
+			$targettype =~ s{^.*/}{};
+			my $host       = $v->{host};
+			$host =~ s{/.*$}{};
+			my $service = $v->{service};
+			$service =~ s{^[a-zA-Z0-9]+_}{};
+			$nghistory_text .= sprintf "%-19s %-20s %-20s %s->%s\n",
+				$v->{timestamp},
+				$host,
+				$service,
+				$v->{laststate},
+				$v->{state};
+		}
 	}
 
-	# priority mid: when status has been updated.
-	if( cmp_status $last_status, $curr_status ){
+	my $mail = <<EOF ;
+Subject: $sg status has changed
+From: System <$MAILFROM>
+To: You <$recipient>
+
+=== Recent Status Changes ===
+$nghistory_text
+=== Current Status ===
+$ngs_text
+EOF
+	debuglog "sendmail: from=%s", $MAILFROM;
+	debuglog "sendmail: to=%s", $next_report->{recipient};
+	debuglog "sendmail: message=%s", $mail;
+	sendmail $mail, $MAILFROM, $next_report->{recipient};
+
+	delete $next_report->{minor_detection_timestamp};
+	write_recipient_minor_detection_timestamp $sg, $recipient, undef;
+	delete $next_report->{major_detection_timestamp};
+	write_recipient_major_detection_timestamp $sg, $recipient, undef;
+	delete $next_report->{crit_detection_timestamp};
+	write_recipient_crit_detection_timestamp $sg, $recipient, undef;
+
+	$last_report_status->{lastchange} = $nghistory_lastchange;
+	write_recipient_lastchange $sg, $recipient, $nghistory_lastchange;
+	$last_report_status->{lastsend} = $NOW;
+	write_recipient_lastsend $sg, $recipient, $NOW;
+	$last_report_status->{ngs} = $ngs;
+	write_recipient_ngs $sg, $recipient, $ngs;
+}
+
+sub waiting_to_report {
+	my ($next_report, $last_report_status) = @_;
+
+	# detection waiting
+	my $lastsend_limit;
+	if( defined $next_report->{minor_detection_timestamp} and $next_report->{minor_detection_timestamp} lt $MINOR_DETECTION_LIMIT ){
+		$lastsend_limit = $MINOR_LASTSEND_LIMIT;
 	}
+	if( defined $next_report->{major_detection_timestamp} and $next_report->{major_detection_timestamp} lt $MAJOR_DETECTION_LIMIT ){
+		$lastsend_limit = $MAJOR_LASTSEND_LIMIT;
+	}
+	if( defined $next_report->{crit_detection_timestamp} and $next_report->{crit_detection_timestamp} lt $CRIT_DETECTION_LIMIT ){
+		$lastsend_limit = $CRIT_LASTSEND_LIMIT;
+	}
+	return 1 unless defined $lastsend_limit;
 
-	# priority high: when system status has been changed to NG.
+	# report waiting
+	return undef unless defined $last_report_status->{lastsend};
+	return $last_report_status->{lastsend} gt $lastsend_limit;
 }
 
-foreach my $system ( list_alertsystems ){
-	my ($log, $status, $changelog, $priority) = read_alertinfos $system;
 
-	
+####
+
+sub read_session ($) {
+	my ($id) = @_;
+	my %session;
+	return \%session;
 }
 
+sub load_sessions () {
+	my %ss;
+	opendir my $h, $SESSIONDIR or do {
+		return undef;
+	};
+	while( my $e = readdir $h ){
+		if    ( $e =~ m"^sess_([0-9a-zA-Z]+)$" ){
+			my $id = $1;
+			my $s = read_session $id;
+			$ss{$id} = $s;
+		}
+	}
+	close $h;
+	return \%ss;
+}
 
+sub clean_sessions ($$) {
+	my ($ss, $sid) = @_;
+}
+
+sub list_sessions ($) {
+	my ($ss) = @_;
+	return keys %$ss;
+}
+
+####
+
+my $sgs = load_servicegroups;
+foreach my $sg ( list_servicegroups $sgs ){
+	debuglog "service group %s has been found.", $sg;
+	update_servicegroup $sgs, $sg if servicegroup_has_changes $sgs, $sg;
+
+	set_new_session     $sgs, $sg if servicegroup_has_no_session      $sgs, $sg;
+	reset_session       $sgs, $sg if servicegroup_has_expired_session $sgs, $sg;
+
+	download_graphs     $sgs, $sg if servicegroup_has_no_graphs       $sgs, $sg;
+	download_graphs     $sgs, $sg if servicegroup_has_expired_graphs  $sgs, $sg;
+}
+
+my $ss = load_sessions;
+foreach my $sid ( list_sessions $ss ){
+	clean_session $ss, $sid if session_is_not_used $ss, $sid;
+}
+
+foreach my $sg ( list_servicegroups $sgs ){
+	my $status     = get_servicegroup_status     $sgs, $sg;
+	my @recipients = list_servicegroup_recipients $sgs, $sg;
+	foreach my $recipient ( @recipients ){
+		my $last_report_status = load_last_report_status  $sg, $recipient;
+		my $changes = cmp_status $status, $last_report_status;
+		next unless defined $changes;
+
+		debuglog "changes have been found for %s in service group %s.", $recipient, $sg;
+		debuglog "checking a necessity of waiting to report...";
+		
+		my $next_report = load_next_report $sg, $recipient;
+		update_next_report $next_report, $changes;
+
+		next if waiting_to_report $next_report, $last_report_status;
+		debuglog "reporting...";
+		report $next_report, $last_report_status;
+	}
+}
 
 

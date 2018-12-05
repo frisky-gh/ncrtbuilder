@@ -2,7 +2,7 @@
 ANSIBLEOPTIONS=-u root
 NCRTAGENTHOME=/opt/ncrtagent
 NCRTMASTERHOME=/opt/ncrtmaster
-GRAFANAURL=http://example.com/grafana/
+HELPERURL=http://example.com/naemon2influx-grafana-helper/
 GRAFANADB=naemon
 GRAFANAUSER=naemon
 GRAFANAPASSWD=naemon

@@ -16,7 +16,7 @@ if( $total == ($ok+$warn) ){
 	$rc = 0;
 }else{
 	$status = 'NG';
-	$rc = 2;
+	$rc = 1;
 }
 
 my @r;

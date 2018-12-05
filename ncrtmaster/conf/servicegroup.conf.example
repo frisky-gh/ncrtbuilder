@@ -1,0 +1,4 @@
+
+MAILFROM=system@example.com
+SESSIONDIR=/var/www/ncrtmaster
+

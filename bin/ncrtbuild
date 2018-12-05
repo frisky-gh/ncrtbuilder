@@ -183,7 +183,7 @@ if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
 our $ANSIBLEOPTIONS = $ncrtconf{'ANSIBLEOPTIONS'};
 our $NCRTAGENTHOME  = $ncrtconf{'NCRTAGENTHOME'};
 our $NCRTMASTERHOME = $ncrtconf{'NCRTMASTERHOME'};
-our $GRAFANAURL     = $ncrtconf{'GRAFANAURL'};
+our $HELPERURL      = $ncrtconf{'HELPERURL'};
 our $GRAFANADB      = $ncrtconf{'GRAFANADB'};
 our $GRAFANAUSER    = $ncrtconf{'GRAFANAUSER'};
 our $GRAFANAPASSWD  = $ncrtconf{'GRAFANAPASSWD'};
@@ -315,8 +315,7 @@ open my $f, '>', "$WORKDIR/users" or die; close $f;
 open my $f, '>', "$WORKDIR/addresses" or die; close $f;
 
 ####
-my $action_url = "${GRAFANAURL}dashboard/script/naemon2influx-grafana-helper.js?hostname=\$_HOSTURLENCODED\$&servicedesc=\$_SERVICEURLENCODED\$";
-$action_url .= "&orgId=$GRAFANAORGID" if $GRAFANAORGID;
+my $action_url = "${HELPERURL}/redirect.html?hostname=\$_HOSTURLENCODED\$&servicedesc=\$_SERVICEURLENCODED\$";
 open my $f, '>', "$WORKDIR/ncrt_hosttemplates.cfg" or die;
 print $f <<"EOF";
 # host settings for Nagios / Naemon
@@ -333,7 +332,7 @@ define host {
 	check_period			24x7
 
 	notifications_enabled		1
-	notification_interval		120
+	notification_interval		60
 	notification_options		d,u,r
 	notification_period		24x7
 	contact_groups			
@@ -367,7 +366,7 @@ define service {
 	check_period			24x7
 
 	notifications_enabled		1
-	notification_interval		360
+	notification_interval		60
 	notification_options		w,u,c,r
 	notification_period		24x7
 	contact_groups			
@@ -391,7 +390,7 @@ open my $f, '>', "$WORKDIR/vars.yml" or die;
 print $f <<"EOF";
 ---
 
- GRAFANAURL:          "$GRAFANAURL"
+ HELPERURL:           "$HELPERURL"
  GRAFANADB:           "$GRAFANADB"
  GRAFANAUSER:         "$GRAFANAUSER"
  GRAFANAPASSWD:       "$GRAFANAPASSWD"
