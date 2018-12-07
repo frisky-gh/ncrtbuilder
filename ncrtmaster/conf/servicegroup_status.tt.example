@@ -1,0 +1,46 @@
+<html>
+<head>
+  <title>Service Group "[% SERVICEGROUP %]"</title>
+  <style>
+    table, td, th {
+      border-collapse: collapse;
+      border:1px solid #333;
+      padding: 4px;
+    }
+    th { font-size: 14px; font-color: #aaaaaa; }
+    td { font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h3>Current NG Status</h3>
+  <table>
+    <tr>
+      <th>host</th>
+      <th>service</th>
+      <th>status</th>
+      <th>latest timestamp</th>
+      <th>output</th>
+    </tr>
+    [% FOREACH ng IN ngs %]
+    <tr>
+      <td>[% ng.host %]</td>
+      <td>[% ng.service %]</td>
+      <td>[% ng.state %]</td>
+      <td>[% ng.timestamp %]</td>
+      <td>[% ng.output %]</td>
+      <td><a href="/thruk/#cgi-bin/extinfo.cgi?type=2&host=[% ng.host %]&service=[% ng.service %]">Thruk</a></td>
+      <td><a href="/naemon2influx-grafana-helper/redirect.html?hostname=[% ng.host %]&servicedesc=[% ng.service %]">Grafana</a></td>
+    </tr>
+    [% END %]
+  </table>
+
+  <h3>Graphs</h3>
+  <ul>
+    [% FOREACH graph IN graphs %]
+    <li><img src="[% urlencode(graph.file) %]"></li>
+    [% END %]
+  </ul>
+</body>
+</html>
+
+

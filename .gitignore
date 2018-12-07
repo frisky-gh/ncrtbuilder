@@ -44,6 +44,9 @@ inc/
 /conf/*.targets
 /conf/*.categories
 /conf/*.thresholds
+/ncrtmaster/conf/*.conf
+/ncrtmaster/conf/*.tt
+/ncrtmaster/conf/*.rules
 /playbooks/*.retry
 /src/*
 !.gitkeep

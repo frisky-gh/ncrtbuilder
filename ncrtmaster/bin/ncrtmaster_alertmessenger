@@ -3,6 +3,13 @@
 use strict;
 use String::Random 'random_regex';
 use Encode;
+use Template;
+use JSON;
+use URI::Escape;
+use URI::Query;
+use HTTP::Daemon;
+use HTTP::Status;
+use LWP::UserAgent;
 use MIME::EncWords ':all';
 
 $0 =~ m"^(.*)/";
@@ -32,11 +39,11 @@ unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
 my %conf;
 if( open my $h, '<', "$CONFDIR/servicegroup.conf" ){
 	while( <$h> ){
-                chomp;
-                next if m"^\s*(#|$)";
-                die unless m"^(\w+)=(.*)$";
-                $conf{$1} = $2;
-        }
+		chomp;
+		next if m"^\s*(#|$)";
+		die unless m"^(\w+)=(.*)$";
+		$conf{$1} = $2;
+	}
 	close $h;
 }
 
@@ -48,6 +55,21 @@ our $MAILFROM = $conf{MAILFROM} // "admin\@example.com";
 
 # session directory
 our $SESSIONDIR = $conf{SESSIONDIR} // "/var/www/ncrtmaster";
+
+# session url base
+our $SESSIONURLBASE = $conf{SESSIONURLBASE} // "http://example.com/ncrtmaster";
+
+# grafana url
+our $GRAFANAURL = $conf{GRAFANAURL} // "http://grafana.example.com";
+
+# grafana API key
+our $GRAFANAAPIKEY = $conf{GRAFANAAPIKEY} // "";
+
+# grafana organization ID
+our $GRAFANAORGID = $conf{GRAFANAORGID} // 1;
+
+# naemon2influx-grafana-helper url
+our $HELPERURL = $conf{HELPERURL} // "http://example.com/naemon2influx-grafana-helper";
 
 # timestamps
 sub timestamp ($) {
@@ -146,6 +168,94 @@ sub sendmail ($$$) {
 		print $h encode_utf8($text), "\n";
 	}
 	close $h;
+}
+
+sub path_encode ($) {
+	my ($text) = @_;
+	$text =~ s{([\x00-\x1f/\x7f])}{"\%" . unpack('H2', $1);}eg;
+	return $text;
+}
+
+#### naemon2influx-grafana-helper functions
+sub query_panels_to_naemon2influx_grafana_helper ($$) {
+	my ($host, $service ) = @_;
+	my $ua = LWP::UserAgent->new;
+	my $server_endpoint = sprintf '%s/panels.js?hostname=%s&servicedesc=%s',
+		$HELPERURL, $host, $service;
+	my $req = HTTP::Request->new('GET' => $server_endpoint);
+	debuglog "naemon2influx-grafana-helper: url=%s requesting...", $server_endpoint;
+	my $res = $ua->request($req);
+	my $obj = decode_json $res->content;
+	return $obj;
+}
+
+#### grafana functions
+sub download_panel_png_from_grafana ($$) {
+	my ($url, $panel_id ) = @_;
+	$url =~ s{^/d/}{/d-solo/};
+	my $ua = LWP::UserAgent->new;
+	my $server_endpoint = sprintf '%s/render%s?orgId=%d&panelId=%d&width=600&height=200&timeout=5',
+		$GRAFANAURL, $url, $GRAFANAORGID, $panel_id;
+	my $req = HTTP::Request->new('GET' => $server_endpoint);
+	$req->authorization_basic('api_key', $GRAFANAAPIKEY);
+	debuglog "naemon2influx-grafana-helper: requesting...";
+	my $res = $ua->request($req);
+	return $res->content;
+}
+
+#### template functions
+sub tmplfunc_match {
+	my ($text, $re) = @_;
+	if( $text =~ m"$re" ){ return 1; }
+	else		 { return undef; }
+}
+
+sub tmplfunc_sub {
+	my ($text, $re, $replace) = @_;
+	$text =~ s/$re/$replace/;
+	return $text;
+}
+
+sub tmplfunc_gsub {
+	my ($text, $re, $replace) = @_;
+	$text =~ s/$re/$replace/g;
+	return $text;
+}
+
+sub tmplfunc_split {
+	my ($text, $re) = @_;
+	return split m"$re", $text;
+}
+
+sub tmplfunc_safesprintf {
+	my ($format, @args) = @_;
+	return safesprintf $format, @args;
+}
+
+sub tmplfunc_urlencode {
+	my ($text) = @_;
+	return uri_escape $text;
+}
+
+sub generate_by_template ($%) {
+	my ($template, %vars) = @_;
+	my $tt = Template->new({}) or do {
+		debuglog "cannot generate Template instance: %s", $Template::ERROR;
+		return $template;
+	};
+	$vars{match}  //= \&tmplfunc_match;
+	$vars{sub}    //= \&tmplfunc_sub;
+	$vars{gsub}   //= \&tmplfunc_gsub;
+	$vars{split}  //= \&tmplfunc_split;
+	$vars{safesprintf} //= \&tmplfunc_safesprintf;
+	$vars{urlencode} //= \&tmplfunc_urlencode;
+
+	my $output;
+	$tt->process( \$template, \%vars, \$output ) or do {
+		debuglog "cannot process template: %s.", $tt->error();
+		return $template;
+	};
+	return $output;
 }
 
 #### read / write functions
@@ -289,6 +399,12 @@ sub read_servicegroup_session ($) {
 	return $session;
 }
 
+sub write_servicegroup_session ($$) {
+	my ($sg, $session) = @_;
+	delete $session->{expired} if defined $session;
+	write_internal_singleline "$WORKDIR/sg_session.$sg", $session;
+}
+
 sub read_servicegroup_nghistory ($) {
 	my ($sg) = @_;
 	my $nghistory = read_internal_multiline
@@ -303,7 +419,6 @@ sub read_servicegroup_nghistory ($) {
 		'service',
 		'state',
 		'laststate';
-	return $nghistory;
 }
 
 sub write_servicegroup_nghistory ($$) {
@@ -417,6 +532,32 @@ sub write_recipient_crit_detection_timestamp ($$$) {
 	write_internal_timestamp "$WORKDIR/sg_recipient_crit_detection.$sg.$recipient", $timestamp;
 }
 
+sub write_plain ($$) {
+	my ($f, $html) = @_;
+	if( !defined $f ){
+		unlink $f if -f $f;
+		return;
+	}
+	open my $h, '>', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	print $h $html;
+	close $h;
+}
+
+sub read_plain ($) {
+	my ($f, $html) = @_;
+	unless( -f $f ){
+		return undef;
+	}
+	open my $h, '<', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	my $r = join '', <$h>;
+	close $h;
+	return $r;
+}
+
 #### service groups functions
 sub load_servicegroups () {
 	my %sgs;
@@ -467,7 +608,7 @@ sub servicegroup_has_changes ($$) {
 	return $sgs->{$sg}->{has_changes};
 }
 
-sub servicegroup_has_no_session ($$) {
+sub servicegroup_has_session ($$) {
 	my ($sgs, $sg) = @_;
 	return defined $sgs->{$sg}->{session};
 }
@@ -478,21 +619,11 @@ sub servicegroup_has_expired_session ($$) {
 	return $sgs->{$sg}->{session}->{expired};
 }
 
-sub servicegroup_has_no_graphs ($$) {
-	my ($sgs, $sg) = @_;
-	return defined $sgs->{$sg}->{graphs};
-}
-
-sub servicegroup_has_expired_graphs ($$) {
-	my ($sgs, $sg) = @_;
-	return undef unless defined $sgs->{$sg}->{graphs};
-	return $sgs->{$sg}->{graphs}->{expired};
-}
-
 sub get_servicegroup_status ($$) {
 	my ($sgs, $sg) = @_;
 	return undef unless defined $sgs->{$sg};
 	my %status = (
+		'servicegroup' => $sg,
 		'ngs'	     => $sgs->{$sg}->{ngs},
 		'nghistory'  => $sgs->{$sg}->{nghistory},
 		'lastchange' => $sgs->{$sg}->{lastchange},
@@ -500,12 +631,26 @@ sub get_servicegroup_status ($$) {
 	return \%status;
 }
 
+sub get_servicegroup_session_id ($$) {
+	my ($sgs, $sg) = @_;
+	return $sgs->{$sg}->{session}->{id};
+}
+
+sub set_servicegroup_session_id ($$$) {
+	my ($sgs, $sg, $sid) = @_;
+	my %session = (
+		'id' => $sid,
+		'timestamp' => $NOW,
+	);
+	$sgs->{$sg}->{session} = \%session;
+	write_servicegroup_session $sg, \%session;
+}
+
 sub list_servicegroup_recipients ($$) {
 	my ($sgs, $sg) = @_;
 	return () unless defined $sgs->{$sg}->{recipients};
 	return keys %{$sgs->{$sg}->{recipients}};
 }
-
 
 sub update_servicegroup ($$) {
 	my ($sgs, $sg) = @_;
@@ -592,7 +737,13 @@ sub update_servicegroup ($$) {
 			$lastchange = $NOW;
 		# current state = NG, last state = current state
 		}else{
-			# nothing to do
+			$ngs->{"$host,$service"} = {
+				'timestamp' => $timestamp,
+				'host'      => $host,
+				'service'   => $service,
+				'state'     => $state,
+				'output'    => $output,
+			};
 		}
 		$recipients->{$recipient} = {
 			'recipient' => $recipient,
@@ -613,19 +764,7 @@ sub update_servicegroup ($$) {
 	delete $sgs->{$sg}->{has_changes};
 }
 
-sub set_new_session ($$) {
-	my ($sgs, $sg) = @_;
-	my $new_id = random_regex "[0-9a-zA-Z]{32}";
-	$sgs->{$sg}->{session} = $new_id;
-	write_servicegroup_session $sg, $new_id, $NOW;
-}
-
-sub reset_session ($$) {
-	my ($sgs, $sg) = @_;
-	my $new_id = random_regex "[0-9a-zA-Z]{32}";
-	$sgs->{$sg}->{session} = $new_id;
-	write_servicegroup_session $sg, $new_id, $NOW;
-}
+#### report functions
 
 sub load_last_report_status ($$) {
 	my ($sg, $recipient) = @_;
@@ -674,7 +813,7 @@ sub load_next_report ($$) {
 sub update_next_report ($$) {
 	my ($report, $changes) = @_;
 
-	my $sg        = $report->{servicegroup};
+	my $sg	= $report->{servicegroup};
 	my $recipient = $report->{recipient};
 
 	if    ( $changes->{minor} and not $report->{minor_detection_timestamp} ){
@@ -699,14 +838,43 @@ sub update_next_report ($$) {
 		write_recipient_crit_detection_timestamp $sg, $recipient, undef;
 	}
 
-	$report->{ngs}	                = $changes->{ngs};
-	$report->{nghistory}            = $changes->{nghistory};
+	$report->{ngs}			= $changes->{ngs};
+	$report->{nghistory}	    = $changes->{nghistory};
 	$report->{nghistory_lastchange} = $changes->{nghistory_lastchange};
 	$report->{report_lastchange}    = $changes->{report_lastchange};
 }
 
-sub download_graphs ($$) {
-	my ($sgs, $sg) = @_;
+sub download_session_graphs ($$$) {
+	my ($ss, $sid, $status) = @_;
+	my $ngs = $status->{ngs};
+
+	debuglog "download graphs into session '%s'.", $sid;
+	foreach my $k ( sort keys %$ngs ){
+		my $ng = $ngs->{$k};
+		my $host    = $ng->{host};
+		my $service = $ng->{service};
+		my $host_encoded    = path_encode $host;
+		my $service_encoded = path_encode $service;
+		my $panels = query_panels_to_naemon2influx_grafana_helper $host, $service;
+		my $url = $panels->{url};
+		my $ids = $panels->{id};
+
+		debuglog "  host:%s, service:%s", $host, $service;
+		foreach my $id ( @$ids ){
+			debuglog "    panel_id:%d", $id;
+			my $png = download_panel_png_from_grafana $url, $id;
+			my $f = "$host_encoded,$service_encoded,$id.png";
+			write_plain "$SESSIONDIR/sess_$sid/$f", $png;
+			my %graph = (
+				'file'      => $f,
+				'host'      => $host,
+				'service'   => $service,
+				'panel_id'  => $id,
+				'timestamp' => $NOW,
+			);
+			$ss->{$sid}->{graphs}->{"$host,$service,$id"} = \%graph;
+		}
+	}
 }
 
 sub cmp_status ($$) {
@@ -738,80 +906,41 @@ sub cmp_status ($$) {
 		'major' => $major_change,
 		'crit'  => $crit_change,
 		'ngs'	=> $ngs,
-		'nghistory'            => $nghistory,
+		'nghistory'	    => $nghistory,
 		'nghistory_lastchange' => $lastchange,
 		'report_lastchange'    => $last_lastchange,
 	);
 	return \%changes;
 }
 
+sub report ($$$) {
+	my ($next_report, $last_report_status, $sid) = @_;
 
-sub report ($$) {
-	my ($next_report, $last_report_status) = @_;
-
-	my $sg         = $next_report->{servicegroup};
+	my $sg	       = $next_report->{servicegroup};
 	my $recipient  = $next_report->{recipient};
-	my $ngs        = $next_report->{ngs};
+	my $ngs	       = $next_report->{ngs};
 	my $nghistory  = $next_report->{nghistory};
 	my $nghistory_lastchange = $next_report->{nghistory_lastchange};
 	my $report_lastchange    = $next_report->{report_lastchange};
 
-	my $ngs_text;
-	if( defined $ngs ){
-		$ngs_text .= "host                 service              state\n";
-		$ngs_text .= "-------------------- -------------------- ------\n";
-		foreach my $k ( sort keys %$ngs ){
-			my $v = $ngs->{$k};
-			my $targettype = $v->{host};
-			$targettype =~ s{^.*/}{};
-			my $host       = $v->{host};
-			$host =~ s{/.*$}{};
-			my $service = $v->{service};
-			$service =~ s{^[a-zA-Z0-9]+_}{};
-			$ngs_text .= sprintf "%-20s %-20s %s\n",
-				$host,
-				$service,
-				$v->{state};
-		}
-	}
+	# mail message
+	my @ngs;
+	foreach my $k ( sort keys %$ngs ){ push @ngs, $ngs->{$k}; }
+	my @nghistory;
+	foreach my $k ( sort keys %$nghistory ){ push @nghistory, $nghistory->{$k}; }
+	my $template = read_plain "$CONFDIR/servicegroup_mail.tt";
+	my $sessionurl = "$SESSIONURLBASE/sess_$sid/";
+	my $mail = generate_by_template $template,
+		'ngs' => \@ngs, 'nghistory' => \@nghistory,
+		'MAILFROM' => $MAILFROM, 'MAILTO' => $recipient,
+		'SERVICEGROUP' => $sg, 'SESSIONURL' => $sessionurl;
 
-	my $nghistory_text;
-	if( defined $nghistory ){
-		$nghistory_text .= "timestamp           host                 service              state\n";
-		$nghistory_text .= "------------------- -------------------- -------------------- ------\n";
-		foreach my $k ( sort keys %$nghistory ){
-			my $v = $nghistory->{$k};
-			next if defined $report_lastchange and $v->{timestamp} lt $report_lastchange;
-			my $targettype = $v->{host};
-			$targettype =~ s{^.*/}{};
-			my $host       = $v->{host};
-			$host =~ s{/.*$}{};
-			my $service = $v->{service};
-			$service =~ s{^[a-zA-Z0-9]+_}{};
-			$nghistory_text .= sprintf "%-19s %-20s %-20s %s->%s\n",
-				$v->{timestamp},
-				$host,
-				$service,
-				$v->{laststate},
-				$v->{state};
-		}
-	}
-
-	my $mail = <<EOF ;
-Subject: $sg status has changed
-From: System <$MAILFROM>
-To: You <$recipient>
-
-=== Recent Status Changes ===
-$nghistory_text
-=== Current Status ===
-$ngs_text
-EOF
 	debuglog "sendmail: from=%s", $MAILFROM;
-	debuglog "sendmail: to=%s", $next_report->{recipient};
+	debuglog "sendmail: to=%s", $recipient;
 	debuglog "sendmail: message=%s", $mail;
 	sendmail $mail, $MAILFROM, $next_report->{recipient};
 
+	# clear next report status
 	delete $next_report->{minor_detection_timestamp};
 	write_recipient_minor_detection_timestamp $sg, $recipient, undef;
 	delete $next_report->{major_detection_timestamp};
@@ -819,6 +948,7 @@ EOF
 	delete $next_report->{crit_detection_timestamp};
 	write_recipient_crit_detection_timestamp $sg, $recipient, undef;
 
+	# update last report status
 	$last_report_status->{lastchange} = $nghistory_lastchange;
 	write_recipient_lastchange $sg, $recipient, $nghistory_lastchange;
 	$last_report_status->{lastsend} = $NOW;
@@ -849,12 +979,79 @@ sub waiting_to_report {
 }
 
 
-####
+#### session functions
 
-sub read_session ($) {
-	my ($id) = @_;
-	my %session;
-	return \%session;
+sub generate_session_page ($$$) {
+	my ($ss, $sid, $status) = @_;
+	my $ngs = $status->{ngs};
+	my @ngs;
+	foreach my $k ( sort keys %$ngs ){ push @ngs, $ngs->{$k}; }
+	my $graphs = $ss->{$sid}->{graphs};
+	my @graphs;
+	foreach my $k ( sort keys %$graphs ){ push @graphs, $graphs->{$k}; }
+
+	my $template = read_plain "$CONFDIR/servicegroup_status.tt";
+	my $html = generate_by_template $template,
+		'SERVICEGROUP' => $status->{servicegroup},
+		'ngs'    => \@ngs,
+		'graphs' => \@graphs;
+	write_plain "$SESSIONDIR/sess_$sid/index.html", $html;
+}
+
+
+sub session_has_page ($$) {
+	my ($ss, $sid) = @_;
+	return $ss->{$sid}->{has_page};
+}
+
+sub session_has_graphs ($$) {
+	my ($ss, $sid) = @_;
+	return $ss->{$sid}->{graphs};
+}
+
+sub session_has_expired_graphs ($$) {
+	my ($ss, $sid) = @_;
+	return $ss->{$sid}->{has_expired_graphs};
+}
+
+sub session_is_used ($$) {
+	my ($ss, $sid) = @_;
+	return 1;
+}
+
+sub generate_session ($) {
+	my ($ss) = @_;
+	my $new_sid = random_regex "[0-9a-zA-Z]{32}";
+	mkdir "$SESSIONDIR/sess_$new_sid" or die;
+	return $new_sid;
+}
+
+sub renewal_session ($$) {
+	my ($ss, $old_sid) = @_;
+	my $old_d = "$SESSIONDIR/sess_$old_sid";
+	opendir my $h, $old_d or do{
+		die;
+	};
+	my @f;
+	while( my $f = readdir $h ){
+		next if $f eq '..';
+		next if $f eq '.';
+		push @f, $f;
+	}
+	close $h;
+	foreach my $f ( @f ){ unlink "$old_d/$f"; }
+
+	my $new_sid = random_regex "[0-9a-zA-Z]{32}";
+	mkdir "$SESSIONDIR/sess_$new_sid" or die;
+
+	my $sessionurl = "$SESSIONURLBASE/sess_$new_sid/";
+	my $template = read_plain "$CONFDIR/servicegroup_jump.tt";
+	my $html = generate_by_template $template,
+		 'new_sid' => $new_sid, 'SESSIONURL' => $sessionurl;
+	write_plain "$SESSIONDIR/sess_$old_sid/index.html", $html;
+	write_plain "$SESSIONDIR/sess_$old_sid/index.html.expired", $NOW;
+
+	return $new_sid;
 }
 
 sub load_sessions () {
@@ -863,11 +1060,46 @@ sub load_sessions () {
 		return undef;
 	};
 	while( my $e = readdir $h ){
-		if    ( $e =~ m"^sess_([0-9a-zA-Z]+)$" ){
-			my $id = $1;
-			my $s = read_session $id;
-			$ss{$id} = $s;
+		next unless $e =~ m"^sess_([0-9a-zA-Z]+)$";
+		my $id = $1;
+		my %session;
+		my $d = "$SESSIONDIR/$e";
+
+		opendir my $i, $d or do {
+			die;
+		};
+		while( my $f = readdir $i ){
+			if( $f eq "index.html" ){
+				my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,
+				    $size,$atime,$mtime,$ctime,
+				    $blksize,$blocks) = stat "$d/index.html";
+				$session{has_page} = 1;
+				$session{page_timestamp} = timestamp $mtime;
+				$ss{$id} = \%session;
+			}elsif( $f =~ m"^([^,]+),([^,]+),([^,]+)\.png$" ){
+				my $host     = $1;
+				my $service  = $2;
+				my $panel_id = $3;
+				my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,
+				    $size,$atime,$mtime,$ctime,
+				    $blksize,$blocks) = stat "$d/$f";
+				my $t = timestamp $mtime;
+				my $u = $session{graphs_timestamp};
+				$session{graphs_timestamp} = $t if $t gt $u;
+				$session{graphs}->{"$host,$service,$panel_id"} = {
+					'file'      => $f,
+					'host'      => $host,
+					'service'   => $service,
+					'panel_id'  => $panel_id,
+					'timestamp' => $t,
+				};
+			}else{
+				#print "DEBUG: $f\n";
+			}
 		}
+		close $i;
+		$session{has_expired_graphs} = $session{graphs_timestamp} lt $GRAPHS_LIMIT;
+		$ss{$id} = \%session;
 	}
 	close $h;
 	return \%ss;
@@ -885,24 +1117,40 @@ sub list_sessions ($) {
 ####
 
 my $sgs = load_servicegroups;
+my $ss = load_sessions;
 foreach my $sg ( list_servicegroups $sgs ){
 	debuglog "service group %s has been found.", $sg;
-	update_servicegroup $sgs, $sg if servicegroup_has_changes $sgs, $sg;
+	my $servicegroup_has_changes = servicegroup_has_changes $sgs, $sg;
 
-	set_new_session     $sgs, $sg if servicegroup_has_no_session      $sgs, $sg;
-	reset_session       $sgs, $sg if servicegroup_has_expired_session $sgs, $sg;
+	update_servicegroup $sgs, $sg if $servicegroup_has_changes;
+	my $status = get_servicegroup_status $sgs, $sg;
 
-	download_graphs     $sgs, $sg if servicegroup_has_no_graphs       $sgs, $sg;
-	download_graphs     $sgs, $sg if servicegroup_has_expired_graphs  $sgs, $sg;
+	my $sid;
+	unless( servicegroup_has_session $sgs, $sg ){
+		$sid = generate_session $ss;
+		set_servicegroup_session_id $sgs, $sg, $sid;
+	}else{
+		$sid = get_servicegroup_session_id $sgs, $sg;
+	}
+	if( servicegroup_has_expired_session $sgs, $sg ){
+		$sid = renewal_session $ss, $sid;
+		set_servicegroup_session_id $sgs, $sg, $sid;
+	}
+
+	download_session_graphs $ss, $sid, $status unless session_has_graphs       $ss, $sid;
+	download_session_graphs $ss, $sid, $status if session_has_expired_graphs  $ss, $sid;
+
+	generate_session_page $ss, $sid, $status if $servicegroup_has_changes;
+	generate_session_page $ss, $sid, $status unless session_has_page $ss, $sid;
 }
 
-my $ss = load_sessions;
 foreach my $sid ( list_sessions $ss ){
-	clean_session $ss, $sid if session_is_not_used $ss, $sid;
+	clean_session $ss, $sid unless session_is_used $ss, $sid;
 }
 
 foreach my $sg ( list_servicegroups $sgs ){
-	my $status     = get_servicegroup_status     $sgs, $sg;
+	my $status     = get_servicegroup_status      $sgs, $sg;
+	my $sid	= get_servicegroup_session_id  $sgs, $sg;
 	my @recipients = list_servicegroup_recipients $sgs, $sg;
 	foreach my $recipient ( @recipients ){
 		my $last_report_status = load_last_report_status  $sg, $recipient;
@@ -917,7 +1165,7 @@ foreach my $sg ( list_servicegroups $sgs ){
 
 		next if waiting_to_report $next_report, $last_report_status;
 		debuglog "reporting...";
-		report $next_report, $last_report_status;
+		report $next_report, $last_report_status, $sid;
 	}
 }
 
