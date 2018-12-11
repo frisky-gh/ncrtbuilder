@@ -1,6 +1,7 @@
 
 MAILFROM=admin@example.com
 SESSIONDIR=/var/www/ncrtmaster
+SESSIONBASE=http://example.com/ncrtmaster
 
 HELPERURL=http://example.com/naemon2influx-grafana-helper
 GRAFANAURL=http://example.com/grafana

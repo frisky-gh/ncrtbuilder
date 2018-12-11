@@ -61,6 +61,13 @@ foreach my $servicegroup ( @servicegroup ){
 	print $h var2ltsv(%var), "\n";
 	close $h;
 }
+
+open my $h, '>>', "$WORKDIR/sg_changes_all" or do{
+	next;
+};
+print $h var2ltsv(%var), "\n";
+close $h;
+
 exit 0;
 
 
