@@ -79,19 +79,29 @@ foreach my $category_rule ( @category_rules ){
 my %procs;
 my %threads;
 my %elapsed;
-if( open my $h, '-|', "ps -eLo 'pid,etimes,user:32,args'" ){
+if( open my $h, '-|', "ps -eLo 'pid,etime,user:32,args'" ){
 	my $ifname;
 	my $mode;
 	while( <$h> ){
 		chomp;
 		next if $. == 1;
 		next unless m"^
-			\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S.*)
+			\s*
+			(\d+)
+			\s+
+			(?:
+				(?:   (?: (\d+)- )?   (\d+):   )?
+				(\d+):(\d+)
+			)
+			\s+
+			(\S+)
+			\s+
+			(\S.*)
 		$"x;
 		my $pid = $1;
-		my $elapsed = $2;
-		my $user = $3;
-		my $args = $4;
+		my $elapsed = $2*24*60*60 + $3*60*60 + $4*60 + $5;
+		my $user = $6;
+		my $args = $7;
 		my %category;
 		foreach my $rule ( @category_rules ){
 			next unless $user =~ $rule->[1];

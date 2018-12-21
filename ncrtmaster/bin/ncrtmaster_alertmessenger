@@ -77,17 +77,18 @@ sub timestamp ($) {
 	return sprintf "%04d-%02d-%02d_%02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec;
 }
 our $NOW = timestamp time;
-our $NG_LIMIT	= timestamp time -  6 * 60 * 60;
-our $NGHISTORY_LIMIT = timestamp time - 48 * 60 * 60;
-our $SESSION_LIMIT   = timestamp time - 24 * 60 * 60;
-our $RECIPIENT_LIMIT = timestamp time -  6 * 60 * 60;
-our $GRAPHS_LIMIT    = timestamp time -      10 * 60;
-our $MINOR_DETECTION_LIMIT = timestamp time - 8 * 60 * 60;
-our $MAJOR_DETECTION_LIMIT = timestamp time -      1 * 60;
-our $CRIT_DETECTION_LIMIT  = timestamp time -      1 * 60;
-our $MINOR_LASTSEND_LIMIT  = timestamp time - 8 * 60 * 60;
-our $MAJOR_LASTSEND_LIMIT  = timestamp time -      1 * 60;
-our $CRIT_LASTSEND_LIMIT   = timestamp time -      5 * 60;
+our $NG_LIMIT 		   = timestamp time -  6 * 60 * 60;
+our $NGHISTORY_LIMIT	   = timestamp time - 48 * 60 * 60;
+our $SESSION_LIMIT	   = timestamp time - 24 * 60 * 60;
+our $RECIPIENT_LIMIT	   = timestamp time -  6 * 60 * 60;
+our $GRAPHS_LIMIT	   = timestamp time -      10 * 60;
+our $MINOR_DETECTION_LIMIT = timestamp time -  8 * 60 * 60;
+our $MAJOR_DETECTION_LIMIT = timestamp time -       1 * 60;
+our $CRIT_DETECTION_LIMIT  = timestamp time -       1 * 60;
+our $MINOR_LASTSEND_LIMIT  = timestamp time -  8 * 60 * 60;
+our $MAJOR_LASTSEND_LIMIT  = timestamp time -       1 * 60;
+our $CRIT_LASTSEND_LIMIT   = timestamp time -       5 * 60;
+our $RESEND_LIMIT          = timestamp time - 12 * 60 * 60;
 our $HEALTH_THRESHOLD = 10;
 
 ####
@@ -212,8 +213,10 @@ sub download_panel_png_from_grafana ($$) {
 #### template functions
 sub tmplfunc_match {
 	my ($text, $re) = @_;
-	if( $text =~ m"$re" ){ return 1; }
-	else		 { return undef; }
+	my @r = $text =~ m"$re";
+	if   ( @r == 0 ){ return undef; }
+	elsif( @+ == 1 ){ return [$&]; }
+	else            { return [$&, @r]; }
 }
 
 sub tmplfunc_sub {
@@ -360,7 +363,6 @@ sub read_servicegroup_ngs ($) {
 		"$WORKDIR/sg_ngs.$sg",
 		sub {
 			my $v = shift;
-			return undef if $v->{timestamp} lt $NG_LIMIT;
 			return $v->{host}.",".$v->{service};
 		},
 		'timestamp',
@@ -418,13 +420,14 @@ sub read_servicegroup_nghistory ($) {
 		sub {
 			my $v = shift;
 			return undef if $v->{timestamp} lt $NGHISTORY_LIMIT;
-			return join ',', $v->{timetamp}, $v->{host}, $v->{service};
+			return join ',', $v->{timestamp}, $v->{host}, $v->{service};
 		},
 		'timestamp',
 		'host',
 		'service',
 		'state',
 		'laststate';
+	return $nghistory;
 }
 
 sub write_servicegroup_nghistory ($$) {
@@ -460,7 +463,6 @@ sub read_recipient_ngs ($$) {
 		"$WORKDIR/sg_recipient_ngs.$sg.$recipient",
 		sub {
 			my $v = shift;
-			return undef if $v->{timestamp} lt $NG_LIMIT;
 			return join ',', $v->{host}, $v->{service};
 		},
 		'timestamp',
@@ -610,9 +612,21 @@ sub list_servicegroups ($) {
 	return keys %$sgs;
 }
 
+sub servicegroup_has_ngs ($$) {
+	my ($sgs, $sg) = @_;
+	return defined $sgs->{$sg}->{ngs};
+}
+
 sub servicegroup_has_changes ($$) {
 	my ($sgs, $sg) = @_;
-	return $sgs->{$sg}->{has_changes};
+	return 1 if $sgs->{$sg}->{has_changes};
+
+	# if servicegroup has expired NGs
+	my $ngs = $sgs->{$sg}->{ngs};
+	while( my ($k, $v) = each %$ngs ){
+		return 1 if $v->{timestamp} lt $NG_LIMIT;
+	}
+	return undef;
 }
 
 sub servicegroup_has_session ($$) {
@@ -631,9 +645,10 @@ sub get_servicegroup_status ($$) {
 	return undef unless defined $sgs->{$sg};
 	my %status = (
 		'servicegroup' => $sg,
-		'ngs'	     => $sgs->{$sg}->{ngs},
-		'nghistory'  => $sgs->{$sg}->{nghistory},
-		'lastchange' => $sgs->{$sg}->{lastchange},
+		'sid'          => $sgs->{$sg}->{session}->{id},
+		'ngs'	       => $sgs->{$sg}->{ngs},
+		'nghistory'    => $sgs->{$sg}->{nghistory},
+		'lastchange'   => $sgs->{$sg}->{lastchange},
 	);
 	return \%status;
 }
@@ -673,6 +688,8 @@ sub update_servicegroup ($$) {
 	open my $h, '<', $g or do {
 		die;
 	};
+
+	my $ngnum = keys %$ngs;
 	while( <$h> ){
 		chomp;
 		my %v = ltsv2var $_;
@@ -714,6 +731,17 @@ sub update_servicegroup ($$) {
 			};
 			delete $ngs->{"$host,$service"};
 			$lastchange = $timestamp;
+
+			if( $ngnum-- == $HEALTH_THRESHOLD ){
+				delete $ngs->{"-,HEALTH"};
+				$nghistory->{"$timestamp,-,HEALTH"} = {
+					'timestamp' => $timestamp,
+					'host' => '-',
+					'service' => 'HEALTH',
+					'state' => 'OK',
+					'laststate' => 'NG',
+				};
+			}
 		# current state = NG, last state = OK
 		}elsif( ! defined $ngs->{"$host,$service"} ){
 			debuglog "update_servicegroup: %s,%s: %s(OK)->%s(NG)",
@@ -735,6 +763,23 @@ sub update_servicegroup ($$) {
 				'output'    => $output,
 			};
 			$lastchange = $timestamp;
+
+			if( ++$ngnum == $HEALTH_THRESHOLD ){
+				$ngs->{"-,HEALTH"} = {
+					'timestamp' => $timestamp,
+					'host'      => '-',
+					'service'   => 'HEALTH',
+					'state'     => 'NG',
+					'output'    => '',
+				};
+				$nghistory->{"$timestamp,-,HEALTH"} = {
+					'timestamp' => $timestamp,
+					'host' => '-',
+					'service' => 'HEALTH',
+					'state' => 'NG',
+					'laststate' => 'OK',
+				};
+			}
 		# current state = NG, last state != current state
 		}elsif( $state ne $ngs->{"$host,$service"}->{state} ){
 			debuglog "update_servicegroup: %s,%s: %s(NG)->%s(NG)",
@@ -768,12 +813,45 @@ sub update_servicegroup ($$) {
 				'output'    => $output,
 			};
 		}
+
 		$recipients->{$recipient} = {
 			'recipient' => $recipient,
 			'timestamp' => $timestamp,
 		};
 	}
 	close $h;
+
+	# cleanup if servicegroup has expired NGs
+	foreach my $k ( keys %$ngs ){
+		my $v = $ngs->{$k};
+		next if $v->{timestamp} gt $NG_LIMIT;
+
+		my $timestamp = $v->{timestamp};
+		my $host      = $v->{host};
+		my $service   = $v->{service};
+		my $laststate = $v->{state};
+		delete $ngs->{$k};
+		$nghistory->{"$NOW,$host,$service"} = {
+			'timestamp' => $NOW,
+			'host'      => $host,
+			'service'   => $service,
+			'state'     => 'OK',
+			'laststate' => $laststate,
+		};
+		$lastchange = $NOW;
+
+		if( $ngnum-- == $HEALTH_THRESHOLD ){
+			delete $ngs->{"-,HEALTH"};
+			$nghistory->{"$NOW,-,HEALTH"} = {
+				'timestamp' => $NOW,
+				'host'      => '-',
+				'service'   => 'HEALTH',
+				'state'     => 'OK',
+				'laststate' => 'NG',
+			};
+		}
+	}
+
 	$sgs->{$sg}->{recipients} = $recipients;
 	$sgs->{$sg}->{ngs}        = $ngs;
 	$sgs->{$sg}->{lastchange} = $lastchange;
@@ -850,22 +928,17 @@ sub update_next_report ($$) {
 	if    ( $changes->{major} and not $report->{major_detection_timestamp} ){
 		$report->{major_detection_timestamp} = $NOW;
 		write_recipient_major_detection_timestamp $sg, $recipient, $NOW;
-	}elsif( $changes->{major} and not $report->{major_detection_timestamp} ){
+	}elsif( not $changes->{major} and $report->{major_detection_timestamp} ){
 		delete $report->{major_detection_timestamp};
 		write_recipient_major_detection_timestamp $sg, $recipient, undef;
 	}
 	if    ( $changes->{crit} and not $report->{crit_detection_timestamp} ){
 		$report->{crit_detection_timestamp} = $NOW;
 		write_recipient_crit_detection_timestamp $sg, $recipient, $NOW;
-	}elsif( $changes->{crit} and not $report->{crit_detection_timestamp} ){
+	}elsif( not $changes->{crit} and $report->{crit_detection_timestamp} ){
 		delete $report->{crit_detection_timestamp};
 		write_recipient_crit_detection_timestamp $sg, $recipient, undef;
 	}
-
-	$report->{ngs}			= $changes->{ngs};
-	$report->{nghistory}	        = $changes->{nghistory};
-	$report->{nghistory_lastchange} = $changes->{nghistory_lastchange};
-	$report->{report_lastchange}    = $changes->{report_lastchange};
 }
 
 sub download_session_graphs ($$$) {
@@ -912,7 +985,7 @@ sub download_session_graphs ($$$) {
 		my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,
 		    $size,$atime,$mtime,$ctime,
 		    $blksize,$blocks) = stat "$d/$f";
-		next unless $mtime > $t;
+		next if $mtime > $t;
 		push @expired, $f;
 	}
 	closedir $h;
@@ -921,51 +994,59 @@ sub download_session_graphs ($$$) {
 }
 
 sub cmp_status ($$) {
-	my ($status, $last_status) = @_;
-	my $ngs      = $status->{ngs};
-	my $last_ngs = $last_status->{ngs};
-	my $nghistory = $status->{nghistory};
-	my $lastchange      = $status->{lastchange};
-	my $last_lastchange = $last_status->{lastchange};
+	my ($curr_status, $report_status) = @_;
+	my $curr_ngs          = $curr_status->{ngs};
+	my $curr_nghistory    = $curr_status->{nghistory};
+	my $curr_lastchange   = $curr_status->{lastchange};
+	my $report_ngs        = $report_status->{ngs};
+	my $report_lastchange = $report_status->{lastchange};
 
-	my $ngnum      = keys %$ngs;
-	my $last_ngnum = keys %$last_ngs;
-	my $health      = $ngnum      < $HEALTH_THRESHOLD;
-	my $last_health = $last_ngnum < $HEALTH_THRESHOLD;
+	my $curr_ngnum    = keys %$curr_ngs;
+	my $report_ngnum  = keys %$report_ngs;
+	my $curr_health   = $curr_ngnum   < $HEALTH_THRESHOLD;
+	my $report_health = $report_ngnum < $HEALTH_THRESHOLD;
 
 	my %c;
-	while( my ($k, $v) = each %$ngs )     { $c{$k.",",$v->{state}} |= 1; }
-	while( my ($k, $v) = each %$last_ngs ){ $c{$k.",",$v->{state}} |= 2; }
+	while( my ($k, $v) = each %$curr_ngs )  { $c{$k.",".$v->{state}} |= 1; }
+	while( my ($k, $v) = each %$report_ngs ){ $c{$k.",".$v->{state}} |= 2; }
 
-	my $minor_change = $lastchange gt $last_lastchange;
-	debuglog "minor change has been detected: %s gt %s", $lastchange, $last_lastchange if $minor_change;
-	my $major_change;
-	while( my ($k, $v) = each %c ){ $major_change = 1 unless $v == 3; }
-	my $crit_change = $health ne $last_health;
+	my $minor_change = $curr_lastchange gt $report_lastchange;
+	my @major_change;
+	while( my ($k, $v) = each %c ){ push @major_change, "$k/$v" unless $v == 3; }
+	my $major_change = @major_change;
+	my $crit_change = $curr_health != $report_health;
 
+	debuglog "minor change has been detected: %s gt %s",
+		$curr_lastchange, $report_lastchange if $minor_change;
+	debuglog "major change has been detected: %s",
+		join(' ', @major_change) if $major_change;
+	debuglog "crit change has been detected: %d -> %d",
+		$report_health, $curr_health if $crit_change;
+
+	unless( $curr_health ){
+		$minor_change = undef;
+		$major_change = undef;
+	}
 	return undef unless $minor_change or $major_change or $crit_change;
 
 	my %changes = (
 		'minor' => $minor_change,
 		'major' => $major_change,
 		'crit'  => $crit_change,
-		'ngs'	=> $ngs,
-		'nghistory'	       => $nghistory,
-		'nghistory_lastchange' => $lastchange,
-		'report_lastchange'    => $last_lastchange,
 	);
 	return \%changes;
 }
 
 sub report ($$$) {
-	my ($next_report, $last_report_status, $sid) = @_;
+	my ($status, $next_report, $last_report_status) = @_;
 
-	my $sg	       = $next_report->{servicegroup};
 	my $recipient  = $next_report->{recipient};
-	my $ngs	       = $next_report->{ngs};
-	my $nghistory  = $next_report->{nghistory};
-	my $nghistory_lastchange = $next_report->{nghistory_lastchange};
-	my $report_lastchange    = $next_report->{report_lastchange};
+	my $sg	       = $status->{servicegroup};
+	my $sid	       = $status->{sid};
+	my $ngs	       = $status->{ngs};
+	my $nghistory  = $status->{nghistory};
+	my $status_lastchange = $status->{lastchange};
+	my $report_lastchange = $last_report_status->{lastchange};
 
 	# mail message
 	my @ngs;
@@ -976,7 +1057,7 @@ sub report ($$$) {
 			$nghistory->{$a}->{timestamp} cmp $nghistory->{$b}->{timestamp}
 		} keys %$nghistory
 	){
-		next if $nghistory->{$k}->{timestamp} lt $nghistory_lastchange;
+		next if $nghistory->{$k}->{timestamp} le $report_lastchange;
 		push @nghistory, $nghistory->{$k};
 	}
 	my $template = read_plain "$CONFDIR/servicegroup_mail.tt";
@@ -1000,8 +1081,8 @@ sub report ($$$) {
 	write_recipient_crit_detection_timestamp $sg, $recipient, undef;
 
 	# update last report status
-	$last_report_status->{lastchange} = $nghistory_lastchange;
-	write_recipient_lastchange $sg, $recipient, $nghistory_lastchange;
+	$last_report_status->{lastchange} = $status_lastchange;
+	write_recipient_lastchange $sg, $recipient, $status_lastchange;
 	$last_report_status->{lastsend} = $NOW;
 	write_recipient_lastsend $sg, $recipient, $NOW;
 	$last_report_status->{ngs} = $ngs;
@@ -1025,10 +1106,18 @@ sub waiting_to_report {
 	return 1 unless defined $lastsend_limit;
 
 	# report waiting
-	return undef unless defined $last_report_status->{lastsend};
-	return $last_report_status->{lastsend} gt $lastsend_limit;
+	my $lastsend = $last_report_status->{lastsend};
+	debuglog "waiting_to_report: %s gt %s?", $lastsend, $lastsend_limit;
+	return undef unless defined $lastsend;
+	return $lastsend gt $lastsend_limit;
 }
 
+sub last_report_is_expired ($) {
+	my ($status) = @_;
+	my $lastsend = $status->{lastsend};
+
+	return $lastsend lt $RESEND_LIMIT;
+}
 
 #### session functions
 
@@ -1073,12 +1162,12 @@ sub session_is_expired ($$) {
 
 sub session_is_in_transition ($$) {
 	my ($ss, $sid) = @_;
-	return defined $ss->{$sid}->{mode} eq 'transition';
+	return $ss->{$sid}->{mode} eq 'transition';
 }
 
 sub session_is_current ($$) {
 	my ($ss, $sid) = @_;
-	return defined $ss->{$sid}->{mode} eq 'current';
+	return $ss->{$sid}->{mode} eq 'current';
 }
 
 sub generate_session ($$) {
@@ -1262,13 +1351,6 @@ foreach my $sg ( list_servicegroups $sgs ){
 	}else{
 		$sid = get_servicegroup_session_id $sgs, $sg;
 	}
-	#if( servicegroup_has_expired_session $sgs, $sg ){
-	#	$sid = renewal_session $ss, $sid, $sg;
-	#	set_servicegroup_session_id $sgs, $sg, $sid;
-	#}
-
-	#download_session_graphs $ss, $sid, $status unless session_has_graphs     $ss, $sid;
-	#download_session_graphs $ss, $sid, $status if session_has_expired_graphs $ss, $sid;
 
 	generate_session_page $ss, $sid, $status if $servicegroup_has_changes;
 	generate_session_page $ss, $sid, $status unless session_has_page $ss, $sid;
@@ -1276,22 +1358,26 @@ foreach my $sg ( list_servicegroups $sgs ){
 
 foreach my $sg ( list_servicegroups $sgs ){
 	my $status = get_servicegroup_status      $sgs, $sg;
-	my $sid	   = get_servicegroup_session_id  $sgs, $sg;
 	my @recipients = list_servicegroup_recipients $sgs, $sg;
 	foreach my $recipient ( @recipients ){
 		my $last_report_status = load_last_report_status  $sg, $recipient;
 		my $changes = cmp_status $status, $last_report_status;
-		next unless defined $changes;
-
-		debuglog "changes have been found for %s in service group %s.", $recipient, $sg;
-		debuglog "checking a necessity of waiting to report...";
-		
 		my $next_report = load_next_report $sg, $recipient;
 		update_next_report $next_report, $changes;
 
-		next if waiting_to_report $next_report, $last_report_status;
-		debuglog "reporting...";
-		report $next_report, $last_report_status, $sid;
+		if( defined $changes ){
+			debuglog "changes have been found for %s in service group %s.", $recipient, $sg;
+			debuglog "checking a necessity of waiting to report...";
+			next if waiting_to_report $next_report, $last_report_status;
+
+			debuglog "reporting...";
+			report $status, $next_report, $last_report_status;
+		}else{
+			next unless servicegroup_has_ngs $sgs, $sg;
+			next unless last_report_is_expired $last_report_status;
+			debuglog "reporting...";
+			report $status, $next_report, $last_report_status;
+		}
 	}
 }
 
