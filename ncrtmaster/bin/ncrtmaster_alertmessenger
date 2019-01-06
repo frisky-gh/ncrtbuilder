@@ -77,11 +77,12 @@ sub timestamp ($) {
 	return sprintf "%04d-%02d-%02d_%02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec;
 }
 our $NOW = timestamp time;
-our $NG_LIMIT 		   = timestamp time -  6 * 60 * 60;
-our $NGHISTORY_LIMIT	   = timestamp time - 48 * 60 * 60;
-our $SESSION_LIMIT	   = timestamp time - 24 * 60 * 60;
-our $RECIPIENT_LIMIT	   = timestamp time -  6 * 60 * 60;
-our $GRAPHS_LIMIT	   = timestamp time -      10 * 60;
+our $NG_EXPIRYDATE	  = timestamp time-($conf{NG_LIFETIME}       // 6*60)*60;
+our $NGHISTORY_EXPIRYDATE = timestamp time-($conf{NGHISTORY_LIFETIME}//48*60)*60;
+our $SESSION_EXPIRYDATE   = timestamp time-($conf{SESSION_LIFETIME}  //24*60)*60;
+our $RECIPIENT_EXPIRYDATE = timestamp time-($conf{RECIPIENT_LIFETIME}// 6*60)*60;
+our $GRAPH_EXPIRYDATE     = timestamp time-($conf{GRAPH_LIFETIME}    //   10)*60;
+
 our $MINOR_DETECTION_LIMIT = timestamp time -  8 * 60 * 60;
 our $MAJOR_DETECTION_LIMIT = timestamp time -       1 * 60;
 our $CRIT_DETECTION_LIMIT  = timestamp time -       1 * 60;
@@ -384,7 +385,7 @@ sub read_servicegroup_recipients ($) {
 		"$WORKDIR/sg_recipients.$sg",
 		sub {
 			my $v = shift;
-			return undef if $v->{timestamp} lt $RECIPIENT_LIMIT;
+			return undef if $v->{timestamp} lt $RECIPIENT_EXPIRYDATE;
 			return $v->{recipient};
 		},
 		'timestamp',
@@ -403,7 +404,7 @@ sub read_servicegroup_session ($) {
 		"$WORKDIR/sg_session.$sg",
 		'timestamp',
 		'id';
-	$session->{expired} = $session->{timestamp} lt $SESSION_LIMIT;
+	$session->{expired} = $session->{timestamp} lt $SESSION_EXPIRYDATE;
 	return $session;
 }
 
@@ -419,7 +420,7 @@ sub read_servicegroup_nghistory ($) {
 		"$WORKDIR/sg_nghistory.$sg",
 		sub {
 			my $v = shift;
-			return undef if $v->{timestamp} lt $NGHISTORY_LIMIT;
+			return undef if $v->{timestamp} lt $NGHISTORY_EXPIRYDATE;
 			return join ',', $v->{timestamp}, $v->{host}, $v->{service};
 		},
 		'timestamp',
@@ -433,7 +434,6 @@ sub read_servicegroup_nghistory ($) {
 sub write_servicegroup_nghistory ($$) {
 	my ($sg, $nghistory) = @_;
 	write_internal_multiline "$WORKDIR/sg_nghistory.$sg", $nghistory;
-	debuglog "write_servicegroup_nghistory: %s", read_plain("$WORKDIR/sg_nghistory.$sg");
 }
 
 sub read_servicegroup_graphs ($) {
@@ -448,7 +448,7 @@ sub read_servicegroup_graphs ($) {
 	chomp $ltsv;
 	my %v = ltsv2var $ltsv;
 	my $timestamp = $v{timestamp};
-	my $expired = $timestamp lt $GRAPHS_LIMIT;
+	my $expired = $timestamp lt $GRAPH_EXPIRYDATE;
 	my $graphs = {
 		'timestamp' => $timestamp,
 		'expired'   => $expired,
@@ -624,7 +624,7 @@ sub servicegroup_has_changes ($$) {
 	# if servicegroup has expired NGs
 	my $ngs = $sgs->{$sg}->{ngs};
 	while( my ($k, $v) = each %$ngs ){
-		return 1 if $v->{timestamp} lt $NG_LIMIT;
+		return 1 if $v->{timestamp} lt $NG_EXPIRYDATE;
 	}
 	return undef;
 }
@@ -824,7 +824,7 @@ sub update_servicegroup ($$) {
 	# cleanup if servicegroup has expired NGs
 	foreach my $k ( keys %$ngs ){
 		my $v = $ngs->{$k};
-		next if $v->{timestamp} gt $NG_LIMIT;
+		next if $v->{timestamp} gt $NG_EXPIRYDATE;
 
 		my $timestamp = $v->{timestamp};
 		my $host      = $v->{host};
@@ -1037,8 +1037,8 @@ sub cmp_status ($$) {
 	return \%changes;
 }
 
-sub report ($$$) {
-	my ($status, $next_report, $last_report_status) = @_;
+sub report ($$$$) {
+	my ($reason, $status, $next_report, $last_report_status) = @_;
 
 	my $recipient  = $next_report->{recipient};
 	my $sg	       = $status->{servicegroup};
@@ -1063,6 +1063,7 @@ sub report ($$$) {
 	my $template = read_plain "$CONFDIR/servicegroup_mail.tt";
 	my $sessionurl = "$SESSIONURLBASE/sess_$sid/";
 	my $mail = generate_by_template $template,
+		'reason' => $reason,
 		'ngs' => \@ngs, 'nghistory' => \@nghistory,
 		'MAILFROM' => $MAILFROM, 'MAILTO' => $recipient,
 		'SERVICEGROUP' => $sg, 'SESSIONURL' => $sessionurl;
@@ -1157,7 +1158,7 @@ sub session_has_expired_graphs ($$) {
 sub session_is_expired ($$) {
 	my ($ss, $sid) = @_;
 	return 1 unless defined $ss->{$sid}->{timestamp};
-	return $ss->{$sid}->{timestamp} lt $SESSION_LIMIT;
+	return $ss->{$sid}->{timestamp} lt $SESSION_EXPIRYDATE;
 }
 
 sub session_is_in_transition ($$) {
@@ -1269,8 +1270,8 @@ sub load_sessions () {
 			}
 		}
 		close $i;
-		$session{is_expired} = $session{timestamp} lt $SESSION_LIMIT;
-		$session{has_expired_graphs} = $session{graphs_timestamp} lt $GRAPHS_LIMIT;
+		$session{is_expired} = $session{timestamp} lt $SESSION_EXPIRYDATE;
+		$session{has_expired_graphs} = $session{graphs_timestamp} lt $GRAPH_EXPIRYDATE;
 		$ss{$id} = \%session;
 	}
 	close $h;
@@ -1324,7 +1325,7 @@ sub get_session_servicegroup ($$) {
 sub graphs_are_expired () {
 	my $timestamp;
 	$timestamp = read_internal_timestamp "$WORKDIR/sg_graphs" if -f "$WORKDIR/sg_graphs";
-	return $timestamp lt $GRAPHS_LIMIT;
+	return $timestamp lt $GRAPH_EXPIRYDATE;
 }
 
 sub set_graphs_timestamp ($) {
@@ -1371,12 +1372,12 @@ foreach my $sg ( list_servicegroups $sgs ){
 			next if waiting_to_report $next_report, $last_report_status;
 
 			debuglog "reporting...";
-			report $status, $next_report, $last_report_status;
+			report 'CHANGE', $status, $next_report, $last_report_status;
 		}else{
 			next unless servicegroup_has_ngs $sgs, $sg;
 			next unless last_report_is_expired $last_report_status;
 			debuglog "reporting...";
-			report $status, $next_report, $last_report_status;
+			report 'KEEP', $status, $next_report, $last_report_status;
 		}
 	}
 }

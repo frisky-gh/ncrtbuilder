@@ -22,9 +22,9 @@ if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
 	close $f;
 }
 
-#### load linuxhost conf.
+#### load linux conf.
 my %targets;
-if( open my $f, '<', "$CONFDIR/linuxhost.targets" ){
+if( open my $f, '<', "$CONFDIR/hosttype/linux.hosts" ){
 	while( <$f> ){
 		chomp;
 		next if m"^\s*(#|$)";
@@ -34,20 +34,18 @@ if( open my $f, '<', "$CONFDIR/linuxhost.targets" ){
 	close $f;
 }
 
-#### append detector info.
-if( open my $f, '>>', "$WORKDIR/detectors" ){
-	print $f "linuxhost_disk	display_name=\"Disk\"\n";
-	close $f;
-}
-
-#### append detector mapping
-if( open my $f, '>>', "$WORKDIR/ncrtagent_host2service" ){
-	foreach my $i ( keys %targets ){
-		print $f "$i/linuxhost\tlinuxhost_disk\n";
+#### append hosts info.
+if( open my $f, '>>', "$WORKDIR/hosts" ){
+	while( my ($k, $v) = each %targets ){
+		print $f "$k	linux\n";
 	}
 	close $f;
 }
 
-
+#### append hosttype info.
+if( open my $f, '>>', "$WORKDIR/hosttypes" ){
+	print $f "linux	display_name=Linux:%hostname% address=%hostname%\n";
+	close $f;
+}
 
 

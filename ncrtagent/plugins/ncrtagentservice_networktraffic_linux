@@ -1,0 +1,216 @@
+#!/usr/bin/perl
+
+use strict;
+
+our $HISTORY_EXPIRYDATE = time - 1*60*60;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+####
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+
+sub nc ($) {
+	return sprintf "%d", $_[0];
+}
+
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
+	foreach my $k ( sort {$a cmp $b} keys %$var ){
+		next if $k eq 'timestamp';
+		push @ltsv, "$k:".$var->{$k};
+	}
+	return join "\t", @ltsv;
+}
+
+sub ltsv2var ( $ ){
+	my ($ltsv) = @_;
+	my %var;
+	foreach my $kv ( split m"\t", $ltsv ){
+		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
+			next;
+		};
+		my $k = $1;
+		my $v = $2;
+		$var{$k} = $v;
+	}
+	return %var;
+}
+
+#### load detector conf. for agents
+my @ignore_rules;
+my $f = "$CONFDIR/service/networktraffic.rules";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$f:$.:$_: illegal format, stopped" unless m"^!(\S+)$";
+		push @ignore_rules, qr"^$2$";
+	}
+	close $f;
+}
+
+####
+# data
+my %d;
+my %lastd;
+my @history;
+
+my $basename = "$WORKDIR/networktraffic";
+
+# load last data
+if( open my $f, '<', "$basename.status" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		next unless m"^([^=]+)=(.*)$";
+		my $k = $1;
+		my $v = $2;
+		$lastd{$k} = $v;
+	}
+	close $f;
+}
+if( open my $f, '<', "$basename.history" ){
+	while( <$f> ){
+		chomp;
+		my %v = ltsv2var $_;
+		push @history, \%v;
+	}
+	close $f;
+}
+
+
+
+# load curr data
+if( open my $f, '-|', "ip -s link" ){
+	my $ifname;
+	my $mode;
+	while( <$f> ){
+		chomp;
+		next unless m"^(?:
+			(\d+:\s+(?: (\w+) | \w+\@(if\d+) ):\s+<[^>]*>((?:\s+\S+\s+\S+)*)) |
+			(\s+RX:) |
+			(\s+TX:) |
+			(\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+))
+		).*$"x;
+		# new link
+		if    ( $1 ne '' ){
+			$ifname = $2 || $3;
+			foreach my $r ( @ignore_rules ){
+				next unless $ifname =~ $r;
+				$ifname = undef;
+				last;
+			}
+		# rx
+		}elsif( $5 ne '' ){
+			$mode = 'rx';
+		# tx
+		}elsif( $6 ne '' ){
+			$mode = 'tx';
+		# statistics
+		}elsif( $7 ne '' && $mode eq 'rx' ){
+			next unless defined $ifname;
+			$d{"link[$ifname]_rx_bytes_cnt"}   = nc $8;
+			$d{"link[$ifname]_rx_packets_cnt"} = nc $9;
+			$d{"link[$ifname]_rx_errors_cnt"}  = nc $10;
+			$d{"link[$ifname]_rx_dropped_cnt"} = nc $11;
+			$d{"link[$ifname]_rx_overrun_cnt"} = nc $12;
+			$d{"link[$ifname]_rx_mcast_cnt"}   = nc $13;
+		# statistics
+		}elsif( $7 ne '' && $mode eq 'tx' ){
+			next unless defined $ifname;
+			$d{"link[$ifname]_tx_bytes_cnt"}   = nc $8;
+			$d{"link[$ifname]_tx_packets_cnt"} = nc $9;
+			$d{"link[$ifname]_tx_errors_cnt"}  = nc $10;
+			$d{"link[$ifname]_tx_dropped_cnt"} = nc $11;
+			$d{"link[$ifname]_tx_carrier_cnt"} = nc $12;
+			$d{"link[$ifname]_tx_collsns_cnt"} = nc $13;
+		}
+	}
+}
+
+# store curr data as last data
+my $timestamp = time;
+if( open my $f, '>', "$basename.status" ){
+	print $f "timestamp=$timestamp\n";
+	while( my ($k, $v) = each %d ){
+		print $f "$k=$v\n";
+	}
+	close $f;
+}
+if( open my $f, '>', "$basename.history.$$" ){
+	push @history, { 'timestamp' => $timestamp,  %d };
+	foreach my $e ( @history ){
+		next if $e->{timestamp} < $HISTORY_EXPIRYDATE;
+		print $f var2ltsv %$e, "\n";
+	}
+	close $f;
+	unlink "$basename.history";
+	rename "$basename.history.$$", "$basename.history";
+}
+
+# diff
+my %diff;
+my $lasttimestamp = $lastd{timestamp};
+my $deltas = $timestamp - $lasttimestamp;
+my $deltam = int( ($deltas+59) / 60 );
+my @k = keys %d;
+if( $deltas >= 1 && $deltam >= 1 ){
+	foreach my $k ( @k ){
+		die unless $k =~ m"^(link\[.*\]_(tx|rx)_(bytes|packets|errors|dropped|overrun|mcast|carrier|collsns))_cnt$";
+		my $base = $1;
+		my $v1 = $d{$k};
+		my $v2 = $lastd{$k};
+		next unless defined $v2;
+		if( $k =~ m"^link\[.*\]_(?:tx|rx)_(?:bytes)_cnt$" ){
+			my $v = ($v1 - $v2) * 8 / $deltas / 1000000;
+			$d{"${base}_mbps"} = n $v;
+		}else{
+			my $v = ($v1 - $v2) / $deltam;
+			$d{"${base}_ppm"} = n $v;
+		}
+	}
+}
+my $origin;
+foreach my $e ( @history ){
+	last if defined $origin and $e->{timestamp} > $HISTORY_EXPIRYDATE;
+	$origin = $e;
+}
+$lasttimestamp = $origin->{timestamp};
+$deltas = $timestamp - ($lasttimestamp // $timestamp);
+$deltam = int( ($deltas+59) / 60 );
+if( $deltas >= 1 && $deltam >= 1 ){
+	foreach my $k ( @k ){
+		die unless $k =~ m"^(link\[.*\]_(tx|rx)_(bytes|packets|errors|dropped|overrun|mcast|carrier|collsns))_cnt$";
+		my $base = $1;
+		my $v1 = $d{$k};
+		my $v2 = $origin->{$k};
+		next unless defined $v2;
+		if( $k =~ m"^link\[.*\]_(?:tx|rx)_(?:bytes)_cnt$" ){
+			my $v = ($v1 - $v2) * 8 / $deltas / 1000000;
+			$d{"${base}_1h_avg_mbps"} = n $v;
+		}else{
+			my $v = ($v1 - $v2) / $deltam;
+			$d{"${base}_1h_avg_ppm"} = n $v;
+		}
+	}
+}
+
+# output
+foreach my $k ( sort keys %d ){
+	my $v = $d{$k};
+	print "$k=$v\n";
+}
+
+exit 0;
+
+

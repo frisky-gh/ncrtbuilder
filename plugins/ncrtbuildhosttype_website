@@ -35,7 +35,7 @@ if( open my $f, '<', "$CONFDIR/ncrtmasters.conf" ){
 
 #### load website targets
 my @websites;
-my $f = "$CONFDIR/website.targets";
+my $f = "$CONFDIR/hosttype/website.virtualhosts";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
@@ -46,41 +46,18 @@ if( open my $h, '<', $f ){
 	close $h;
 }
 
+#### append hosts info.
+if( open my $f, '>>', "$WORKDIR/hosts" ){
+	foreach my $h ( @websites ){
+		print $f "$h	virtual\n";
+	}
+	close $f;
+}
+
 #### append targettype info.
 if( open my $f, '>>', "$WORKDIR/targettypes" ){
 	print $f "website	display_name=WebSite:%targetname% address=127.0.0.1\n";
 	close $f;
 }
 
-####
-if( opendir my $d, $CONFDIR ){
-	while( my $e = readdir $d ){
-		next unless $e =~ m"^(website_\w+).(thresholds|rules|ignores)$";
-		my $detector = $1;
-		my $ext = $2;
-		my @rules;
-		my $f = "$CONFDIR/$detector.$ext";
-		if( open my $h, '<', $f ){
-			while( <$h> ){
-				chomp;
-				next if m"^\s*(#|$)";
-				die "$f:$.: illegal format, stopped" unless m"^(\S+)\s+(\S.*)$";
-				push @rules, [qr"^$1$", $2];
-			}
-			close $h;
-		}
-		foreach my $host ( @ncrtmasters ){
-			foreach my $website ( @websites ){
-				my $f = "$WORKDIR/ncrtmaster/$host/$detector.$website.$ext";
-				if( open my $h, '>', $f ){
-					foreach my $rule ( @rules ){
-						next unless $website =~ $rule->[0];
-						print $h $rule->[1], "\n";
-					}
-					close $h;
-				}
-			}
-		}
-	}
-}
 

@@ -24,7 +24,7 @@ if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
 
 #### load hosts
 my %host2service;
-if( open my $f, '<', "$WORKDIR/ncrtagent_host2service" ){
+if( open my $f, '<', "$WORKDIR/host2service" ){
 	while( <$f> ){
 		chomp;
 		my ($host, $service) = split m"\s+";
@@ -32,7 +32,7 @@ if( open my $f, '<', "$WORKDIR/ncrtagent_host2service" ){
 	}
 	close $f;
 }
-if( open my $f, '<', "$WORKDIR/ncrtmaster_host2service" ){
+if( open my $f, '<', "$WORKDIR/host2service" ){
 	while( <$f> ){
 		chomp;
 		my ($host, $service) = split m"\s+";
@@ -56,7 +56,7 @@ if( open my $h, '<', $f ){
 		next if m"^\s*(#|$)";
 		die "$f:$.: illegal format, stopped" unless m"^\s*(?:
 			(?<teamname>\S+): |
-			(?<hostname>\S+\/\w+) |
+			\*\s*(?<hostname>\S+) |
 			(?<email>\S+\@\S+) |
 			(?<username>\w+)
 		)\s*$"x;
@@ -82,8 +82,8 @@ my $f = "$WORKDIR/host2contact";
 if( open my $h, '>>', $f ){
 	while( my ($host, $service) = each %host2service ){
 		foreach my $teamname ( @{$host2team{$host}} ){
-			my $emails = $team2email{$teamname};
-			my $users = $team2user{$teamname};
+			my $emails = $team2email{$teamname} // [];
+			my $users  = $team2user{$teamname}  // [];
 			my $contacts = join ",", @$emails, @$users;
 			print $h "$host\t$contacts\n";
 		}
@@ -95,8 +95,8 @@ if( open my $h, '>>', $f ){
 	while( my ($host, $services) = each %host2service ){
 		foreach my $service ( @$services ){
 			foreach my $teamname ( @{$host2team{$host}} ){
-				my $emails = $team2email{$teamname};
-				my $users = $team2user{$teamname};
+				my $emails = $team2email{$teamname} // [];
+				my $users  = $team2user{$teamname}  // [];
 				my $contacts = join ",", @$emails, @$users;
 				print $h "$host\t$service\t$contacts\n";
 			}

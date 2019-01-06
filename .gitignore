@@ -39,11 +39,12 @@ inc/
 /conf/*.rpm
 /conf/*.pem
 /conf/*.conf
-/conf/*.rules
-/conf/*.ignores
-/conf/*.targets
-/conf/*.categories
-/conf/*.thresholds
+/conf/service/*.rules
+/conf/service/*.ignores
+/conf/service/*.categories
+/conf/service/*.thresholds
+/conf/hosttype/*.hosts
+/conf/hosttype/*.virtualhosts
 /ncrtmaster/conf/*.conf
 /ncrtmaster/conf/*.tt
 /ncrtmaster/conf/*.rules

@@ -1,0 +1,57 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+#### load global conf.
+my %ncrtconf;
+if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
+	while( <$f> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die unless m"^(\w+)=(.*)$";
+		$ncrtconf{$1} = $2;
+	}
+	close $f;
+}
+
+#### load linuxhosts.
+my %targets;
+if( open my $f, '<', "$WORKDIR/hosts" ){
+	while( <$f> ){
+		chomp;
+		my ($host, $hosttype) = split m"\s+";
+		next unless $hosttype =~ m"^(linux)$";
+		$targets{$host} = 1;
+	}
+	close $f;
+}
+
+#### append service info.
+if( open my $f, '>>', "$WORKDIR/services" ){
+	print $f "networktraffic	display_name=\"Network Traffic\"\n";
+	close $f;
+}
+
+#### append conf info.
+if( open my $f, '>>', "$WORKDIR/service2conf" ){
+	print $f "networktraffic	networktraffic.thresholds\n";
+	close $f;
+}
+
+#### append service mapping
+if( open my $f, '>>', "$WORKDIR/host2service" ){
+	foreach my $i ( keys %targets ){
+		print $f "$i\tnetworktraffic\n";
+	}
+	close $f;
+}
+
+

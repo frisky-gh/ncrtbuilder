@@ -23,7 +23,7 @@ sub nMB ($) {
 
 #### load detector conf.
 my @exist_rules;
-my $f = "$CONFDIR/linuxhost_disk.rules";
+my $f = "$CONFDIR/service/ltsv.targets";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
@@ -35,7 +35,7 @@ if( open my $h, '<', $f ){
 }
 
 my @ignore_rules;
-my $f = "$CONFDIR/linuxhost_disk.ignores";
+my $f = "$CONFDIR/service/disk.ignores";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
@@ -45,6 +45,36 @@ if( open my $h, '<', $f ){
 	}
 	close $h;
 }
+
+#!/bin/ksh
+
+if [ ! -f $logfile ] ; then
+	echo "CRIT - $logfile: not found. | "
+	exit 2
+fi
+
+if [ "x`find -L $logfile -mmin -$EXPIRE_MINUTES`" = x ] ; then
+	echo "CRIT - $logfile: expired. | "
+	exit 2
+fi
+
+R=`
+	tail -1 $logfile |
+	perl -e '
+		my $a = <STDIN>;
+		chomp $a;
+		my @a = split m/\t/, $a;
+		my @r;
+		foreach( @a ){
+			next unless m/^(\w+):(-?\d+(\.\d+)?)$/;
+			push @r, "$1=$2";
+		}
+		print "@r\n";
+	'
+`
+
+echo "OK - $R | $R"
+exit 0
 
 ####
 # data

@@ -14,7 +14,7 @@ my %d;
 
 # netstats conf
 my %rules;
-my $f = "$CONFDIR/linuxhost_networkserverperf.rules";
+my $f = "$CONFDIR/service/networkserverperf.rules";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;

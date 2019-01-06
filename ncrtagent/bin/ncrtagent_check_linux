@@ -9,10 +9,10 @@ our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $CONFDIR = "$TOOLHOME/conf";
 
 if( @ARGV < 1 ){
-	print "usage: % $0 DETECTOR_NAME [INDEX]\n";
+	print "usage: % $0 SERVICE_NAME [INDEX]\n";
 	exit 3;
 }
-my $detector = $ARGV[0];
+my $service = $ARGV[0];
 my $index = $ARGV[1];
 
 # setup work directory
@@ -30,8 +30,8 @@ my %m;
 my @w;
 my @c;
 
-# read from detector's output
-if( open my $e, '-|', "$PLUGINSDIR/ncrtagentdetector_$detector $CONFDIR $WORKDIR $index" ){
+# read from service's output
+if( open my $e, '-|', "$PLUGINSDIR/ncrtagentservice_${service}_linux $CONFDIR $WORKDIR $index" ){
 	while( <$e> ){
 		chomp;
 		next if m"^\s*(#|$)";
@@ -42,7 +42,7 @@ if( open my $e, '-|', "$PLUGINSDIR/ncrtagentdetector_$detector $CONFDIR $WORKDIR
 	}
 	close $e;
 }else{
-	print "UNKNOWN $PLUGINSDIR/ncrtagentdetector_$detector: not found.\n";
+	print "UNKNOWN $PLUGINSDIR/ncrtagentservice_${service}_linux: not found.\n";
 	exit 3;
 }
 
@@ -50,7 +50,7 @@ if( open my $e, '-|', "$PLUGINSDIR/ncrtagentdetector_$detector $CONFDIR $WORKDIR
 my @wt;
 my @ct;
 # load thresholds
-if( open my $f, '<', "$CONFDIR/$detector.thresholds" ){
+if( open my $f, '<', "$CONFDIR/service/$service.thresholds" ){
 	while( <$f> ){
 		chomp;
 		next if m"^\s*(#|$)";

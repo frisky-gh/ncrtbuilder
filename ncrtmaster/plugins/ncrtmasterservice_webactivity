@@ -3,13 +3,13 @@
 use strict;
 
 if( @ARGV < 4 ){
-        print "usage: % $0 CONFDIR WORKDIR TARGETNAME INDEX\n";
+        print "usage: % $0 CONFDIR WORKDIR VIRTUALHOSTNAME INDEX\n";
         exit 1;
 }
 
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
-our $TARGETNAME = $ARGV[2];
+our $VIRTUALHOSTNAME = $ARGV[2];
 our $INDEX = $ARGV[3];
 
 ####
@@ -23,7 +23,7 @@ sub nB ($) {
 
 #### load detector conf.
 my @rules;
-my $f = "$CONFDIR/website_activity.$TARGETNAME.rules";
+my $f = "$CONFDIR/service/webactivity.rules.$VIRTUALHOSTNAME";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;

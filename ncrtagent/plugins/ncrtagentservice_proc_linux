@@ -21,7 +21,7 @@ sub nc ($) {
 
 ####
 my @category_rules;
-my $f = "$CONFDIR/linuxhost_proc.categories";
+my $f = "$CONFDIR/service/proc.categories";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
@@ -36,7 +36,7 @@ if( open my $h, '<', $f ){
 }
 
 my @elapsed_rules;
-my $f = "$CONFDIR/linuxhost_proc_elapsed.rules";
+my $f = "$CONFDIR/service/proc_elapsed.rules";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
@@ -49,7 +49,7 @@ if( open my $h, '<', $f ){
 }
 
 my @count_rules;
-my $f = "$CONFDIR/linuxhost_proc_count.rules";
+my $f = "$CONFDIR/service/proc_count.rules";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
