@@ -24,7 +24,7 @@ if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
 
 #### load linux conf.
 my %targets;
-if( open my $f, '<', "$CONFDIR/hosttype/linux.hosts" ){
+if( open my $f, '<', "$CONFDIR/agent/linux.hosts" ){
 	while( <$f> ){
 		chomp;
 		next if m"^\s*(#|$)";

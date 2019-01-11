@@ -36,13 +36,12 @@ if( open my $f, '<', "$WORKDIR/hosts" ){
 
 #### append service info.
 if( open my $f, '>>', "$WORKDIR/services" ){
-	print $f "networktraffic	display_name=\"Network Traffic\"\n";
+	print $f "networktraffic	agent	display_name=\"Network Traffic\"\n";
 	close $f;
 }
 
 #### append conf info.
 if( open my $f, '>>', "$WORKDIR/service2conf" ){
-	print $f "networktraffic	networktraffic.thresholds\n";
 	close $f;
 }
 

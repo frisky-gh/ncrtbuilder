@@ -33,85 +33,63 @@ if( open my $f, '<', "$CONFDIR/ncrtmasters.conf" ){
 	close $f;
 }
 
-#### load website targets
-my @websites;
-if( open my $f, '<', "$CONFDIR/hosttype/website.virtualhosts" ){
-	while( <$f> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		push @websites, $_;
-	}
-	close $f;
-}
-
-#### load detector conf.
-my @rules;
-my $f = "$CONFDIR/service/webactivity.rules";
-if( open my $h, '<', $f ){
-	while( <$h> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die "$f:$.: illegal format, stopped" unless m"^
-			(\S+)\s+
-			(
-				http(s)?://
-				(?:([^\s:]+):([^\s\@]+)\@)?
-				([-0-9a-zA-Z.]+)
-				(?::(\d+))?
-				((/[^\s\?]*)?(?:\?(\S*))?)
-			)\s+ 
-			(\d+)
-		$"x;
-		my $website_re = qr"^$1$";
-		my $url = $2;
-		my $status = $3;
-		# same url string to the url in ncrtmaster_website_activity
-		my $url = $3 ? "https" : "http";
-		$url .= "://";
-		$url .= "$4\@" if $4;
-		$url .= $6;
-		$url .= ":$7" if $7;
-		$url .= $8 if $8;
-		$url =~ s{[^-.\w:/@%=&+?]}{"#".uc unpack("H2",$&)}eg;
-		push @rules, [$website_re, $url, $status];
-	}
-	close $h;
-}
-
-my %website2infos;
-foreach my $website ( @websites ){
-	foreach my $rule ( @rules ){
-		next unless $website =~ $rule->[0];
-		push @{$website2infos{$website}}, [$rule->[1], $rule->[2]];
+#### load service conf.
+my $f = "$CONFDIR/gateway/ltsv.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+my $vhost;
+my $vservice;
+my %vhost2vservice;
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+		$vhost = $1;
+		$vservice = $2;
+	}elsif( m"^(\w+=\S*)$" ){
+		#
+	}elsif( m"^
+		(\S+)\s+(/\S*)\s+(\S+)
+	$"x ){
+		my $host = $1;
+		my $path = $2;
+		my $fieldpattern = $3;
+		$vhost2vservice{$vhost}->{$vservice} = 1;
+	}else{
+		die "$f:$.: illegal format, stopped";
 	}
 }
+close $h;
 
 #### append service info.
-if( open my $h, '>>', "$WORKDIR/services" ){
-	print $h "webactivity\n";
-	close $h;
-}
+open my $h, '>>', "$WORKDIR/services" or do {
+	die "$f: cannot open, stopped";
+};
+print $h "ltsv	gateway\n";
+close $h;
 
 #### append conf info.
-if( open my $h, '>>', "$WORKDIR/service2conf" ){
-	print $h "webactivity	webactivity.thresholds\n";
-	print $h "webactivity	webactivity.rules\n";
-	close $h;
-}
+open my $h, '>>', "$WORKDIR/service2conf" or do {
+	die "$f: cannot open, stopped";
+};
+print $h "ltsv	gateway/ltsv.conf\n";
+close $h;
 
 #### append service mapping
-if( open my $h, '>>', "$WORKDIR/host2service" ){
-	foreach my $website ( @websites ){
-		my $index = "0000";
-		foreach my $info ( @{$website2infos{$website}} ){
-			my $url = $info->[0];
-			print $h "$website\twebactivity.$index\t",
-				"display_name=\"$url\"\n";
-			$index++;
-		}
+open my $h, '>>', "$WORKDIR/host2service" or do {
+	die "$f: cannot open, stopped";
+};
+
+while( my ($vhost, $vservices) = each %vhost2vservice ){
+	my $index = '0000';
+	foreach my $vservice ( sort keys %$vservices ){
+		print $h "$vhost	ltsv.$index",
+			"	display_name=\"$vservice\"\n";
+		$index++;
 	}
-	close $h;
 }
+close $h;
 
 
 

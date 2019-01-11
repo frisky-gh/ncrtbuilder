@@ -21,14 +21,16 @@ sub nB ($) {
 	return sprintf "%dB", $_[0];
 }
 
-#### load detector conf.
+#### load service conf.
 my @rules;
-my $f = "$CONFDIR/service/webactivity.rules.$VIRTUALHOSTNAME";
+my $f = "$CONFDIR/master/webactivity.conf.$VIRTUALHOSTNAME";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
 		next if m"^\s*($|#)";
 		die "$f:$.: illegal format, stopped" unless m"^
+			(\w+)
+			\s+
 			http(s)?://
 			(?:([^\s:]+):([^\s\@]+)\@)?
 			([-0-9a-zA-Z.]+)
@@ -37,15 +39,16 @@ if( open my $h, '<', $f ){
 			\s+
 			(\d+)
 		$"x;
-		my $secure = $1;
-		my $user = $2;
-		my $passwd = $3;
-		my $host = $4;
-		my $port = $5 || $secure ? 443 : 80;
-		my $path_query = $6;
-		my $path = $7;
-		my $query = $8;
-		my $status = $9;
+		my $shortname = $1;
+		my $secure = $2;
+		my $user = $3;
+		my $passwd = $4;
+		my $host = $5;
+		my $port = $6 || $secure ? 443 : 80;
+		my $path_query = $7;
+		my $path = $8;
+		my $query = $9;
+		my $status = $10;
 		my $args = "-H $host -p $port";
 		$args .= " -S" if $secure;
 		$args .= " -a \Q$user:$passwd\E" if $user;
@@ -57,15 +60,13 @@ if( open my $h, '<', $f ){
 		$url .= $host;
 		$url .= ":$5" if $5;
 		$url .= $path_query if $path_query;
-		my $output_url = $url;
-		$output_url =~ s{[^-.\w:%/]}{"*".uc unpack("H2",$&)}eg;
-		push @rules, [$url, $status, $args, $output_url];
+		push @rules, [$url, $status, $args, $shortname];
 	}
 	close $h;
 }
 
 ####
-my ($url, $wantstatus, $args, $output_url) = @{$rules[$INDEX]};
+my ($url, $wantstatus, $args, $shortname) = @{$rules[$INDEX]};
 my %d;
 if( open my $h, '-|', "/usr/lib/nagios/plugins/check_http $args" ){
 	my $r = <$h>;
@@ -80,7 +81,7 @@ if( open my $h, '-|', "/usr/lib/nagios/plugins/check_http $args" ){
 		    CRITICAL\ -\ (.*)
 		)
 	$"x or do {
-		print "web[$output_url]_status=2\n";
+		print "web[$shortname]_status=2\n";
 	};
 	my $result = $2;
 	my $statuscode = $3;
@@ -89,9 +90,9 @@ if( open my $h, '-|', "/usr/lib/nagios/plugins/check_http $args" ){
 	my $elapsed = ns $6;
 	my $size = nB $7;
 	my $status = $statuscode eq $wantstatus ? 0 : 1;
-	print "web[$output_url]_size=$size\n";
-	print "web[$output_url]_elapsed=$elapsed\n";
-	print "web[$output_url]_status=$status\n";
+	print "web[$shortname]_size=$size\n";
+	print "web[$shortname]_elapsed=$elapsed\n";
+	print "web[$shortname]_status=$status\n";
 }
 
 exit 0;

@@ -36,16 +36,15 @@ if( open my $f, '<', "$WORKDIR/hosts" ){
 
 #### append service info.
 if( open my $h, '>>', "$WORKDIR/services" ){
-	print $h "proc	display_name=\"Process\"\n";
+	print $h "proc	agent	display_name=\"Process\"\n";
 	close $h;
 }
 
 #### append conf info.
 if( open my $f, '>>', "$WORKDIR/service2conf" ){
-	print $f "proc	proc.thresholds\n";
-	print $f "proc	proc.categories\n";
-	print $f "proc	proc_count.rules\n";
-	print $f "proc	proc_elapsed.rules\n";
+	print $f "proc	agent/proc.categories\n";
+	print $f "proc	agent/proc_count.rules\n";
+	print $f "proc	agent/proc_elapsed.rules\n";
 	close $f;
 }
 

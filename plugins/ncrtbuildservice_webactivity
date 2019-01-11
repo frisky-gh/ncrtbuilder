@@ -33,36 +33,30 @@ if( open my $f, '<', "$CONFDIR/ncrtmasters.conf" ){
 	close $f;
 }
 
-#### load website targets
-my @websites;
-if( open my $f, '<', "$CONFDIR/hosttype/website.virtualhosts" ){
-	while( <$f> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		push @websites, $_;
-	}
-	close $f;
-}
-
 #### load detector conf.
-my @rules;
-my $f = "$CONFDIR/service/webactivity.rules";
-if( open my $h, '<', $f ){
-	while( <$h> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die "$f:$.: illegal format, stopped" unless m"^
-			(\S+)\s+
-			(
-				http(s)?://
-				(?:([^\s:]+):([^\s\@]+)\@)?
-				([-0-9a-zA-Z.]+)
-				(?::(\d+))?
-				((/[^\s\?]*)?(?:\?(\S*))?)
-			)\s+ 
-			(\d+)
-		$"x;
-		my $website_re = qr"^$1$";
+my $f = "$CONFDIR/master/webactivity.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+my $vhost;
+my %vhost2rules;
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	if( m"^===\s+(\S+)\s+===$" ){
+		$vhost = $1;
+	}elsif( m"^
+		(\S+)\s+
+		(
+			http(s)?://
+			(?:([^\s:]+):([^\s\@]+)\@)?
+			([-0-9a-zA-Z.]+)
+			(?::(\d+))?
+			((/[^\s\?]*)?(?:\?(\S*))?)
+		)\s+ 
+		(\d+)
+	$"x ){
+		my $shortname = $1;
 		my $url = $2;
 		my $status = $3;
 		# same url string to the url in ncrtmaster_website_activity
@@ -73,45 +67,41 @@ if( open my $h, '<', $f ){
 		$url .= ":$7" if $7;
 		$url .= $8 if $8;
 		$url =~ s{[^-.\w:/@%=&+?]}{"#".uc unpack("H2",$&)}eg;
-		push @rules, [$website_re, $url, $status];
-	}
-	close $h;
-}
-
-my %website2infos;
-foreach my $website ( @websites ){
-	foreach my $rule ( @rules ){
-		next unless $website =~ $rule->[0];
-		push @{$website2infos{$website}}, [$rule->[1], $rule->[2]];
+		push @{$vhost2rules{$vhost}}, [$shortname, $url, $status];
+	}else{
+		die "$f:$.: illegal format, stopped";
 	}
 }
+close $h;
 
 #### append service info.
-if( open my $h, '>>', "$WORKDIR/services" ){
-	print $h "webactivity\n";
-	close $h;
-}
+open my $h, '>>', "$WORKDIR/services" or do {
+	die "$f: cannot open, stopped";
+};
+print $h "webactivity	master\n";
+close $h;
 
 #### append conf info.
-if( open my $h, '>>', "$WORKDIR/service2conf" ){
-	print $h "webactivity	webactivity.thresholds\n";
-	print $h "webactivity	webactivity.rules\n";
-	close $h;
-}
+open my $h, '>>', "$WORKDIR/service2conf" or do {
+	die "$f: cannot open, stopped";
+};
+print $h "webactivity	master/webactivity.conf\n";
+close $h;
 
 #### append service mapping
-if( open my $h, '>>', "$WORKDIR/host2service" ){
-	foreach my $website ( @websites ){
-		my $index = "0000";
-		foreach my $info ( @{$website2infos{$website}} ){
-			my $url = $info->[0];
-			print $h "$website\twebactivity.$index\t",
-				"display_name=\"$url\"\n";
-			$index++;
-		}
+open my $h, '>>', "$WORKDIR/host2service" or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($vhost, $rules) = each %vhost2rules ){
+	my $index = "0000";
+	foreach my $rule ( @$rules ){
+		my $shortname = $rule->[0];
+		print $h "$vhost	webactivity.$index",
+			"	display_name=\"$shortname\"\n";
+		$index++;
 	}
-	close $h;
 }
+close $h;
 
 
 

@@ -36,13 +36,12 @@ if( open my $f, '<', "$WORKDIR/hosts" ){
 
 #### append service info.
 if( open my $f, '>>', "$WORKDIR/services" ){
-	print $f "osperf	display_name=\"OS Performance\"\n";
+	print $f "osperf	agent	display_name=\"OS Performance\"\n";
 	close $f;
 }
 
 #### append conf info.
 if( open my $f, '>>', "$WORKDIR/service2conf" ){
-	print $f "osperf	osperf.thresholds\n";
 	close $f;
 }
 

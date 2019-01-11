@@ -36,14 +36,13 @@ if( open my $f, '<', "$WORKDIR/hosts" ){
 
 #### append service info.
 if( open my $f, '>>', "$WORKDIR/services" ){
-	print $f "networkserverperf	display_name=\"Network Server Connections\"\n";
+	print $f "networkserverperf	agent	display_name=\"Network Server Connections\"\n";
 	close $f;
 }
 
 #### append conf info.
 if( open my $f, '>>', "$WORKDIR/service2conf" ){
-	print $f "networkserverperf	networkserverperf.thresholds\n";
-	print $f "networkserverperf	networkserverperf.rules\n";
+	print $f "networkserverperf	agent/networkserverperf.rules\n";
 	close $f;
 }
 

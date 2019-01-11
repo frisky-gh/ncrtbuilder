@@ -36,15 +36,14 @@ if( open my $f, '<', "$WORKDIR/hosts" ){
 
 #### append service info.
 if( open my $f, '>>', "$WORKDIR/services" ){
-	print $f "disk	display_name=\"Disk\"\n";
+	print $f "disk	agent	display_name=\"Disk\"\n";
 	close $f;
 }
 
 #### append conf info.
 if( open my $f, '>>', "$WORKDIR/service2conf" ){
-	print $f "disk	disk.thresholds\n";
-	print $f "disk	disk.rules\n";
-	print $f "disk	disk.ignores\n";
+	print $f "disk	agent/disk.rules\n";
+	print $f "disk	agent/disk.ignores\n";
 	close $f;
 }
 

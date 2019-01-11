@@ -210,6 +210,13 @@
         dest: "{{NCRTMASTERHOME}}/conf/"
       tags: [ common ]
 
+    - name: setup gateway accessor
+      template:
+        mode: 0755
+        src: "ncrtmaster_gatewayaccess"
+        dest: "{{NCRTMASTERHOME}}/bin/ncrtmaster_gatewayaccess"
+      tags: [ common ]
+
     - name: setup settings in ncrt master
       template:
         src: "{{item}}"

@@ -1,0 +1,73 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 5 ){
+        print "usage: % $0 CONFDIR WORKDIR ACCESSOR VIRTUALHOSTNAME INDEX\n";
+        exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $ACCESSOR = $ARGV[2];
+our $VHOST = $ARGV[3];
+our $INDEX = $ARGV[4];
+
+####
+sub ns ($) {
+	return sprintf "%.2fs", $_[0];
+}
+
+sub nB ($) {
+	return sprintf "%dB", $_[0];
+}
+
+#### load service conf.
+my $f = "$CONFDIR/gateway/ltsv.conf.$VHOST.$INDEX";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+my %ltsvhosts;
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	if( m"^(\S+)$"x ){
+		my $ltsvhost = $1;
+		$ltsvhosts{$ltsvhost} = 1;
+	}else{
+		die "$f:$.: illegal format, stopped";
+	}
+}
+close $h;
+
+####
+my %d;
+foreach my $ltsvhost ( keys %ltsvhosts ){
+	open my $h, '-|', "$ACCESSOR $ltsvhost" or do {
+		die;
+	};
+	my $r = <$h>;
+	close $h;
+
+	chomp $r;
+	$r =~ m"^
+		.* \|\s*
+		(\S.*)
+	$"x or do {
+		print "gateway[$ltsvhost]_status=2\n";
+	};
+	my $perfdata = $1;
+	foreach my $field ( split m"\s+", $perfdata ){
+		next unless $field =~ m"^([^=]+)=(\d+|\d+\.\d+|\.\d+)(;.*)$";
+		$d{$1} = $2;
+	}
+}
+
+foreach my $k ( sort keys %d ){
+	my $v = $d{$k};
+	print "$k=$v\n";
+}
+
+exit 0;
+
+

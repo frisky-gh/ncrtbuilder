@@ -5,15 +5,17 @@ use strict;
 $0 =~ m"^(.*)/";
 our $TOOLHOME = "$1/..";
 while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+our $BINDIR = "$TOOLHOME/bin";
 our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $CONFDIR = "$TOOLHOME/conf";
 
-if( @ARGV < 1 ){
-	print "usage: % $0 SERVICE_NAME [INDEX]\n";
+if( @ARGV < 3 ){
+	print "usage: % $0 SERVICE_NAME VHOST_NAME INDEX\n";
 	exit 3;
 }
 my $service = $ARGV[0];
-my $index = $ARGV[1];
+my $vhost = $ARGV[1];
+my $index = $ARGV[2];
 
 # setup work directory
 our $WORKDIR;
@@ -24,6 +26,9 @@ else{
 }
 unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
 
+# accessor
+my $accessor = "$BINDIR/ncrtmaster_gatewayaccess $service $vhost $index";
+
 # metrics
 my %m;
 #
@@ -31,26 +36,25 @@ my @w;
 my @c;
 
 # read from service's output
-if( open my $e, '-|', "$PLUGINSDIR/ncrtagentservice_${service}_linux $CONFDIR $WORKDIR $index" ){
-	while( <$e> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die "$_, stopped" unless m"^([-\w/\[\]]+)=(\S+)$";
-		my $k = $1;
-		my $v = $2;
-		$m{$k} = $v;
-	}
-	close $e;
-}else{
-	print "UNKNOWN $PLUGINSDIR/ncrtagentservice_${service}_linux: not found.\n";
+open my $e, '-|', "$PLUGINSDIR/ncrtmastergateway_$service $CONFDIR $WORKDIR \"$accessor\" $vhost $index" or do {
+	print "UNKNOWN $PLUGINSDIR/ncrtmastergateway_$service: not found.\n";
 	exit 3;
+};
+while( <$e> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die "$_, stopped" unless m"^([-\w/\[\].:@\$%#\*]+)=(\S+)$";
+	my $k = $1;
+	my $v = $2;
+	$m{$k} = $v;
 }
+close $e;
 
 # thresholds
 my @wt;
 my @ct;
 # load thresholds
-if( open my $f, '<', "$CONFDIR/threshold/$service.thresholds" ){
+if( open my $f, '<', "$CONFDIR/threshold/$service.thresholds.$vhost.$index" ){
 	while( <$f> ){
 		chomp;
 		next if m"^\s*(#|$)";
@@ -90,6 +94,7 @@ foreach my $k ( keys %m ){
 my @p;
 foreach my $k ( sort keys %m ){
 	my $v = $m{$k};
+	my $c;
 	my $critical_occurred;
 	my ($min, $max);
 	
@@ -101,11 +106,10 @@ foreach my $k ( sort keys %m ){
 
 	my $key_text = $unit ? "$k\[$unit\]" : "$k";
 
-	my $c;
 	if( $cm{$k} ){
 		my ($lower, $upper) = @{$cm{$k}};
 		$c = "$lower:$upper";
-		if    ( $value < $lower ){
+		if    ( $v < $lower ){
 			push @c, "$key_text:${value}(lower_crit_thr:$lower)";
 			$critical_occurred = 1;
 		}elsif( $v > $upper ){
@@ -119,9 +123,9 @@ foreach my $k ( sort keys %m ){
 		$w = "$lower:$upper";
 		if    ( $critical_occurred ){
 			# ignore
-		}elsif( $value < $lower ){
+		}elsif( $v < $lower ){
 			push @w, "$key_text:${value}(lower_warn_thr:$lower)";
-		}elsif( $value > $upper ){
+		}elsif( $v > $upper ){
 			push @w, "$key_text:${value}(upper_warn_thr:$upper)";
 		}
 	}

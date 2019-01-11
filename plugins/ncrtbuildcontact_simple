@@ -24,22 +24,16 @@ if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
 
 #### load hosts
 my %host2service;
-if( open my $f, '<', "$WORKDIR/host2service" ){
-	while( <$f> ){
-		chomp;
-		my ($host, $service) = split m"\s+";
-		push @{$host2service{$host}}, $service;
-	}
-	close $f;
+my $f = "$WORKDIR/host2service";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	my ($host, $service) = split m"\s+";
+	push @{$host2service{$host}}, $service;
 }
-if( open my $f, '<', "$WORKDIR/host2service" ){
-	while( <$f> ){
-		chomp;
-		my ($host, $service) = split m"\s+";
-		push @{$host2service{$host}}, $service;
-	}
-	close $f;
-}
+close $f;
 
 #### load contact conf.
 my $teamname;
@@ -49,70 +43,77 @@ my %team2user;
 my %emails;
 my %users;
 my $f = "$CONFDIR/contact_simple.conf";
-if( open my $h, '<', $f ){
-	my $teamname;
-	while( <$h> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die "$f:$.: illegal format, stopped" unless m"^\s*(?:
-			(?<teamname>\S+): |
-			\*\s*(?<hostname>\S+) |
-			(?<email>\S+\@\S+) |
-			(?<username>\w+)
-		)\s*$"x;
-		if( $+{teamname} ){
-			$teamname = $+{teamname};
-		}elsif( $+{hostname} ){
-			push @{ $host2team{$+{hostname}} }, $teamname;
-		}elsif( $+{email} ){
-			push @{$team2email{$teamname}}, $+{email};
-			$emails{$+{email}}++;
-		}elsif( $+{username} ){
-			push @{$team2user{$teamname}}, $+{username};
-			$users{$+{username}}++;
-		}else{
-			die "$f:$.: illegal format, stopped";
-		}
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+my $teamname;
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die "$f:$.: illegal format, stopped" unless m"^\s*(?:
+		(?<teamname>\S+): |
+		\*\s*(?<hostname>\S+) |
+		(?<email>\S+\@\S+) |
+		(?<username>\w+)
+	)\s*$"x;
+	if( $+{teamname} ){
+		$teamname = $+{teamname};
+	}elsif( $+{hostname} ){
+		push @{ $host2team{$+{hostname}} }, $teamname;
+	}elsif( $+{email} ){
+		push @{$team2email{$teamname}}, $+{email};
+		$emails{$+{email}}++;
+	}elsif( $+{username} ){
+		push @{$team2user{$teamname}}, $+{username};
+		$users{$+{username}}++;
+	}else{
+		die "$f:$.: illegal format, stopped";
 	}
-	close $h;
 }
+close $h;
 
 ####
 my $f = "$WORKDIR/host2contact";
-if( open my $h, '>>', $f ){
-	while( my ($host, $service) = each %host2service ){
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($host, $service) = each %host2service ){
+	foreach my $teamname ( @{$host2team{$host}} ){
+		my $emails = $team2email{$teamname} // [];
+	my $users  = $team2user{$teamname}  // [];
+		my $contacts = join ",", @$emails, @$users;
+		print $h "$host\t$contacts\n";
+	}
+}
+close $h;
+
+my $f = "$WORKDIR/hostservice2contact";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($host, $services) = each %host2service ){
+	foreach my $service ( @$services ){
 		foreach my $teamname ( @{$host2team{$host}} ){
 			my $emails = $team2email{$teamname} // [];
 			my $users  = $team2user{$teamname}  // [];
 			my $contacts = join ",", @$emails, @$users;
-			print $h "$host\t$contacts\n";
+			print $h "$host\t$service\t$contacts\n";
 		}
 	}
-	close $h
 }
-my $f = "$WORKDIR/hostservice2contact";
-if( open my $h, '>>', $f ){
-	while( my ($host, $services) = each %host2service ){
-		foreach my $service ( @$services ){
-			foreach my $teamname ( @{$host2team{$host}} ){
-				my $emails = $team2email{$teamname} // [];
-				my $users  = $team2user{$teamname}  // [];
-				my $contacts = join ",", @$emails, @$users;
-				print $h "$host\t$service\t$contacts\n";
-			}
-		}
-	}
-	close $h
-}
+close $h;
+
 my $f = "$WORKDIR/host2group";
-if( open my $h, '>>', $f ){
-	while( my ($host) = each %host2service ){
-		foreach my $team ( @{$host2team{$host}} ){
-			print $h "$host\t$team\n";
-		}
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($host) = each %host2service ){
+	foreach my $team ( @{$host2team{$host}} ){
+		print $h "$host\t$team\n";
 	}
-	close $h;
 }
+close $h;
+
 my $f = "$WORKDIR/hostservice2group";
 if( open my $h, '>>', $f ){
 	while( my ($host, $services) = each %host2service ){

@@ -21,6 +21,16 @@ our $MASTERCONFDIR = "$TOOLHOME/ncrtmaster/conf";
 #	exit 3;
 #}
 
+# Step 0. read ncrtbuilder conf
+# Step 1. generate packages and certs
+# Step 2. create work dir structure
+# Step 3. run hosttype plugins
+# Step 4. run service plugins
+# Step 5. run contact plugins
+# Step 6. generate naemon conf
+# Step 7. deploy ncrtagents
+# Step 8. deploy ncrtmasters
+
 ####
 sub rm_r ($) {
 	my ($r) = @_;
@@ -39,12 +49,8 @@ sub rm_r ($) {
 	rmdir $r or die "$r, stopped";
 }
 
-sub parse_itementry ($) {
+sub _parse_itementry_option ($) {
 	( $_ ) = @_;
-	chomp;
-	return undef, undef if m"^\s*(#|$)";
-	return undef, "illegal format" unless m"^(\w+)"g;
-	my $item = $1;
 	my %opt;
 	my %templateopt;
 	while( m{\G
@@ -56,16 +62,27 @@ sub parse_itementry ($) {
 			)
 		)
 	}gx ){
-		return $item, \%opt, \%templateopt if $1 eq '';
+		return \%opt, \%templateopt if $1 eq '';
 
 		my $template = $2;
 		my $key = $3;
 		my $value = $4 ne '' ? $4 : $5;
 
 		if( $template ){ $templateopt{$key} = $value; }
-		else{ $opt{$key} = $value; }
+		else           { $opt{$key} = $value; }
 	}
 	return undef;
+}
+
+sub parse_itementry ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef if m"^\s*(#|$)";
+	return undef, "illegal format" unless m"^(\w+)"g;
+	my $item = $1;
+	my ($opt, $topt) = _parse_itementry_option $';
+	return undef unless defined $opt;
+	return $item, $opt, $topt;
 }
 
 sub parse_addressentry ($) {
@@ -74,27 +91,9 @@ sub parse_addressentry ($) {
 	return undef, undef if m"^\s*(#|$)";
 	return undef, "illegal format" unless m"^(\S+\@[-.a-zA-Z0-9]+)"g;
 	my $item = $1;
-	my %opt;
-	my %templateopt;
-	while( m{\G
-		($|\s+
-			(\@)?(\w+)=
-			(?:
-				"([^\\"]*(?:(?:\\\\|\\")+[^\\"]*)*)"|
-				([\w\!\#-\&\(-\/\:-\@\[-\_\{-\~]+)
-			)
-		)
-	}gx ){
-		return $item, \%opt, \%templateopt if $1 eq '';
-
-		my $template = $2;
-		my $key = $3;
-		my $value = $4 ne '' ? $4 : $5;
-
-		if( $template ){ $templateopt{$key} = $value; }
-		else{ $opt{$key} = $value; }
-	}
-	return undef;
+	my ($opt, $topt) = _parse_itementry_option $';
+	return undef unless defined $opt;
+	return $item, $opt, $topt;
 }
 
 sub parse_mapping ($) {
@@ -104,23 +103,9 @@ sub parse_mapping ($) {
 	return undef, undef, "illegal format" unless m"^(\S+)\s+(\w+(\.\d+)?)"g;
 	my $from = $1;
 	my $to = $2;
-	my %opt;
-	while( m{\G
-		($|\s+
-			(\w+)=
-			(?:
-				"([^\\"]*(?:(?:\\\\|\\")+[^\\"]*)*)"|
-				([\w\!\#-\&\(-\/\:-\@\[-\_\{-\~]+)
-			)
-		)
-	}gx ){
-		return $from, $to, \%opt if $1 eq '';
-
-		my $key = $2;
-		my $value = $3 ne '' ? $3 : $4;
-		$opt{$key} = $value;
-	}
-	return undef, undef, undef;
+	my ($opt, $topt) = _parse_itementry_option $';
+	return undef unless defined $opt;
+	return $from, $to, $opt, $topt;
 }
 
 sub parse_host2item_mapping ($) {
@@ -147,6 +132,8 @@ sub expand_params ($\%) {
 
 #END { rm_r $WORKDIR if -d $WORKDIR; }
 
+######## Step 0. ########
+
 #### load template conf.
 my %ncrtconf;
 if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
@@ -166,19 +153,20 @@ our $GRAFANADB      = $ncrtconf{'GRAFANADB'};
 our $GRAFANAUSER    = $ncrtconf{'GRAFANAUSER'};
 our $GRAFANAPASSWD  = $ncrtconf{'GRAFANAPASSWD'};
 our $GRAFANAORGID   = $ncrtconf{'GRAFANAORGID'};
-our $INFLUXDBHOST	= $ncrtconf{'INFLUXDBHOST'} || 'localhost';
-our $INFLUXDBPORT	= $ncrtconf{'INFLUXDBPORT'} || '8086';
-our $INFLUXDBADMINUSER   = $ncrtconf{'INFLUXDBADMINUSER'} || 'admin';
-our $INFLUXDBADMINPASSWD = $ncrtconf{'INFLUXDBADMINPASSWD'} || 'admin';
-our $INFLUXDBUSER	= $ncrtconf{'INFLUXDBUSER'} || 'naemon';
-our $INFLUXDBPASSWD      = $ncrtconf{'INFLUXDBPASSWD'} || 'naemon';
-our $INFLUXDBDATABASE    = $ncrtconf{'INFLUXDBDATABASE'} || 'naemon';
-our $AGENTPACKAGE	= $ncrtconf{'AGENTPACKAGE'} || 'nrpe';
-our $NRPEPORT	    = $ncrtconf{'NRPEPORT'} || '5666';
-our $NRPETLS	     = $ncrtconf{'NRPETLS'} || 'yes';
+our $INFLUXDBHOST	 = $ncrtconf{'INFLUXDBHOST'} // 'localhost';
+our $INFLUXDBPORT	 = $ncrtconf{'INFLUXDBPORT'} // '8086';
+our $INFLUXDBADMINUSER   = $ncrtconf{'INFLUXDBADMINUSER'}   // 'admin';
+our $INFLUXDBADMINPASSWD = $ncrtconf{'INFLUXDBADMINPASSWD'} // 'admin';
+our $INFLUXDBUSER	 = $ncrtconf{'INFLUXDBUSER'}     // 'naemon';
+our $INFLUXDBPASSWD      = $ncrtconf{'INFLUXDBPASSWD'}   // 'naemon';
+our $INFLUXDBDATABASE    = $ncrtconf{'INFLUXDBDATABASE'} // 'naemon';
+our $AGENTPACKAGE	 = $ncrtconf{'AGENTPACKAGE'} || 'nrpe';
+our $NRPEPORT	         = $ncrtconf{'NRPEPORT'} // '5666';
+our $NRPETLS	         = $ncrtconf{'NRPETLS'} // 'yes';
 
+######## Step 1. ########
 
-#### setup naemon2influx
+#### build naemon2influx package
 our $NAEMON2INFLUX_DEB;
 if( opendir my $d, $CONFDIR ){
 	while( my $e = readdir $d ){
@@ -208,7 +196,7 @@ if( not defined $NAEMON2INFLUX_DEB ){
 	die unless $r == 0;
 }
 
-#### setup naemon2influx-grafana-helper
+#### build naemon2influx-grafana-helper package
 our $NAEMON2INFLUX_GRAFANA_HELPER_DEB;
 if( opendir my $d, $CONFDIR ){
 	while( my $e = readdir $d ){
@@ -243,6 +231,8 @@ if( ! -f "$CONFDIR/ncrt_key.pem" ){
 	my $r = system "openssl req -verbose -subj '/C=JP/ST=Kanagawa-ken/O=Watao Family/CN=*' -x509 -newkey rsa:2048 -nodes -keyout $CONFDIR/ncrt_key.pem -out $CONFDIR/ncrt_cert.pem -days 36525";
 	die unless $r == 0;
 }
+
+######## Step 2. ########
 
 #### initialize fixed work dirs and files
 rm_r $WORKDIR if -d $WORKDIR;
@@ -380,28 +370,50 @@ print $f <<"EOF";
 EOF
 close $f;
 
-#### run all plugins
+#### find all plugins
+my @hosttype_plugins;
 my @service_plugins;
 my @contact_plugins;
 opendir my $d, $PLUGINSDIR or die;
 while( my $e = readdir $d ){
-	next unless $e =~ m"^ncrtbuild(?:(service|hosttype)|(contact))_";
-	push @service_plugins, $e if $1;
-	push @contact_plugins, $e if $2;
+	next unless $e =~ m"^ncrtbuild(?:(service)|(hosttype)|(contact))_";
+	push @service_plugins,  $e if $1;
+	push @hosttype_plugins, $e if $2;
+	push @contact_plugins,  $e if $3;
 }
 closedir $d;
+
+######## Step 3. ########
+
+#### run hosttype plugins
+foreach my $e ( sort @hosttype_plugins ){
+	print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
+	my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
+	print "r=", $r, "\n";
+	die unless $r == 0;
+}
+
+######## Step 4. ########
+
+#### run service plugins
 foreach my $e ( sort @service_plugins ){
 	print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
 	my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
 	print "r=", $r, "\n";
 	die unless $r == 0;
 }
+
+######## Step 5. ########
+
+#### run contact plugins
 foreach my $e ( sort @contact_plugins ){
 	print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
 	my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
 	print "r=", $r, "\n";
 	die unless $r == 0;
 }
+
+######## Step 6. ########
 
 #### initialize variable work dirs.
 my @ncrtmasters;
@@ -436,13 +448,17 @@ while( my ($h, $t) = each %host2hosttype ){
 
 foreach my $h ( @ncrtmasters ){
 	mkdir "$WORKDIR/ncrtmaster/$h" or die;
-	mkdir "$WORKDIR/ncrtmaster/$h/service" or die;
+	mkdir "$WORKDIR/ncrtmaster/$h/master" or die;
+	mkdir "$WORKDIR/ncrtmaster/$h/gateway" or die;
+	mkdir "$WORKDIR/ncrtmaster/$h/threshold" or die;
 	my $r = system "rsync -aSvx $MASTERCONFDIR/ $WORKDIR/ncrtmaster/$h/";
 	die unless $r == 0;
 }
 foreach my $h ( @ncrtagents ){
 	mkdir "$WORKDIR/ncrtagent/$h" or die;
-	mkdir "$WORKDIR/ncrtagent/$h/service" or die;
+	mkdir "$WORKDIR/ncrtagent/$h/agent" or die;
+	mkdir "$WORKDIR/ncrtagent/$h/gateway" or die;
+	mkdir "$WORKDIR/ncrtagent/$h/threshold" or die;
 	my $r = system "rsync -aSvx $AGENTCONFDIR/ $WORKDIR/ncrtagent/$h/";
 	die unless $r == 0;
 }
@@ -465,14 +481,16 @@ if( open my $h, '<', $f ){
 	}
 	close $h;
 }
+my %service2servicetype;
 my %service2opts;
 my %service2templateopts;
 my $f = "$WORKDIR/services";
 if( open my $h, '<', $f ){
 	while( <$h> ){
-		my ($service, $opts, $templateopts) = parse_itementry $_;
+		my ($service, $servicetype, $opts, $templateopts) = parse_mapping $_;
 		print "$f:$.:$opts\n" if !defined $service && defined $opts;
 		next unless $service;
+		$service2servicetype{$service} = $servicetype;
 		$service2opts{$service} = $opts;
 		$service2templateopts{$service} = $templateopts;
 	}
@@ -588,8 +606,9 @@ if( open my $f, '>>', "$WORKDIR/ncrt_hosttemplates.cfg" ){
 	close $f;
 }
 if( open my $f, '>>', "$WORKDIR/ncrt_servicetemplates.cfg" ){
-	foreach my $service ( sort keys %service2templateopts ){
+	foreach my $service ( sort keys %service2servicetype ){
 		my %p = ( 'service' => $service );
+		my $servicetype = $service2servicetype{$service};
 		my $s_topt = $service2templateopts{$service};
 		my @settings = generate_settings %$s_topt, %p;
 		####
@@ -609,6 +628,14 @@ if( open my $f, '>>', "$WORKDIR/ncrt_servicetemplates.cfg" ){
 		"	use			ncrt-generic-service\n",
 		@settings,
 		"	register		0\n",
+		"}\n",
+		"define service {\n",
+		"	name			ncrtgateway-$service\n",
+		"	check_command		ncrtmaster_gatewaycheck\n",
+		"	_service		$service\n",
+		"	use			ncrt-generic-service\n",
+		@settings,
+		"	register		0\n",
 		"}\n";
 	}
 	close $f;
@@ -622,7 +649,7 @@ sub generate_shortnamelist ($) {
 
 if( open my $f, '>', "$WORKDIR/ncrt_hosts.cfg" ){
 	foreach my $host ( sort keys %host2services ){
-		my $hosttype = $host2hosttype{$host};
+		my $hosttype = $host2hosttype{$host} // 'virtual';
 		my %p = ( 'hostname' => $host, 'hosttype' => $hosttype );
 		my $ht_opt = $hosttype2opts{$hosttype};
 		my @settings = generate_settings %$ht_opt, %p;
@@ -645,8 +672,7 @@ my %hscount;
 if( open my $f, '>', "$WORKDIR/ncrt_services.cfg" ){
 	foreach my $host_service_opts ( @host_service_opts ){
 		my ($host, $service, $hs_opts) = @$host_service_opts;
-		my $hosttype = $host2hosttype{$host};
-		my $servicetype = $hosttype eq 'virtual' ? 'ncrtmaster' : 'ncrtagent';
+		my $hosttype = $host2hosttype{$host} // 'virtual';
 		# servicedesc = servicebase + "." + serviceindex
 		my $servicebase = $service;
 		my $serviceindex;
@@ -654,6 +680,7 @@ if( open my $f, '>', "$WORKDIR/ncrt_services.cfg" ){
 			$servicebase  = $1;
 			$serviceindex = $2;
 		}
+		my $servicetype = $service2servicetype{$servicebase};
 		my $s_opt = $service2opts{$servicebase};
 		my %p = ( 'hostname' => $host, 'hosttype' => $hosttype,
 			  'servicebase' => $servicebase,
@@ -669,7 +696,7 @@ if( open my $f, '>', "$WORKDIR/ncrt_services.cfg" ){
 		"define service {\n",
 		"	host_name		$host\n",
 		"	service_description	$service\n",
-		"	use			$servicetype-$servicebase\n",
+		"	use			ncrt$servicetype-$servicebase\n",
 		"	contacts		$contacts\n",
 		"	_urlencoded	 	$e_service\n",
 		"	_base			$servicebase\n",
@@ -757,25 +784,28 @@ if( open my $h, '<', $f ){
 	close $h;
 }
 
-foreach my $host ( @ncrtagents ){
-	my @confs;
-	foreach my $service ( keys %{$host2services{$host}} ){
-		next unless defined $service2conf{$service};
-		push @confs, @{$service2conf{$service}};
-	}
+#### generate confs for which service type is agent
+while( my ($service, $servicetype) = each %service2servicetype ){
+	next unless $servicetype eq 'agent';
+	my @confs = @{$service2conf{$service} // []};
 
 	foreach my $conf ( @confs ){
 		my @rules;
-		if( open my $h, '<', "$CONFDIR/service/$conf" ){
-			while( <$h> ){
-				chomp;
-				next if m"^\s*(#|$)";
-				die unless m"^(\S+)\s+(.*)";
-				push @rules, [qr"$1", $2];
-			}
-			close $h;
+		open my $h, '<', "$CONFDIR/$conf" or do {
+			die;
+		};
+		while( <$h> ){
+			chomp;
+			next if m"^\s*(#|$)";
+			die unless m"^(\S+)\s+(.*)";
+			push @rules, [qr"$1", $2];
 		}
-		if( open my $h, '>', "$WORKDIR/ncrtagent/$host/service/$conf" ){
+		close $h;
+
+		while( my ($host, $hosttype) = each %host2hosttype ){
+			open my $h, '>', "$WORKDIR/ncrtagent/$host/$conf" or do {
+				die "$WORKDIR/ncrtagent/$host/$conf: cannot open, stopped";
+			};
 			foreach my $rule ( @rules ){
 				next unless $host =~ $rule->[0];
 				print $h $rule->[1], "\n";
@@ -785,36 +815,39 @@ foreach my $host ( @ncrtagents ){
 	}
 }
 
-while( my ($host, $hosttype) = each %host2hosttype ){
-	next unless $hosttype eq 'virtual';
-	my @confs;
-	foreach my $service ( keys %{$host2services{$host}} ){
-		# service = servicebase + "." + serviceindex
-		my $servicebase = $service;
-		my $serviceindex;
-		if( $service =~ m"^(\w+)(?:\.(\d+))?$" ){
-			$servicebase  = $1;
-			$serviceindex = $2;
-		}
-		next unless defined $service2conf{$servicebase};
-		push @confs, @{$service2conf{$servicebase}};
-	}
+#### generate confs for which service type is master
+my %vhosts;
+while( my ($service, $servicetype) = each %service2servicetype ){
+	next unless $servicetype eq 'master';
+	my @confs = @{$service2conf{$service}};
+
 	foreach my $conf ( @confs ){
-		my @rules;
-		if( open my $h, '<', "$CONFDIR/service/$conf" ){
-			while( <$h> ){
-				chomp;
-				next if m"^\s*(#|$)";
-				die unless m"^(\S+)\s+(.*)";
-				push @rules, [qr"$1", $2];
+		my %vhost2rules;
+		my $vhost;
+		open my $h, '<', "$CONFDIR/$conf" or do {
+			die "$CONFDIR/$conf: cannot open, stopped";
+		};
+		while( <$h> ){
+			chomp;
+			next if m"^\s*(#|$)";
+			if( m"^===\s+(\S+)\s+===$" ){
+				$vhost = $1;
+				$vhosts{$vhost} = 1;
+			}elsif( m"^(\S+)" ){
+				push @{$vhost2rules{$vhost}}, $_;
+			}else{
+				die;
 			}
-			close $h;
 		}
+		close $h;
+
 		foreach my $master ( @ncrtmasters ){
-			if( open my $h, '>', "$WORKDIR/ncrtmaster/$master/service/$conf.$host" ){
-				foreach my $rule ( @rules ){
-					next unless $host =~ $rule->[0];
-					print $h $rule->[1], "\n";
+			while( my ($vhost, $rules) = each %vhost2rules ){
+				open my $h, '>', "$WORKDIR/ncrtmaster/$master/$conf.$vhost" or do {
+					die;
+				};
+				foreach my $rule ( @$rules ){
+					print $h $rule, "\n";
 				}
 				close $h;
 			}
@@ -822,7 +855,213 @@ while( my ($host, $hosttype) = each %host2hosttype ){
 	}
 }
 
+#### generate confs for which service type is gateway
+sub diff (\%\%) {
+	my ($old, $new) = @_;
+	my %keys;
+	my %d;
+	while( my ($k) = each %$old ){ $keys{$k} = 1; }
+	while( my ($k) = each %$new ){ $keys{$k} = 1; }
+	while( my ($k) = each %keys ){
+		my $o = $old->{$k};
+		my $n = $new->{$k};
+		next if $o eq $n;
+		$d{$k} = $n;
+	}
+	return %d;
+}
+
+my %vhostvservices;
+while( my ($service, $servicetype) = each %service2servicetype ){
+	next unless $servicetype eq 'gateway';
+	my @confs = @{$service2conf{$service}};
+
+	foreach my $conf ( @confs ){
+		my %vhostvservice2rules;
+		my $vhostvservice;
+		my %option;
+		my $f = "$CONFDIR/$conf";
+		open my $h, '<', $f or do {
+			die "$f: cannot open, stopped";
+		};
+		while( <$h> ){
+			chomp;
+			next if m"^\s*(#|$)";
+			if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+				$vhostvservice = "$1 $2";
+				$vhostvservices{$vhostvservice} = 1;
+				%option = ();
+			}elsif( m"^(\w+)=(\S*)$" ){
+				$option{$1} = $2;
+			}elsif( m"^(\S+)\s+(\S.*)$" ){
+				push @{$vhostvservice2rules{$vhostvservice}}, [$1, $2, {%option}];
+			}else{
+				die "$f:$.: illegal format, stopped";
+			}
+		}
+		close $h;
+
+		while( my ($host, $hosttype) = each %host2hosttype ){
+			my $index = "0000";
+			foreach my $vhostvservice ( sort keys %vhostvservices ){
+				my ($vhost, $vservice) = split m"\s+", $vhostvservice;
+				my $rules = $vhostvservice2rules{$vhostvservice};
+				open my $h, '>', "$WORKDIR/ncrtagent/$host/$conf.$vhost.$index" or do {
+					die;
+				};
+				my %option;
+				foreach my $rule ( @$rules ){
+					my ($targethost, $item, $targetoption) = @$rule;
+					next unless $host eq $targethost;
+					my %d = diff %option, %$targetoption;
+					while( my ($k, $v) = each %d ){
+						print $h "$k=$v\n";
+						$option{$k} = $v;
+					}
+					print $h $item, "\n";
+				}
+				close $h;
+			}
+		}
+		foreach my $master ( @ncrtmasters ){
+			my $index = "0000";
+			foreach my $vhostvservice ( sort keys %vhostvservices ){
+				my ($vhost, $vservice) = split m"\s+", $vhostvservice;
+				my $rules = $vhostvservice2rules{$vhostvservice};
+				open my $h, '>', "$WORKDIR/ncrtmaster/$master/$conf.$vhost.$index" or do {
+					die;
+				};
+				my %marked;
+				foreach my $rule ( @$rules ){
+					my $host = $rule->[0];
+					next if $marked{$host};
+					print $h $host, "\n";
+					$marked{$host} = 1;
+				}
+				close $h;
+				$index++;
+			}
+		}
+	}
+}
+
+#### generate thresholds for which service type is agent
+while( my ($service, $servicetype) = each %service2servicetype ){
+	next unless $servicetype eq 'agent';
+	my $f = "$CONFDIR/threshold/$service.thresholds";
+	open my $h, '<', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	my @rules;
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		if( m"^(\S+)\s+(\S.*)$" ){
+			push @rules, [qr"$1", $2];
+		}else{
+			die "$f:$.: illegal format, stopped";
+		}
+	}
+	close $h;
+
+	while( my ($host, $hosttype) = each %host2hosttype ){
+		my $f = "$WORKDIR/ncrtagent/$host/threshold/$service.thresholds";
+		open my $h, '>', $f or do {
+			die "$f: cannot open, stopped";
+		};
+		foreach my $rule ( @rules ){
+			next unless $host =~ $rule->[0];
+			print $h $rule->[1], "\n";
+		}
+		close $h;
+	}
+}
+
+#### generate thresholds for which service type is master
+while( my ($service, $servicetype) = each %service2servicetype ){
+	next unless $servicetype eq 'master';
+	my $f = "$CONFDIR/threshold/$service.thresholds";
+	open my $h, '<', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	my @rules;
+	my $vhost_re;
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		if( m"^===\s+(\S+)\s+===$" ){
+			$vhost_re = qr"$1";
+		}elsif( m"^\S+" ){
+			push @rules, [$vhost_re, $_];
+		}else{
+			die "$f:$.: illegal format, stopped";
+		}
+	}
+	close $h;
+
+	foreach my $master ( @ncrtmasters ){
+		while( my ($vhost) = each %vhosts ){
+			my $f = "$WORKDIR/ncrtmaster/$master/threshold/$service.thresholds.$vhost";
+			open my $h, '>', $f or do {
+				die "$f: cannot open, stopped";
+			};
+	
+			foreach my $rule ( @rules ){
+				next unless $vhost =~ $rule->[0];
+				print $h $rule->[1], "\n";
+			}
+			close $h;
+		}
+	}
+}
+	
+#### generate thresholds for which service type is gateway
+while( my ($service, $servicetype) = each %service2servicetype ){
+	next unless $servicetype eq 'gateway';
+	my $f = "$CONFDIR/threshold/$service.thresholds";
+	open my $h, '<', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	my @rules;
+	my $vhost_re;
+	my $vservice_re;
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+			$vhost_re = qr"$1";
+			$vservice_re = qr"$2";
+		}elsif( m"^\S+" ){
+			push @rules, [$vhost_re, $vservice_re, $_];
+		}else{
+			die "$f:$.: illegal format, stopped";
+		}
+	}
+	close $h;
+
+	foreach my $master ( @ncrtmasters ){
+		my $index = "0000";
+		foreach my $vhostvservice ( sort keys %vhostvservices ){
+			my ($vhost, $vservice) = split m"\s+", $vhostvservice;
+			my $f = "$WORKDIR/ncrtmaster/$master/threshold/$service.thresholds.$vhost.$index";
+			open my $h, '>', $f or do {
+				die "$f: cannot open, stopped";
+			};
+	
+			foreach my $rule ( @rules ){
+				next unless $vhost    =~ $rule->[0];
+				next unless $vservice =~ $rule->[1];
+				print $h $rule->[2], "\n";
+			}
+			close $h;
+			$index++;
+		}
+	}
+}
+
 #exit 0;
+
+######## Step 7. ########
 
 ####
 my $tags = 'common';
@@ -839,6 +1078,8 @@ my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -i %s -t \"%s\"",
 	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $hosts, $tags;
 my $r = system "ansible-playbook -v $options $PLAYBOOKSDIR/build_ncrtmaster.yml";
 die unless $r == 0;
+
+######## Step 8. ########
 
 #### run ansible for nrpe agent
 my $hosts = join( ',', @ncrtagents, '' );

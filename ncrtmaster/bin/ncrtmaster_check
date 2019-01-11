@@ -9,11 +9,11 @@ our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $CONFDIR = "$TOOLHOME/conf";
 
 if( @ARGV < 2 ){
-	print "usage: % $0 DETECTOR_NAME TARGET_NAME [OPTION]\n";
+	print "usage: % $0 SERVICE_NAME VHOST_NAME [OPTION]\n";
 	exit 3;
 }
 my $service = $ARGV[0];
-my $target = $ARGV[1];
+my $vhost = $ARGV[1];
 my $option = $ARGV[2];
 
 # setup work directory
@@ -32,7 +32,7 @@ my @w;
 my @c;
 
 # read from service's output
-if( open my $e, '-|', "$PLUGINSDIR/ncrtmasterservice_$service $CONFDIR $WORKDIR $target $option" ){
+if( open my $e, '-|', "$PLUGINSDIR/ncrtmasterservice_$service $CONFDIR $WORKDIR $vhost $option" ){
 	while( <$e> ){
 		chomp;
 		next if m"^\s*(#|$)";
@@ -51,7 +51,7 @@ if( open my $e, '-|', "$PLUGINSDIR/ncrtmasterservice_$service $CONFDIR $WORKDIR 
 my @wt;
 my @ct;
 # load thresholds
-if( open my $f, '<', "$CONFDIR/$service.$target.thresholds" ){
+if( open my $f, '<', "$CONFDIR/threshold/$service.thresholds.$vhost" ){
 	while( <$f> ){
 		chomp;
 		next if m"^\s*(#|$)";
