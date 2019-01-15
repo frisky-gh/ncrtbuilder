@@ -12,45 +12,55 @@ our $WORKDIR = $ARGV[1];
 
 #### load global conf.
 my %ncrtconf;
-if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
-	while( <$f> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die unless m"^(\w+)=(.*)$";
-		$ncrtconf{$1} = $2;
-	}
-	close $f;
+my $f = "$CONFDIR/ncrtbuild.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\w+)=(.*)$";
+	$ncrtconf{$1} = $2;
 }
+close $h;
 
 #### load linuxhosts.
 my %targets;
-if( open my $f, '<', "$WORKDIR/hosts" ){
-	while( <$f> ){
-		chomp;
-		my ($host, $hosttype) = split m"\s+";
-		next unless $hosttype =~ m"^(linux)$";
-		$targets{$host} = 1;
-	}
-	close $f;
+my $f = "$WORKDIR/hosts";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	my ($host, $hosttype) = split m"\s+";
+	next unless $hosttype =~ m"^(linux)$";
+	$targets{$host} = 1;
 }
+close $h;
 
 #### append service info.
-if( open my $f, '>>', "$WORKDIR/services" ){
-	print $f "networktraffic	agent	display_name=\"Network Traffic\"\n";
-	close $f;
-}
+my $f = "$WORKDIR/services";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "networktraffic	agent	display_name=\"Network Traffic\"\n";
+close $h;
 
 #### append conf info.
-if( open my $f, '>>', "$WORKDIR/service2conf" ){
-	close $f;
-}
+my $f = "$WORKDIR/service2conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+close $h;
 
 #### append service mapping
-if( open my $f, '>>', "$WORKDIR/host2service" ){
-	foreach my $i ( keys %targets ){
-		print $f "$i\tnetworktraffic\n";
-	}
-	close $f;
+my $f = "$WORKDIR/host2service";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+foreach my $i ( keys %targets ){
+	print $h "$i\tnetworktraffic\n";
 }
+close $h;
 
 

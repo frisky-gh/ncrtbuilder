@@ -21,45 +21,48 @@ sub nc ($) {
 
 ####
 my @category_rules;
-my $f = "$CONFDIR/service/proc.categories";
-if( open my $h, '<', $f ){
-	while( <$h> ){
-		chomp;
-		next if m"^\s*($|#)";
-		die "$f:$.: illegal format, stopped" unless m"^([-.\w]+)\s+(\S+)\s+(\S+)$";
-		my $category = $1;
-		my $userre = qr"^$2$";
-		my $argsre = qr"^$3$";
-		push @category_rules, [$category, $userre, $argsre];
-	}
-	close $h;
+my $f = "$CONFDIR/agent/proc.categories";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*($|#)";
+	die "$f:$.: illegal format, stopped" unless m"^([-.\w]+)\s+(\S+)\s+(\S+)$";
+	my $category = $1;
+	my $userre = qr"^$2$";
+	my $argsre = qr"^$3$";
+	push @category_rules, [$category, $userre, $argsre];
 }
+close $h;
 
 my @elapsed_rules;
-my $f = "$CONFDIR/service/proc_elapsed.rules";
-if( open my $h, '<', $f ){
-	while( <$h> ){
-		chomp;
-		next if m"^\s*($|#)";
-		die "$f:$.: illegal format, stopped" unless m"^(\S+)$";
-		my $category_re = qr"^$1$";
-		push @elapsed_rules, $category_re;
-	}
-	close $h;
+my $f = "$CONFDIR/agent/proc_elapsed.rules";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*($|#)";
+	die "$f:$.: illegal format, stopped" unless m"^(\S+)$";
+	my $category_re = qr"^$1$";
+	push @elapsed_rules, $category_re;
 }
+close $h;
 
 my @count_rules;
-my $f = "$CONFDIR/service/proc_count.rules";
-if( open my $h, '<', $f ){
-	while( <$h> ){
-		chomp;
-		next if m"^\s*($|#)";
-		die "$f:$.: illegal format, stopped" unless m"^(\S+)$";
-		my $category_re = qr"^$1$";
-		push @count_rules, $category_re;
-	}
-	close $h;
+my $f = "$CONFDIR/agent/proc_count.rules";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*($|#)";
+	die "$f:$.: illegal format, stopped" unless m"^(\S+)$";
+	my $category_re = qr"^$1$";
+	push @count_rules, $category_re;
 }
+close $h;
 
 my %must_check_count;
 my %must_check_elapsed;
@@ -79,43 +82,44 @@ foreach my $category_rule ( @category_rules ){
 my %procs;
 my %threads;
 my %elapsed;
-if( open my $h, '-|', "ps -eLo 'pid,etime,user:32,args'" ){
-	my $ifname;
-	my $mode;
-	while( <$h> ){
-		chomp;
-		next if $. == 1;
-		next unless m"^
-			\s*
-			(\d+)
-			\s+
-			(?:
-				(?:   (?: (\d+)- )?   (\d+):   )?
-				(\d+):(\d+)
-			)
-			\s+
-			(\S+)
-			\s+
-			(\S.*)
-		$"x;
-		my $pid = $1;
-		my $elapsed = $2*24*60*60 + $3*60*60 + $4*60 + $5;
-		my $user = $6;
-		my $args = $7;
-		my %category;
-		foreach my $rule ( @category_rules ){
-			next unless $user =~ $rule->[1];
-			next unless $args =~ $rule->[2];
-			$category{$rule->[0]} = 1;
-		}
-		while( my ($category, undef) = each %category ){
-			$threads{$category}++;
-			$procs{$category}->{$pid} = 1;
-			$elapsed{$category} = $elapsed if $elapsed > $elapsed{$category};
-		}
+open my $h, '-|', "ps -eLo 'pid,etime,user:32,args'" or do {
+	die "ps: cannot execute, stopped";
+};
+my $ifname;
+my $mode;
+while( <$h> ){
+	chomp;
+	next if $. == 1;
+	next unless m"^
+		\s*
+		(\d+)
+		\s+
+		(?:
+			(?:   (?: (\d+)- )?   (\d+):   )?
+			(\d+):(\d+)
+		)
+		\s+
+		(\S+)
+		\s+
+		(\S.*)
+	$"x;
+	my $pid = $1;
+	my $elapsed = $2*24*60*60 + $3*60*60 + $4*60 + $5;
+	my $user = $6;
+	my $args = $7;
+	my %category;
+	foreach my $rule ( @category_rules ){
+		next unless $user =~ $rule->[1];
+		next unless $args =~ $rule->[2];
+		$category{$rule->[0]} = 1;
 	}
-	close $h;
+	while( my ($category, undef) = each %category ){
+		$threads{$category}++;
+		$procs{$category}->{$pid} = 1;
+		$elapsed{$category} = $elapsed if $elapsed > $elapsed{$category};
+	}
 }
+close $h;
 
 # output
 foreach my $category ( sort keys %must_check_count ){

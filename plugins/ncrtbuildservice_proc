@@ -12,49 +12,59 @@ our $WORKDIR = $ARGV[1];
 
 #### load global conf.
 my %ncrtconf;
-if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
-	while( <$f> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die unless m"^(\w+)=(.*)$";
-		$ncrtconf{$1} = $2;
-	}
-	close $f;
+my $f = "$CONFDIR/ncrtbuild.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\w+)=(.*)$";
+	$ncrtconf{$1} = $2;
 }
+close $h;
 
 #### load linuxhosts.
 my %targets;
-if( open my $f, '<', "$WORKDIR/hosts" ){
-	while( <$f> ){
-		chomp;
-		my ($host, $hosttype) = split m"\s+";
-		next unless $hosttype =~ m"^(linux)$";
-		$targets{$host} = 1;
-	}
-	close $f;
+my $f = "$WORKDIR/hosts";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	my ($host, $hosttype) = split m"\s+";
+	next unless $hosttype =~ m"^(linux)$";
+	$targets{$host} = 1;
 }
+close $h;
 
 #### append service info.
-if( open my $h, '>>', "$WORKDIR/services" ){
-	print $h "proc	agent	display_name=\"Process\"\n";
-	close $h;
-}
+my $f = "$WORKDIR/services";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "proc	agent	display_name=\"Process\"\n";
+close $h;
 
 #### append conf info.
-if( open my $f, '>>', "$WORKDIR/service2conf" ){
-	print $f "proc	agent/proc.categories\n";
-	print $f "proc	agent/proc_count.rules\n";
-	print $f "proc	agent/proc_elapsed.rules\n";
-	close $f;
-}
+my $f = "$WORKDIR/service2conf";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "proc	agent/proc.categories\n";
+print $h "proc	agent/proc_count.rules\n";
+print $h "proc	agent/proc_elapsed.rules\n";
+close $h;
 
 #### append service mapping
-if( open my $h, '>>', "$WORKDIR/host2service" ){
-	foreach my $i ( keys %targets ){
-		print $h "$i\tproc\n";
-	}
-	close $h;
+my $f = "$WORKDIR/host2service";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+foreach my $i ( keys %targets ){
+	print $h "$i\tproc\n";
 }
+close $h;
 
 
 

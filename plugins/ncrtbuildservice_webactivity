@@ -12,26 +12,30 @@ our $WORKDIR = $ARGV[1];
 
 #### load global conf.
 my %ncrtconf;
-if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
-	while( <$f> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die unless m"^(\w+)=(.*)$";
-		$ncrtconf{$1} = $2;
-	}
-	close $f;
+my $f = "$CONFDIR/ncrtbuild.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\w+)=(.*)$";
+	$ncrtconf{$1} = $2;
 }
+close $h;
 
 #### load ncrt masters conf.
 my @ncrtmasters;
-if( open my $f, '<', "$CONFDIR/ncrtmasters.conf" ){
-	while( <$f> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		push @ncrtmasters, $_;
-	}
-	close $f;
+my $f = "$CONFDIR/ncrtmasters.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	push @ncrtmasters, $_;
 }
+close $h;
 
 #### load detector conf.
 my $f = "$CONFDIR/master/webactivity.conf";
@@ -93,12 +97,9 @@ open my $h, '>>', "$WORKDIR/host2service" or do {
 	die "$f: cannot open, stopped";
 };
 while( my ($vhost, $rules) = each %vhost2rules ){
-	my $index = "0000";
 	foreach my $rule ( @$rules ){
 		my $shortname = $rule->[0];
-		print $h "$vhost	webactivity.$index",
-			"	display_name=\"$shortname\"\n";
-		$index++;
+		print $h "$vhost	webactivity,$shortname\n";
 	}
 }
 close $h;

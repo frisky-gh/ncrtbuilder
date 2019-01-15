@@ -60,6 +60,8 @@ while( <$h> ){
 close $h;
 
 ####
+my $rc = 0;
+my @output;
 while( my ($ltsvfile, $rules) = each %file2rules ){
 	open my $h, '-|', "tail -1 $ltsvfile" or do {
 		die "$ltsvfile: cannot open, stopped";
@@ -69,18 +71,29 @@ while( my ($ltsvfile, $rules) = each %file2rules ){
 	chomp $ltsv;
 	die "$ltsvfile: cannot open, stopped" if $ltsv eq "";
 
-	my %var = ltsv2var $ltsv;
-	while( my ($k, $v) = each %var ){
-		foreach my $rule ( @$rules ){
-			my ($key_re, $option) = @$rule;
-			next unless $k =~ $key_re;
+	my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+	    $atime,$mtime,$ctime,$blksize,$blocks) = stat $ltsvfile;
 
-			# TODO: check timeout
+	my %var = ltsv2var $ltsv;
+	foreach my $rule ( @$rules ){
+		my ($key_re, $option) = @$rule;
+		if( ($option->{timeout} || 99999999 ) < (time - $mtime) / 60 ){
+			$rc = 1;
+			push @output, "$ltsvfile: expired.";
+			next;
+		}
+
+		while( my ($k, $v) = each %var ){
+			next unless $k =~ $key_re;
 			print "$k=$v\n";
-			last;
 		}
 	}
 }
 
-exit 0;
+if( @output ){
+	my $output = join ' / ', @output;
+	print "output=$output\n";
+}
+
+exit $rc;
 

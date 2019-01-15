@@ -23,91 +23,94 @@ sub nMB ($) {
 
 #### load detector conf.
 my @exist_rules;
-my $f = "$CONFDIR/service/disk.rules";
-if( open my $h, '<', $f ){
-	while( <$h> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)$";
-		push @exist_rules, $1;
-	}
-	close $h;
+my $f = "$CONFDIR/agent/disk.rules";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)$";
+	push @exist_rules, $1;
 }
+close $h;
 
 my @ignore_rules;
-my $f = "$CONFDIR/service/disk.ignores";
-if( open my $h, '<', $f ){
-	while( <$h> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)$";
-		push @ignore_rules, qr"^$1$";
-	}
-	close $h;
+my $f = "$CONFDIR/agent/disk.ignores";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)$";
+	push @ignore_rules, qr"^$1$";
 }
+close $h;
 
 ####
 # data
 my %d;
 
 # df
-if( open my $f, '-|', "df -k --output='source,fstype,itotal,iused,iavail,size,used,avail,target'" ){
-	OUTSIDE:
-	while( <$f> ){
-		chomp;
-		next if $. == 1;
-		die "$_, stopped" unless m"^(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S.*)";
-		my $source = $1;
-		my $fstype = $2;
-		my $itotal = $3;
-		my $iused = $4;
-		my $iavail = $5;
-		my $size = $6;
-		my $used = $7;
-		my $avail = $8;
-		my $target = $9;
+open my $h, '-|', "df -k --output='source,fstype,itotal,iused,iavail,size,used,avail,target'" or do {
+	die "df: cannot execute, stopped";
+};
+OUTSIDE:
+while( <$h> ){
+	chomp;
+	next if $. == 1;
+	die "$_, stopped" unless m"^(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S.*)";
+	my $source = $1;
+	my $fstype = $2;
+	my $itotal = $3;
+	my $iused = $4;
+	my $iavail = $5;
+	my $size = $6;
+	my $used = $7;
+	my $avail = $8;
+	my $target = $9;
 
-		foreach my $r ( @ignore_rules ){
-			next OUTSIDE if $target =~ $r;
-		}
-
-		$d{$target} = [
-			$source, $fstype,
-			$itotal, $iused, $iavail,
-			$itotal > 0 ? nP 100 * $iavail / ($iavail + $iused): nP 100,
-			nMB $size / 1024, nMB $used / 1024, nMB $avail / 1024,
-			$size > 0 ? nP 100 * $avail / ($avail + $used): nP 100
-		];
-	}
-	close $f;
-
-	foreach my $path ( @exist_rules ){
-		next if exists $d{$path};
-		$d{$path} = [
-			undef, 'none',
-			0, 0, 0,
-			nP 0,
-			nMB 0, nMB 0, nMB 0,
-			nP 0
-		];
+	foreach my $r ( @ignore_rules ){
+		next OUTSIDE if $target =~ $r;
 	}
 
-	foreach my $k ( sort keys %d ){
-		my $v = $d{$k};
-		my (
-			$source, $fstype,
-			$itotal, $iused, $iavail, $iavail_pct,
-			$total, $used, $avail, $avail_pct
-		) = @$v;
-		print "disk[$k]_total=$total\n";
-		print "disk[$k]_used=$used\n";
-		print "disk[$k]_avail=$avail\n";
-		print "disk[$k]_avail_pct=$avail_pct\n";
-		print "disk[$k]_itotal=$itotal\n";
-		print "disk[$k]_iused=$iused\n";
-		print "disk[$k]_iavail=$iavail\n";
-		print "disk[$k]_iavail_pct=$iavail_pct\n";
-	}
+	$d{$target} = [
+		$source, $fstype,
+		$itotal, $iused, $iavail,
+		$itotal > 0 ? nP 100 * $iavail / ($iavail + $iused): nP 100,
+		nMB $size / 1024, nMB $used / 1024, nMB $avail / 1024,
+		$size > 0 ? nP 100 * $avail / ($avail + $used): nP 100
+	];
+}
+close $h;
+
+foreach my $path ( @exist_rules ){
+	next if exists $d{$path};
+	$d{$path} = [
+		undef, 'none',
+		0, 0, 0,
+		nP 0,
+		nMB 0, nMB 0, nMB 0,
+		nP 0
+	];
+}
+
+foreach my $k ( sort keys %d ){
+	my $v = $d{$k};
+	my (
+		$source, $fstype,
+		$itotal, $iused, $iavail, $iavail_pct,
+		$total, $used, $avail, $avail_pct
+	) = @$v;
+	print "disk[$k]_total=$total\n";
+	print "disk[$k]_used=$used\n";
+	print "disk[$k]_avail=$avail\n";
+	print "disk[$k]_avail_pct=$avail_pct\n";
+	print "disk[$k]_itotal=$itotal\n";
+	print "disk[$k]_iused=$iused\n";
+	print "disk[$k]_iavail=$iavail\n";
+	print "disk[$k]_iavail_pct=$iavail_pct\n";
 }
 
 exit 0;

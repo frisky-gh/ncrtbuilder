@@ -41,22 +41,31 @@ while( <$h> ){
 close $h;
 
 ####
+my $rc = 0;
 my %d;
+my @output;
 foreach my $ltsvhost ( keys %ltsvhosts ){
 	open my $h, '-|', "$ACCESSOR $ltsvhost" or do {
-		die;
+		die "$ACCESSOR: cannot execute, stopped";
 	};
 	my $r = <$h>;
 	close $h;
 
 	chomp $r;
 	$r =~ m"^
-		.* \|\s*
+		(.*)
+		\|\s*
 		(\S.*)
 	$"x or do {
 		print "gateway[$ltsvhost]_status=2\n";
 	};
-	my $perfdata = $1;
+	my $output = $1;
+	my $perfdata = $2;
+	foreach my $i ( split m"\s+", $output ){
+		next if $i eq 'OK';
+		if( $i eq 'UNKNOWN' ){ $rc = 3; }
+		push @output, $i;
+	}
 	foreach my $field ( split m"\s+", $perfdata ){
 		next unless $field =~ m"^([^=]+)=(\d+|\d+\.\d+|\.\d+)(;.*)$";
 		$d{$1} = $2;
@@ -67,7 +76,11 @@ foreach my $k ( sort keys %d ){
 	my $v = $d{$k};
 	print "$k=$v\n";
 }
+if( @output ){
+	my $output = join ' / ', @output;
+	print "output=$output\n";
+}
 
-exit 0;
+exit $rc;
 
 

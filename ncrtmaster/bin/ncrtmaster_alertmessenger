@@ -21,6 +21,13 @@ our $SENDMAILEXE = '/usr/lib/sendmail';
 
 
 ####
+sub mkdir_or_die ($) {
+	my ($d) = @_;
+	return if -d $d;
+	mkdir $d or die "$d: cannot create, stopped";
+}
+
+####
 if( @ARGV < 1 ){
 	print "usage: % $0 {cron|...}\n";
 	exit 3;
@@ -33,19 +40,21 @@ else{
 	my ($name, $passwd, $uid, $gid, $quota, $comment, $gcos, $home, $shell, $expire ) = getpwuid $<;
 	$WORKDIR = "$home/.ncrt";
 }
-unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
+unless( -d $WORKDIR ){ mkdir_or_die $WORKDIR; }
 
 ####
 my %conf;
-if( open my $h, '<', "$CONFDIR/servicegroup.conf" ){
-	while( <$h> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die unless m"^(\w+)=(.*)$";
-		$conf{$1} = $2;
-	}
-	close $h;
+my $f = "$CONFDIR/servicegroup.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\w+)=(.*)$";
+	$conf{$1} = $2;
 }
+close $h;
 
 # for debug
 our $DEBUG = $conf{DEBUG} // 0;
@@ -149,7 +158,9 @@ sub sendmail ($$$) {
 	my $from_quoted = quotemeta $mailfrom;
 	my $to_quoted = quotemeta $mailto;
 
-	open my $h, '|-', "$SENDMAILEXE -f $from_quoted $to_quoted" or die;
+	open my $h, '|-', "$SENDMAILEXE -f $from_quoted $to_quoted" or do {
+		die "$SENDMAILEXE: cannot execute, stopped";
+	};
 	chomp $mail;
 	my @mail = split m"\n", $mail;
 	while( 1 ){
@@ -440,7 +451,7 @@ sub read_servicegroup_graphs ($) {
 	my ($sg) = @_;
 	my $f = "$WORKDIR/sg_graphs.$sg";
 	open my $h, '<', $f or do {
-		die;
+		die "$f: cannot open, stopped";
 	};
 	my $ltsv = <$h>;
 	close $h;
@@ -683,10 +694,10 @@ sub update_servicegroup ($$) {
 	my $f = "$WORKDIR/sg_changes.$sg";
 	my $g = "$WORKDIR/sg_changes.$sg.tmp";
 	rename $f, $g or do {
-		die;
+		die "$f: cannot rename, stopped";
 	};
 	open my $h, '<', $g or do {
-		die;
+		die "$g: cannot open, stopped";
 	};
 
 	my $ngnum = keys %$ngs;
@@ -861,7 +872,7 @@ sub update_servicegroup ($$) {
 	write_servicegroup_recipients $sg, $recipients;
 	write_servicegroup_lastchange $sg, $lastchange;
 	unlink $g or do {
-		die;
+		die "$g: cannot remove, stopped";
 	};
 	delete $sgs->{$sg}->{has_changes};
 }
@@ -977,7 +988,7 @@ sub download_session_graphs ($$$) {
 	}
 
 	opendir my $h, $d or do {
-		die;
+		die "$d: cannot open, stopped";
 	};
 	my @expired;
 	while( my $f = readdir $h ){
@@ -1175,7 +1186,7 @@ sub generate_session ($$) {
 	my ($ss, $sg) = @_;
 	my $new_sid = random_regex "[0-9a-zA-Z]{32}";
 	my $d = "$SESSIONDIR/sess_$new_sid";
-	mkdir $d or die;
+	mkdir_or_die $d;
 
 	my %info = ( 'timestamp' => $NOW, 'mode' => 'current', 'servicegroup' => $sg );
 	$ss->{$new_sid}->{servicegroup} = \%info;
@@ -1187,7 +1198,7 @@ sub renewal_session ($$$) {
 	my ($ss, $old_sid, $sg) = @_;
 	my $old_d = "$SESSIONDIR/sess_$old_sid";
 	opendir my $h, $old_d or do{
-		die;
+		die "$old_d: cannot open, stopped";
 	};
 	my @f;
 	while( my $f = readdir $h ){
@@ -1201,7 +1212,7 @@ sub renewal_session ($$$) {
 
 	my $new_sid = random_regex "[0-9a-zA-Z]{32}";
 	my $d = "$SESSIONDIR/sess_$new_sid";
-	mkdir $d or die;
+	mkdir_or_die $d;
 
 	my %info = ( 'timestamp' => $NOW, 'mode' => 'current', 'servicegroup' => $sg );
 	$ss->{$new_sid}->{servicegroup} = \%info;
@@ -1232,7 +1243,7 @@ sub load_sessions () {
 		my $d = "$SESSIONDIR/$e";
 
 		opendir my $i, $d or do {
-			die;
+			die "$d: cannot open, stopped";
 		};
 		while( my $f = readdir $i ){
 			if( $f eq "index.html" ){
@@ -1282,7 +1293,7 @@ sub remove_session ($$) {
 	my ($ss, $sid) = @_;
 	my $d = "$SESSIONDIR/sess_$sid";
 	opendir my $h, $d or do{
-		die;
+		die "$d: cannot open, stopped";
 	};
 	my @f;
 	while( my $f = readdir $h ){

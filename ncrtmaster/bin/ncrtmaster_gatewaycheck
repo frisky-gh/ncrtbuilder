@@ -10,12 +10,12 @@ our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $CONFDIR = "$TOOLHOME/conf";
 
 if( @ARGV < 3 ){
-	print "usage: % $0 SERVICE_NAME VHOST_NAME INDEX\n";
+	print "usage: % $0 SERVICE VHOST VSERVICE\n";
 	exit 3;
 }
 my $service = $ARGV[0];
 my $vhost = $ARGV[1];
-my $index = $ARGV[2];
+my $vservice = $ARGV[2];
 
 # setup work directory
 our $WORKDIR;
@@ -24,20 +24,22 @@ else{
 	my ($name, $passwd, $uid, $gid, $quota, $comment, $gcos, $home, $shell, $expire ) = getpwuid $<;
 	$WORKDIR = "$home/.ncrt";
 }
-unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
+unless( -d $WORKDIR ){ mkdir $WORKDIR or die "$WORKDIR: cannot create, stopped"; }
 
 # accessor
-my $accessor = "$BINDIR/ncrtmaster_gatewayaccess $service $vhost $index";
+my $accessor = "$BINDIR/ncrtmaster_gatewayaccess $service $vhost $vservice";
 
 # metrics
 my %m;
 #
 my @w;
 my @c;
+my @r;
 
 # read from service's output
-open my $e, '-|', "$PLUGINSDIR/ncrtmastergateway_$service $CONFDIR $WORKDIR \"$accessor\" $vhost $index" or do {
-	print "UNKNOWN $PLUGINSDIR/ncrtmastergateway_$service: not found.\n";
+my $f = "$PLUGINSDIR/ncrtmastergateway_$service";
+open my $e, '-|', "$f $CONFDIR $WORKDIR \"$accessor\" $vhost $vservice" or do {
+	print "UNKNOWN $f: not found.\n";
 	exit 3;
 };
 while( <$e> ){
@@ -46,31 +48,41 @@ while( <$e> ){
 	die "$_, stopped" unless m"^([-\w/\[\].:@\$%#\*]+)=(\S+)$";
 	my $k = $1;
 	my $v = $2;
-	$m{$k} = $v;
+	if( $k eq 'output' ){ push @r, $v; }
+	else                { $m{$k} = $v; }
 }
 close $e;
+
+my $plugin_has_failed;
+my $plugin_rc = $? >> 8;
+if( $plugin_rc > 0 ){
+	$plugin_has_failed = 1;
+}
 
 # thresholds
 my @wt;
 my @ct;
 # load thresholds
-if( open my $f, '<', "$CONFDIR/threshold/$service.thresholds.$vhost.$index" ){
-	while( <$f> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die unless m"^(\S+)\s+(crit|warn)\s+\[\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\]$";
-		my $itempattern = qr"^$1$";
-		my $severity = $2;
-		my $lower = $3;
-		my $upper = $4;
-		if    ( $severity eq 'crit' ){
-			push @ct, [ $itempattern, $lower, $upper ];
-		}elsif( $severity eq 'warn' ){
-			push @wt, [ $itempattern, $lower, $upper ];
-		}
+my $f = "$CONFDIR/threshold/$service.thresholds.$vhost.$vservice";
+open my $h, '<', $f or do {
+	print "UNKNOWN $f: not found.\n";
+	exit 3;
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\S+)\s+(crit|warn)\s+\[\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\]$";
+	my $itempattern = qr"^$1$";
+	my $severity = $2;
+	my $lower = $3;
+	my $upper = $4;
+	if    ( $severity eq 'crit' ){
+		push @ct, [ $itempattern, $lower, $upper ];
+	}elsif( $severity eq 'warn' ){
+		push @wt, [ $itempattern, $lower, $upper ];
 	}
-	close $f;
 }
+close $h;
 
 # threshold per metric
 my %wm;
@@ -136,10 +148,14 @@ foreach my $k ( sort keys %m ){
 #
 my $r = 'OK';
 my $rc = 0;
-if( @c )   { $r = 'CRIT'; $rc = 2; }
+if( $plugin_has_failed ){
+	$r = 'CRIT';
+	$rc = 2;
+}
+elsif( @c ){ $r = 'CRIT'; $rc = 2; }
 elsif( @w ){ $r = 'WARN';  $rc = 1; }
 
-print join(' / ', $r, @c, @w), "| ", join(' ', @p), "\n";
+print join(' / ', $r, @r, @c, @w), "| ", join(' ', @p), "\n";
 exit $rc;
 
 

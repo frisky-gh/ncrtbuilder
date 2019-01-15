@@ -23,7 +23,7 @@ else{
 	my ($name, $passwd, $uid, $gid, $quota, $comment, $gcos, $home, $shell, $expire ) = getpwuid $<;
 	$WORKDIR = "$home/.ncrt";
 }
-unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
+unless( -d $WORKDIR ){ mkdir $WORKDIR or die "$WORKDIR: cannot create, stopped"; }
 
 if( open my $e, '>>', "$WORKDIR/notify.log" ){
 	my ($sec, $min, $hour, $day, $mon, $year) = localtime time;

@@ -24,76 +24,80 @@ sub nB ($) {
 #### load service conf.
 my @rules;
 my $f = "$CONFDIR/master/webactivity.conf.$VIRTUALHOSTNAME";
-if( open my $h, '<', $f ){
-	while( <$h> ){
-		chomp;
-		next if m"^\s*($|#)";
-		die "$f:$.: illegal format, stopped" unless m"^
-			(\w+)
-			\s+
-			http(s)?://
-			(?:([^\s:]+):([^\s\@]+)\@)?
-			([-0-9a-zA-Z.]+)
-			(?::(\d+))?
-			((/[^\s\?]*)?(?:\?(\S*))?)
-			\s+
-			(\d+)
-		$"x;
-		my $shortname = $1;
-		my $secure = $2;
-		my $user = $3;
-		my $passwd = $4;
-		my $host = $5;
-		my $port = $6 || $secure ? 443 : 80;
-		my $path_query = $7;
-		my $path = $8;
-		my $query = $9;
-		my $status = $10;
-		my $args = "-H $host -p $port";
-		$args .= " -S" if $secure;
-		$args .= " -a \Q$user:$passwd\E" if $user;
-		$args .= " -u \Q$path_query\E" if $path_query;
-		# same url string to the influx_url in build_ncrtmaster_website_activity
-		my $url = $secure ? "https" : "http";
-		$url .= "://";
-		$url .= "$user\@" if $user;
-		$url .= $host;
-		$url .= ":$5" if $5;
-		$url .= $path_query if $path_query;
-		push @rules, [$url, $status, $args, $shortname];
-	}
-	close $h;
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*($|#)";
+	die "$f:$.: illegal format, stopped" unless m"^
+		(\w+)
+		\s+
+		http(s)?://
+		(?:([^\s:]+):([^\s\@]+)\@)?
+		([-0-9a-zA-Z.]+)
+		(?::(\d+))?
+		((/[^\s\?]*)?(?:\?(\S*))?)
+		\s+
+		(\d+)
+	$"x;
+	my $shortname = $1;
+	my $secure = $2;
+	my $user = $3;
+	my $passwd = $4;
+	my $host = $5;
+	my $port = $6 || $secure ? 443 : 80;
+	my $path_query = $7;
+	my $path = $8;
+	my $query = $9;
+	my $status = $10;
+	my $args = "-H $host -p $port";
+	$args .= " -S" if $secure;
+	$args .= " -a \Q$user:$passwd\E" if $user;
+	$args .= " -u \Q$path_query\E" if $path_query;
+	# same url string to the influx_url in build_ncrtmaster_website_activity
+	my $url = $secure ? "https" : "http";
+	$url .= "://";
+	$url .= "$user\@" if $user;
+	$url .= $host;
+	$url .= ":$5" if $5;
+	$url .= $path_query if $path_query;
+	push @rules, [$url, $status, $args, $shortname];
 }
+close $h;
 
 ####
 my ($url, $wantstatus, $args, $shortname) = @{$rules[$INDEX]};
 my %d;
-if( open my $h, '-|', "/usr/lib/nagios/plugins/check_http $args" ){
-	my $r = <$h>;
-	chomp $r;
-	$r =~ m"^
-		HTTP\ (
-		    (?:
-			(OK|WARNING|CRITICAL):
-			\ HTTP/\S+\ (\d+)\ (.*)\ -\ (.*)
-			\|time=(\d+\.\d+)s\;.*\ size=(\d+)B\;.*
-		    ) |
-		    CRITICAL\ -\ (.*)
-		)
-	$"x or do {
-		print "web[$shortname]_status=2\n";
-	};
-	my $result = $2;
-	my $statuscode = $3;
-	my $statusmessage = $4 || $8;
-	my $message = $5;
-	my $elapsed = ns $6;
-	my $size = nB $7;
-	my $status = $statuscode eq $wantstatus ? 0 : 1;
-	print "web[$shortname]_size=$size\n";
-	print "web[$shortname]_elapsed=$elapsed\n";
-	print "web[$shortname]_status=$status\n";
-}
+my $f = "/usr/lib/nagios/plugins/check_http $args";
+open my $h, '-|', "$f $args" or do {
+	die "$f: cannot execute, stopped";
+};
+my $r = <$h>;
+close $h;
+chomp $r;
+$r =~ m"^
+	HTTP\ (
+	    (?:
+		(OK|WARNING|CRITICAL):
+		\ HTTP/\S+\ (\d+)\ (.*)\ -\ (.*)
+		\|time=(\d+\.\d+)s\;.*\ size=(\d+)B\;.*
+	    ) |
+	    CRITICAL\ -\ (.*)
+	)
+$"x or do {
+	print "web[$shortname]_status=2\n";
+};
+my $result = $2;
+my $statuscode = $3;
+my $statusmessage = $4 || $8;
+my $message = $5;
+my $elapsed = ns $6;
+my $size = nB $7;
+my $status = $statuscode eq $wantstatus ? 0 : 1;
+print "web[$shortname]_size=$size\n";
+print "web[$shortname]_elapsed=$elapsed\n";
+print "web[$shortname]_status=$status\n";
 
 exit 0;
 

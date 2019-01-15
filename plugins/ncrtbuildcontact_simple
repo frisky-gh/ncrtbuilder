@@ -12,15 +12,17 @@ our $WORKDIR = $ARGV[1];
 
 #### load global conf.
 my %ncrtconf;
-if( open my $f, '<', "$CONFDIR/ncrtbuild.conf" ){
-	while( <$f> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die unless m"^(\w+)=(.*)$";
-		$ncrtconf{$1} = $2;
-	}
-	close $f;
+my $f = "$CONFDIR/ncrtbuild.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\w+)=(.*)$";
+	$ncrtconf{$1} = $2;
 }
+close $h;
 
 #### load hosts
 my %host2service;
@@ -30,10 +32,13 @@ open my $h, '<', $f or do {
 };
 while( <$h> ){
 	chomp;
-	my ($host, $service) = split m"\s+";
-	push @{$host2service{$host}}, $service;
+	m"^(\S+)\s+(\w+)(?:,(\w+))?$" or die "$f:$.: illegal format, stopped";
+	my $host = $1;
+	my $rservice = $2;
+	my $vservice = $3;
+	push @{$host2service{$host}}, ($vservice || $rservice);
 }
-close $f;
+close $h;
 
 #### load contact conf.
 my $teamname;
@@ -115,25 +120,31 @@ while( my ($host) = each %host2service ){
 close $h;
 
 my $f = "$WORKDIR/hostservice2group";
-if( open my $h, '>>', $f ){
-	while( my ($host, $services) = each %host2service ){
-		foreach my $service ( @$services ){
-			foreach my $team ( @{$host2team{$host}} ){
-				print $h "$host\t$service\t$team\n";
-			}
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($host, $services) = each %host2service ){
+	foreach my $service ( @$services ){
+		foreach my $team ( @{$host2team{$host}} ){
+			print $h "$host\t$service\t$team\n";
 		}
 	}
-	close $h;
 }
+close $h;
+
 my $f = "$WORKDIR/users";
-if( open my $h, '>>', $f ){
-	while( my ($user) = each %users ){ print $h "$user\n"; }
-	close $h;
-}
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($user) = each %users ){ print $h "$user\n"; }
+close $h;
+
 my $f = "$WORKDIR/addresses";
-if( open my $h, '>>', $f ){
-	while( my ($email) = each %emails ){ print $h "$email\n"; }
-	close $h;
-}
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($email) = each %emails ){ print $h "$email\n"; }
+close $h;
+
 
 

@@ -9,12 +9,12 @@ our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $CONFDIR = "$TOOLHOME/conf";
 
 if( @ARGV < 3 ){
-	print "usage: % $0 SERVICE VIRTUALHOST INDEX\n";
+	print "usage: % $0 SERVICE VIRTUALHOST VSERVICE\n";
 	exit 3;
 }
 my $service = $ARGV[0];
 my $vhost = $ARGV[1];
-my $index = $ARGV[2];
+my $vservice = $ARGV[2];
 
 # setup work directory
 our $WORKDIR;
@@ -23,50 +23,51 @@ else{
 	my ($name, $passwd, $uid, $gid, $quota, $comment, $gcos, $home, $shell, $expire ) = getpwuid $<;
 	$WORKDIR = "$home/.ncrt";
 }
-unless( -d $WORKDIR ){ mkdir $WORKDIR or die; }
+unless( -d $WORKDIR ){ mkdir $WORKDIR or die "$WORKDIR: cannot create, stopped"; }
 
 # metrics
 my %m;
 
 # read from service's output
-if( open my $e, '-|', "$PLUGINSDIR/ncrtagentgateway_${service}_linux $CONFDIR $WORKDIR $vhost $index" ){
-	while( <$e> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die "$_, stopped" unless m"^([-\w/\[\]]+)=(\S+)$";
-		my $k = $1;
-		my $v = $2;
-		$m{$k} = $v;
-	}
-	close $e;
-}else{
+open my $e, '-|', "$PLUGINSDIR/ncrtagentgateway_${service}_linux $CONFDIR $WORKDIR $vhost $vservice" or do {
 	print "UNKNOWN $PLUGINSDIR/ncrtagentservice_${service}_linux: not found.\n";
 	exit 3;
+};
+while( <$e> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die "$_, stopped" unless m"^([-\w/\[\]]+)=(\S+)$";
+	my $k = $1;
+	my $v = $2;
+	$m{$k} = $v;
+}
+close $e;
+
+my $plugin_has_failed;
+my $plugin_rc = $? >> 8;
+if( $plugin_rc > 0 ){
+	$plugin_has_failed = 1;
 }
 
 #
 my @p;
 foreach my $k ( sort keys %m ){
 	my $v = $m{$k};
-	my ($min, $max);
-	
-	next unless $v =~ m"^([-+]?\d+(?:\.\d+)?)(.*)$";
-	my $value = $1;
-	my $unit = $2;
-	if   ( $unit eq '%' ) { $min = '0.00'; $max = '100.00'; }
-	elsif( $unit eq 'MB' ){ $min = '0.00'; }
-
-	my $key_text = $unit ? "$k\[$unit\]" : "$k";
-
-	my $p = "$k=$v;;;$min;$max";
+	my $p = "$k=$v;;;;";
 	push @p, $p;
 }
 
 #
 my $r = 'OK';
 my $rc = 0;
+my @r;
+if( $plugin_has_failed ){
+	$r = 'UNKNOWN';
+	$rc = 3;
+	push @r, "$service plugin has failed.";
+}
 
-print join(' / ', $r), "| ", join(' ', @p), "\n";
+print join(' / ', $r, @r), "| ", join(' ', @p), "\n";
 exit $rc;
 
 
