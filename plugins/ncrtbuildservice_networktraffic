@@ -40,7 +40,7 @@ close $h;
 
 #### append service info.
 my $f = "$WORKDIR/services";
-open my $h, '<', $f or do {
+open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 print $h "networktraffic	agent	display_name=\"Network Traffic\"\n";
@@ -48,14 +48,15 @@ close $h;
 
 #### append conf info.
 my $f = "$WORKDIR/service2conf";
-open my $h, '<', $f or do {
+open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
+print $h "networktraffic	agent/networktraffic.ignores\n";
 close $h;
 
 #### append service mapping
 my $f = "$WORKDIR/host2service";
-open my $h, '<', $f or do {
+open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 foreach my $i ( keys %targets ){

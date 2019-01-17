@@ -48,7 +48,7 @@ sub ltsv2var ( $ ){
 
 #### load detector conf. for agents
 my @ignore_rules;
-my $f = "$CONFDIR/agent/networktraffic.rules";
+my $f = "$CONFDIR/agent/networktraffic.ignores";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -70,31 +70,27 @@ my $basename = "$WORKDIR/networktraffic";
 
 # load last data
 my $f = "$basename.status";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	next unless m"^([^=]+)=(.*)$";
-	my $k = $1;
-	my $v = $2;
-	$lastd{$k} = $v;
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		next unless m"^([^=]+)=(.*)$";
+		my $k = $1;
+		my $v = $2;
+		$lastd{$k} = $v;
+	}
+	close $h;
 }
-close $h;
 
 my $f = "$basename.history";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	my %v = ltsv2var $_;
-	push @history, \%v;
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		my %v = ltsv2var $_;
+		push @history, \%v;
+	}
+	close $h;
 }
-close $h;
-
-
 
 # load curr data
 open my $h, '-|', "ip -s link" or do {

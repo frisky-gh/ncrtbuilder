@@ -180,7 +180,7 @@ open my $h, '<', $f or do {
 while( <$h> ){
 	chomp;
 	next if m"^\s*(#|$)";
-	die unless m"^(\w+)=(.*)$";
+	m"^(\w+)=(.*)$" or die "$f:$.: illegal format, stopped";
 	$ncrtconf{$1} = $2;
 }
 close $h;
@@ -261,7 +261,8 @@ if( $plan{step1} ){
 		my $r = system "make deb -C $SRCDIR/naemon2influx";
 		die unless $r == 0;
 		$NAEMON2INFLUX_DEB = get_naemon2influx_deb $SRCDIR;
-		die unless defined $NAEMON2INFLUX_DEB;
+		defined $NAEMON2INFLUX_DEB or
+			die "naemon2influx: cannot build package, stopped";
 		my $r = system "cp $SRCDIR/naemon2influx/$NAEMON2INFLUX_DEB $CONFDIR/$NAEMON2INFLUX_DEB";
 		die unless $r == 0;
 	}
@@ -275,7 +276,8 @@ if( $plan{step1} ){
 		my $r = system "cd $SRCDIR/naemon2influx-grafana-helper && dpkg-buildpackage --no-sign";
 		die unless $r == 0;
 		$NAEMON2INFLUX_GRAFANA_HELPER_DEB = get_naemon2influx_grafana_helper_deb $SRCDIR;
-		die unless defined $NAEMON2INFLUX_GRAFANA_HELPER_DEB;
+		defined $NAEMON2INFLUX_GRAFANA_HELPER_DEB or
+			die "naemon2influx-grafana-helper: cannot build package, stopped";
 		my $r = system "cp $SRCDIR/$NAEMON2INFLUX_GRAFANA_HELPER_DEB $CONFDIR/$NAEMON2INFLUX_GRAFANA_HELPER_DEB";
 		die unless $r == 0;
 	}
@@ -506,7 +508,8 @@ while( <$h> ){
 }
 close $h;
 
-die if $hosttype_has_collision;
+die "Some hosttype have collisions, stopped" if $hosttype_has_collision;
+
 my @ncrtagents;
 while( my ($h, $t) = each %host2hosttype ){
 	push @ncrtagents, $h unless $t eq "virtual";
@@ -764,14 +767,14 @@ if( $plan{step7} ){
 		my $ht_opt = $hosttype2opts{$hosttype};
 		my @settings = generate_settings %$ht_opt, %p;
 		my $contacts = generate_shortnamelist $host2contact{$host};
-		my $e_host = uri_escape_utf8($host);
+		my $_urlencoded = uri_escape_utf8($host);
 		####
 		print $h
 		"define host {\n",
 		"	host_name		$host\n",
 		"	use			ncrt-hosttype-$hosttype\n",
 		"	contacts		$contacts\n",
-		"	_urlencoded		$e_host\n",
+		"	_urlencoded		$_urlencoded\n",
 		"	_hosttype		$hosttype\n",
 		@settings,
 		"}\n";
@@ -793,6 +796,7 @@ if( $plan{step7} ){
 			generate_settings(%$hs_opts, %p)
 		);
 		my $contacts = generate_shortnamelist $hostservice2contact{$host, $vservice};
+		my $_urlencoded = uri_escape_utf8($vservice);
 		####
 		print $h
 		"define service {\n",
@@ -800,6 +804,7 @@ if( $plan{step7} ){
 		"	service_description	$vservice\n",
 		"	use			ncrt$servicetype-$rservice\n",
 		"	contacts		$contacts\n",
+		"	_urlencoded		$_urlencoded\n",
 		@settings,
 		"}\n";
 	}
@@ -894,7 +899,8 @@ while( my ($service, $servicetype) = each %service2servicetype ){
 		while( <$h> ){
 			chomp;
 			next if m"^\s*(#|$)";
-			die unless m"^(\S+)\s+(.*)";
+			m"^(\S+)\s+(.*)" or
+				die "$f:$.: illegal format, stopped";
 			push @rules, [qr"$1", $2];
 		}
 		close $h;
