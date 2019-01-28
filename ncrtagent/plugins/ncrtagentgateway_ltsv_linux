@@ -60,6 +60,9 @@ while( <$h> ){
 close $h;
 
 ####
+my $realhost = ` hostname `;
+chomp $realhost;
+
 my $rc = 0;
 my @output;
 while( my ($ltsvfile, $rules) = each %file2rules ){
@@ -73,6 +76,9 @@ while( my ($ltsvfile, $rules) = each %file2rules ){
 
 	my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
 	    $atime,$mtime,$ctime,$blksize,$blocks) = stat $ltsvfile;
+	my ($filename) = $ltsvfile =~ m"(?:^|/)([^/]+)$";
+	my $age = (time - $mtime) / 60;
+	printf "realhost[%s]-ltsvfile[%s]-age=%.2f\n", $realhost, $filename, $age;
 
 	my %var = ltsv2var $ltsv;
 	foreach my $rule ( @$rules ){

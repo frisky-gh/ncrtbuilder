@@ -57,7 +57,7 @@ foreach my $ltsvhost ( keys %ltsvhosts ){
 		\|\s*
 		(\S.*)
 	$"x or do {
-		print "gateway[$ltsvhost]_status=2\n";
+		print "gateway[$ltsvhost]-status=2\n";
 	};
 	my $output = $1;
 	my $perfdata = $2;

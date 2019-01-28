@@ -65,18 +65,14 @@
 
     #### Naemon2Influx
     - file:
-        dest:    "{{NCRTMASTERHOME}}"
+        dest:    "{{item}}"
         state:   directory
         owner:   root
         group:   root
         recurse: yes
-      tags: [ common ]
-
-    - file:
-        dest:    "{{NCRTMASTERHOME}}/debs"
-        state:   directory
-        owner:   root
-        group:   root
+      with_items:
+          - "{{NCRTMASTERHOME}}"
+          - "{{NCRTMASTERHOME}}/debs"
       tags: [ common ]
 
     - copy:
@@ -231,6 +227,15 @@
         dest:  /etc/ssl/certs/ncrt_cert.pem
         src:   "{{TOOLHOME}}/conf/ncrt_cert.pem"
       notify: update ssl certs
+      tags: [ common ]
+
+    - name: setup ncrtmaster_alertmessenger cron
+      cron:
+        name: ncrtmaster_alertmessenger cron
+        user: naemon
+        hour:   "*"
+        minute: "*"
+        job: "{{NCRTMASTERHOME}}/bin/ncrtmaster_alertmessenger cron 2>> ~/.ncrt.cronerror 1>&2"
       tags: [ common ]
 
     - name: setup settings in Nagios / Naemon

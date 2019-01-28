@@ -1,29 +1,61 @@
-Subject: [ALERT] "[%SERVICEGROUP%]" Status has Changed
-From: "Naemon" <admin@example.com>
+From: "Naemon" <[%MAILFROM%]>
 To: "You" <[%MAILTO%]>
+[% IF    reason == "CHANGE" -%]
+Subject: [ALERT] "[%SERVICEGROUP%]" Status has Changed
+[% ELSIF reason == "KEEP" -%]
+Subject: [ALERT] "[%SERVICEGROUP%]" Has been NG
+[% ELSE -%]
+Subject: [ALERT] "[%SERVICEGROUP%]"
+[% END -%]
+[% messages = 0 -%]
 
-=== Current NG Status ===
+[% IF ngs.size > 0 -%]
+=== Current Service NG Status ===
 
 host                 service              state
 -------------------- -------------------- ------
-[% FOREACH ng IN ngs -%]
-[%     host_type = split(ng.host, "/") -%]
-[%     host = host_type.0 %][% type = host_type.1 -%]
-[%     detector = sub(ng.service, "^[^_]*_") -%]
-[%     safesprintf("%-20s %-20s %s", host, service, ng.state) %]
+[%     FOREACH ng IN ngs -%]
+[%         safesprintf("%-20s %-20s %s", ng.host, ng.service, ng.state) %]
+[%         messages = messages + ng.messages.size -%]
+[%     END -%]
+[% ELSE -%]
+=== All Services Have OK Status ===
 [% END -%]
 
-=== Recent NG Status Changes ===
+=== Recent Service NG Status Changes ===
 
 timestamp           host                 service              state change
 ------------------- -------------------- -------------------- -------------
 [% FOREACH ngchange IN nghistory -%]
-[%     host_type = split(ng.host, "/") -%]
-[%     host = host_type.0 %][% type = host_type.1 -%]
-[%     detector = sub(ng.service, "^[^_]*_") -%]
-[%     safesprintf("%-19s %-20s %-20s %s->%s", ngchange.timestamp, host, service, ngchange.laststate, ngchange.state) %]
+[%     safesprintf("%-19s %-20s %-20s %s->%s", ngchange.timestamp, ngchange.host, ngchange.service, ngchange.laststate, ngchange.state) %]
 [% END -%]
 
+=== Current Performance NG Status Detail ===
+
+host            item                           prio value      threshold
+--------------- ------------------------------ ---- --------   ---------
+[% FOREACH ng IN ngs -%]
+[%     FOREACH performance IN ng.performances -%]
+[%         IF    performance.side == "upper" -%][%op=">"-%]
+[%         ELSIF performance.side == "lower" -%][%op="<"-%]
+[%         END -%]
+[%         safesprintf("%-15s %-30s %4s %8s %1s %-8s", ng.host, performance.name, performance.priority, performance.value, performance.threshold) %]
+[%     END -%]
+[% END -%]
+
+[% IF messages > 0 -%]
+=== Current Messages ===
+
+host                 service              message
+-------------------- -------------------- ------------------------------
+[%     FOREACH ng IN ngs -%]
+[%         FOREACH message IN ng.messages -%]
+[%             safesprintf("%-20s %-20s %s", ng.host, ng.service, message) %]
+[%         END -%]
+[%     END -%]
+[% END -%]
+
+----
 You get lastest NG status at following:
 [% SESSIONURL %]
 

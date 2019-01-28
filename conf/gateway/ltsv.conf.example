@@ -1,0 +1,6 @@
+# host		file						field
+
+=== Database_FooDB TableSpace ===
+timeout=30
+foodb001	/home/mysql/cron/log/tablespace.ltsv		.*
+

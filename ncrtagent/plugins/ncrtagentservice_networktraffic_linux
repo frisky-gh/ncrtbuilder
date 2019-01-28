@@ -2,7 +2,7 @@
 
 use strict;
 
-our $HISTORY_EXPIRYDATE = time - 1*60*60;
+our $HISTORY_EXPIRYTERM_H = 2;
 
 if( @ARGV < 2 ){
 	print "usage: % $0 CONFDIR WORKDIR\n";
@@ -46,6 +46,72 @@ sub ltsv2var ( $ ){
 	return %var;
 }
 
+sub calc_delta ($$\%) {
+	my ($f, $longterm_h, $curr) = @_;
+	my @history;
+
+	my $now = time;
+	my $longterm_limit  = $now - $longterm_h * 60 * 60;
+	my $shortterm_limit = $now - 59;
+
+	# load history
+	if( open my $h, '<', $f ){
+		while( <$h> ){
+			chomp;
+			my %v = ltsv2var $_;
+			push @history, \%v;
+		}
+		close $h;
+	}
+
+	# search origin
+	my $shortterm_origin;
+	foreach my $e ( @history ){
+		last	if $e->{timestamp} > $shortterm_limit;
+		$shortterm_origin = $e;
+	}
+	my $longterm_origin;
+	foreach my $e ( @history ){
+		last	if $e->{timestamp} > $shortterm_limit;
+		last	if $e->{timestamp} > $longterm_limit and
+			defined $longterm_origin;
+		$longterm_origin = $e;
+	}
+
+	# store history
+	open my $h, '>', "$f.$$" or do {
+		die "$f.$$: cannot open, stopped";
+	};
+	push @history, { 'timestamp' => $now,  %$curr };
+	foreach my $e ( @history ){
+		next if $e->{timestamp} < $longterm_limit;
+		print $h var2ltsv( %$e ), "\n";
+	}
+	close $h;
+	unlink $f;
+	rename "$f.$$", $f;
+
+	# calc difference
+	my %shortterm_delta;
+	if( $shortterm_origin ){
+		my $deltat = $now - $shortterm_origin->{timestamp};
+		while( my ($k, $v) = each %$curr ){
+			my $v2 = $shortterm_origin->{$k} // next;
+			$shortterm_delta{$k} = ($v - $v2) / $deltat;
+		}
+	}
+	my %longterm_delta;
+	if( $longterm_origin ){
+		my $deltat = $now - $longterm_origin->{timestamp};
+		while( my ($k, $v) = each %$curr ){
+			my $v2 = $longterm_origin->{$k} // next;
+			$longterm_delta{$k} = ($v - $v2) / $deltat;
+		}
+	}
+
+	return \%shortterm_delta, \%longterm_delta;
+}
+
 #### load detector conf. for agents
 my @ignore_rules;
 my $f = "$CONFDIR/agent/networktraffic.ignores";
@@ -65,32 +131,6 @@ close $h;
 my %d;
 my %lastd;
 my @history;
-
-my $basename = "$WORKDIR/networktraffic";
-
-# load last data
-my $f = "$basename.status";
-if( open my $h, '<', $f ){
-	while( <$h> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		next unless m"^([^=]+)=(.*)$";
-		my $k = $1;
-		my $v = $2;
-		$lastd{$k} = $v;
-	}
-	close $h;
-}
-
-my $f = "$basename.history";
-if( open my $h, '<', $f ){
-	while( <$h> ){
-		chomp;
-		my %v = ltsv2var $_;
-		push @history, \%v;
-	}
-	close $h;
-}
 
 # load curr data
 open my $h, '-|', "ip -s link" or do {
@@ -123,94 +163,38 @@ while( <$h> ){
 	# statistics
 	}elsif( $7 ne '' && $mode eq 'rx' ){
 		next unless defined $ifname;
-		$d{"link[$ifname]_rx_bytes_cnt"}   = nc $8;
-		$d{"link[$ifname]_rx_packets_cnt"} = nc $9;
-		$d{"link[$ifname]_rx_errors_cnt"}  = nc $10;
-		$d{"link[$ifname]_rx_dropped_cnt"} = nc $11;
-		$d{"link[$ifname]_rx_overrun_cnt"} = nc $12;
-		$d{"link[$ifname]_rx_mcast_cnt"}   = nc $13;
+		$d{"link[$ifname]-rx-bytes-cnt"}   = $8;
+		$d{"link[$ifname]-rx-packets-cnt"} = $9;
+		$d{"link[$ifname]-rx-errors-cnt"}  = $10;
+		$d{"link[$ifname]-rx-dropped-cnt"} = $11;
+		$d{"link[$ifname]-rx-overrun-cnt"} = $12;
+		$d{"link[$ifname]-rx-mcast-cnt"}   = $13;
 	# statistics
 	}elsif( $7 ne '' && $mode eq 'tx' ){
 		next unless defined $ifname;
-		$d{"link[$ifname]_tx_bytes_cnt"}   = nc $8;
-		$d{"link[$ifname]_tx_packets_cnt"} = nc $9;
-		$d{"link[$ifname]_tx_errors_cnt"}  = nc $10;
-		$d{"link[$ifname]_tx_dropped_cnt"} = nc $11;
-		$d{"link[$ifname]_tx_carrier_cnt"} = nc $12;
-		$d{"link[$ifname]_tx_collsns_cnt"} = nc $13;
+		$d{"link[$ifname]-tx-bytes-cnt"}   = $8;
+		$d{"link[$ifname]-tx-packets-cnt"} = $9;
+		$d{"link[$ifname]-tx-errors-cnt"}  = $10;
+		$d{"link[$ifname]-tx-dropped-cnt"} = $11;
+		$d{"link[$ifname]-tx-carrier-cnt"} = $12;
+		$d{"link[$ifname]-tx-collsns-cnt"} = $13;
 	}
 }
 close $h;
 
-# store curr data as last data
-my $timestamp = time;
-my $f = "$basename.status";
-open my $h, '>', $f or do {
-	die "$f: cannot open, stopped";
-};
-print $h "timestamp=$timestamp\n";
-while( my ($k, $v) = each %d ){
-	print $h "$k=$v\n";
-}
-close $h;
+my $longterm = sprintf "%dH", $HISTORY_EXPIRYTERM_H;
 
-my $f = "$basename.history.$$";
-open my $h, '>', $f or do {
-	die "$f: cannot open, stopped";
-};
-push @history, { 'timestamp' => $timestamp,  %d };
-foreach my $e ( @history ){
-	next if $e->{timestamp} < $HISTORY_EXPIRYDATE;
-	print $h var2ltsv( %$e ), "\n";
-}
-close $h;
-unlink "$basename.history";
-rename "$basename.history.$$", "$basename.history";
-
-# diff
-my %diff;
-my $lasttimestamp = $lastd{timestamp};
-my $deltas = $timestamp - $lasttimestamp;
-my $deltam = int( ($deltas+59) / 60 );
-my @k = keys %d;
-if( $deltas >= 1 && $deltam >= 1 ){
-	foreach my $k ( @k ){
-		die unless $k =~ m"^(link\[.*\]_(tx|rx)_(bytes|packets|errors|dropped|overrun|mcast|carrier|collsns))_cnt$";
-		my $base = $1;
-		my $v1 = $d{$k};
-		my $v2 = $lastd{$k};
-		next unless defined $v2;
-		if( $k =~ m"^link\[.*\]_(?:tx|rx)_(?:bytes)_cnt$" ){
-			my $v = ($v1 - $v2) * 8 / $deltas / 1000000;
-			$d{"${base}_mbps"} = n $v;
-		}else{
-			my $v = ($v1 - $v2) / $deltam;
-			$d{"${base}_ppm"} = n $v;
-		}
-	}
-}
-my $origin;
-foreach my $e ( @history ){
-	last if defined $origin and $e->{timestamp} > $HISTORY_EXPIRYDATE;
-	$origin = $e;
-}
-$lasttimestamp = $origin->{timestamp};
-$deltas = $timestamp - ($lasttimestamp // $timestamp);
-$deltam = int( ($deltas+59) / 60 );
-if( $deltas >= 1 && $deltam >= 1 ){
-	foreach my $k ( @k ){
-		die unless $k =~ m"^(link\[.*\]_(tx|rx)_(bytes|packets|errors|dropped|overrun|mcast|carrier|collsns))_cnt$";
-		my $base = $1;
-		my $v1 = $d{$k};
-		my $v2 = $origin->{$k};
-		next unless defined $v2;
-		if( $k =~ m"^link\[.*\]_(?:tx|rx)_(?:bytes)_cnt$" ){
-			my $v = ($v1 - $v2) * 8 / $deltas / 1000000;
-			$d{"${base}_1h_avg_mbps"} = n $v;
-		}else{
-			my $v = ($v1 - $v2) / $deltam;
-			$d{"${base}_1h_avg_ppm"} = n $v;
-		}
+my ($shortd, $longd) = calc_delta "$WORKDIR/networktraffic.history", $HISTORY_EXPIRYTERM_H, %d;
+foreach my $k ( keys %$shortd ){
+	my $shortv = $shortd->{$k};
+	my $longv = $longd->{$k};
+	die unless $k =~ m"-(\w+)-cnt$";
+	if( $1 eq 'bytes' ){
+		$d{"$`-throughput-mbps"} = n $shortv / 1000000 * 8;
+		$d{"$`-throughput-longtermavg[$longterm]-mbps"} = n $longv / 1000000 * 8;
+	}else{
+		$d{"$`-$1-ppm"} = n $shortv * 60;
+		$d{"$`-$1-longtermavg[$longterm]-ppm"} = n $longv * 60;
 	}
 }
 

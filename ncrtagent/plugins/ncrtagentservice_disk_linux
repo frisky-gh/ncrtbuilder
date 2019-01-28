@@ -48,69 +48,84 @@ while( <$h> ){
 }
 close $h;
 
+sub match ($@) {
+	my ($path, @patterns) = @_;
+	foreach my $pattern ( @patterns ){
+		return 1 if $path =~ $pattern;
+	}
+	return undef;
+}
+
 ####
 # data
-my %d;
+my %disk;
 
 # df
-open my $h, '-|', "df -k --output='source,fstype,itotal,iused,iavail,size,used,avail,target'" or do {
+open my $h, '-|', "LANG=C df -P -B M" or do {
 	die "df: cannot execute, stopped";
 };
-OUTSIDE:
 while( <$h> ){
 	chomp;
 	next if $. == 1;
-	die "$_, stopped" unless m"^(\S+)\s+(\S+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\S.*)";
-	my $source = $1;
-	my $fstype = $2;
-	my $itotal = $3;
-	my $iused = $4;
-	my $iavail = $5;
-	my $size = $6;
-	my $used = $7;
-	my $avail = $8;
-	my $target = $9;
+	die "$_, stopped" unless m"^
+		(?<source> \S+) \s+
+		(?<total>  \d+)M \s+
+		(?<used>   \d+)M \s+
+		(?<avail>  \d+)M \s+
+		(?<pct>    \d+)% \s+
+		(?<target> \S.*)$"x;
+	next if match $+{target}, @ignore_rules;
 
-	foreach my $r ( @ignore_rules ){
-		next OUTSIDE if $target =~ $r;
-	}
+	$disk{$+{target}}->{total}     = nMB $+{total};
+	$disk{$+{target}}->{used}      = nMB $+{used};
+	$disk{$+{target}}->{avail}     = nMB $+{total} - $+{used};
+	$disk{$+{target}}->{'avail-pct'} = $+{total} == 0 ? 0 :
+		nP 100 * ($+{total} - $+{used}) / $+{total};
+}
+close $h;
 
-	$d{$target} = [
-		$source, $fstype,
-		$itotal, $iused, $iavail,
-		$itotal > 0 ? nP 100 * $iavail / ($iavail + $iused): nP 100,
-		nMB $size / 1024, nMB $used / 1024, nMB $avail / 1024,
-		$size > 0 ? nP 100 * $avail / ($avail + $used): nP 100
-	];
+open my $h, '-|', "LANG=C df -P -i" or do {
+	die "df: cannot execute, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if $. == 1;
+	die "$_, stopped" unless m"^
+		(?<source> \S+) \s+
+		(?<total>  \S+) \s+
+		(?<used>   \d+) \s+
+		(?<avail>  \d+) \s+
+		(?<pct>    \d+%) \s+
+		(?<target> \S.*)$"x;
+	next if match $+{target}, @ignore_rules;
+
+	$disk{$+{target}}->{itotal}     = n $+{total};
+	$disk{$+{target}}->{iused}      = n $+{used};
+	$disk{$+{target}}->{iavail}     = n $+{total} - $+{used};
+	$disk{$+{target}}->{'iavail-pct'} = $+{total} == 0 ? 0 :
+		nP 100 * ($+{total} - $+{used}) / $+{total};
 }
 close $h;
 
 foreach my $path ( @exist_rules ){
-	next if exists $d{$path};
-	$d{$path} = [
-		undef, 'none',
-		0, 0, 0,
-		nP 0,
-		nMB 0, nMB 0, nMB 0,
-		nP 0
-	];
+	next if exists $disk{$path};
+	next if match $path, @ignore_rules;
+	$disk{$path}->{total}        = nMB 0;
+	$disk{$path}->{used}         = nMB 0;
+	$disk{$path}->{avail}        = nMB 0;
+	$disk{$path}->{'avail-pct'}  = nP 0;
+	$disk{$path}->{itotal}       = n 0;
+	$disk{$path}->{iused}        = n 0;
+	$disk{$path}->{iavail}       = n 0;
+	$disk{$path}->{'iavail-pct'} = nP 0;
 }
 
-foreach my $k ( sort keys %d ){
-	my $v = $d{$k};
-	my (
-		$source, $fstype,
-		$itotal, $iused, $iavail, $iavail_pct,
-		$total, $used, $avail, $avail_pct
-	) = @$v;
-	print "disk[$k]_total=$total\n";
-	print "disk[$k]_used=$used\n";
-	print "disk[$k]_avail=$avail\n";
-	print "disk[$k]_avail_pct=$avail_pct\n";
-	print "disk[$k]_itotal=$itotal\n";
-	print "disk[$k]_iused=$iused\n";
-	print "disk[$k]_iavail=$iavail\n";
-	print "disk[$k]_iavail_pct=$iavail_pct\n";
+foreach my $path ( sort keys %disk ){
+	my $values = $disk{$path};
+	foreach my $k ( sort keys %$values ){
+		my $v = $values->{$k};
+		print "disk[$path]-$k=$v\n";
+	}
 }
 
 exit 0;

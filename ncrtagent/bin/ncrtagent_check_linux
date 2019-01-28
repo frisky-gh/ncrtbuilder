@@ -113,10 +113,10 @@ foreach my $k ( sort keys %m ){
 		my ($lower, $upper) = @{$cm{$k}};
 		$c = "$lower:$upper";
 		if    ( $value < $lower ){
-			push @c, "$key_text:${value}(lower_crit_thr:$lower)";
+			push @c, "$key_text:${value}(lower-crit-thr:$lower)";
 			$critical_occurred = 1;
 		}elsif( $v > $upper ){
-			push @c, "$key_text:${value}(upper_crit_thr:$upper)";
+			push @c, "$key_text:${value}(upper-crit-thr:$upper)";
 			$critical_occurred = 1;
 		}
 	}
@@ -127,9 +127,9 @@ foreach my $k ( sort keys %m ){
 		if    ( $critical_occurred ){
 			# ignore
 		}elsif( $value < $lower ){
-			push @w, "$key_text:${value}(lower_warn_thr:$lower)";
+			push @w, "$key_text:${value}(lower-warn-thr:$lower)";
 		}elsif( $value > $upper ){
-			push @w, "$key_text:${value}(upper_warn_thr:$upper)";
+			push @w, "$key_text:${value}(upper-warn-thr:$upper)";
 		}
 	}
 	my $p = "$k=$v;$w;$c;$min;$max";

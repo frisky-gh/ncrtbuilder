@@ -36,7 +36,7 @@ open my $e, '-|', "$PLUGINSDIR/ncrtagentgateway_${service}_linux $CONFDIR $WORKD
 while( <$e> ){
 	chomp;
 	next if m"^\s*(#|$)";
-	die "$_, stopped" unless m"^([-\w/\[\]]+)=(\S+)$";
+	die "$_, stopped" unless m"^([-\w\./\[\]]+)=(\S+)$";
 	my $k = $1;
 	my $v = $2;
 	$m{$k} = $v;

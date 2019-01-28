@@ -93,10 +93,10 @@ our $RECIPIENT_EXPIRYDATE = timestamp time-($conf{RECIPIENT_LIFETIME}// 6*60)*60
 our $GRAPH_EXPIRYDATE     = timestamp time-($conf{GRAPH_LIFETIME}    //   10)*60;
 
 our $MINOR_DETECTION_LIMIT = timestamp time -  8 * 60 * 60;
-our $MAJOR_DETECTION_LIMIT = timestamp time -       1 * 60;
+our $MAJOR_DETECTION_LIMIT = timestamp time -       5 * 60;
 our $CRIT_DETECTION_LIMIT  = timestamp time -       1 * 60;
 our $MINOR_LASTSEND_LIMIT  = timestamp time -  8 * 60 * 60;
-our $MAJOR_LASTSEND_LIMIT  = timestamp time -       1 * 60;
+our $MAJOR_LASTSEND_LIMIT  = timestamp time -      20 * 60;
 our $CRIT_LASTSEND_LIMIT   = timestamp time -       5 * 60;
 our $RESEND_LIMIT          = timestamp time - 12 * 60 * 60;
 our $HEALTH_THRESHOLD = 10;
@@ -199,25 +199,25 @@ sub path_decode ($) {
 sub query_panels_to_naemon2influx_grafana_helper ($$) {
 	my ($host, $service ) = @_;
 	my $ua = LWP::UserAgent->new;
-	my $server_endpoint = sprintf '%s/panels.js?hostname=%s&servicedesc=%s',
+	my $server_endpoint = sprintf '%s/dashboard_info.js?hostname=%s&servicedesc=%s',
 		$HELPERURL, $host, $service;
 	my $req = HTTP::Request->new('GET' => $server_endpoint);
-	debuglog "naemon2influx-grafana-helper: url=%s requesting...", $server_endpoint;
+	debuglog "naemon2influx-grafana-helper: url=%s, requesting...", $server_endpoint;
 	my $res = $ua->request($req);
-	my $obj = decode_json $res->content;
-	return $obj;
+	return undef unless $res->code eq '200';
+	my $obj;
+	eval { $obj = decode_json $res->content; };
+	return undef if $@;
+	return $obj->{panels};
 }
 
 #### grafana functions
-sub download_panel_png_from_grafana ($$) {
-	my ($url, $panel_id ) = @_;
-	$url =~ s{^/d/}{/d-solo/};
+sub download_panel_png_from_grafana ($) {
+	my ($url) = @_;
 	my $ua = LWP::UserAgent->new;
-	my $server_endpoint = sprintf '%s/render%s?orgId=%d&panelId=%d&width=600&height=200&timeout=5',
-		$GRAFANAURL, $url, $GRAFANAORGID, $panel_id;
-	my $req = HTTP::Request->new('GET' => $server_endpoint);
+	my $req = HTTP::Request->new('GET' => $url);
 	$req->authorization_basic('api_key', $GRAFANAAPIKEY);
-	debuglog "naemon2influx-grafana-helper: requesting...";
+	debuglog "grafana: url=%s, requesting...", $url;
 	my $res = $ua->request($req);
 	return $res->content;
 }
@@ -952,6 +952,36 @@ sub update_next_report ($$) {
 	}
 }
 
+sub parse_output ($) {
+	my ($output) = @_;
+	my @performances;
+	my @messages;
+	foreach my $field ( split m" / ", $output ){
+		if( $field =~ m"^(UNKNOWN|WARNING|WARN|CRITICAL|CRIT)$" ){
+			push @messages, $field;
+		}elsif( $field =~ m"^
+			(?<name> .*):
+			(?<value> [-+]?(?:\d+\.\d+|\d|\.\d+))
+			\(
+				(?<side> upper|lower)-(?<priority> crit|warn)-thr:
+				(?<threshold> [-+]?(?:\d+\.\d+|\d|\.\d+))
+				
+			\)
+		$"x ){
+			push @performances, {
+				name      => $+{name},
+				value     => $+{value},
+				priority  => $+{priority},
+				side      => $+{side},
+				threshold => $+{threshold},
+			};
+		}else{
+			push @messages, $field;
+		}
+	}
+	return \@messages, \@performances;
+}
+
 sub download_session_graphs ($$$) {
 	my ($ss, $sid, $status) = @_;
 	my $ngs = $status->{ngs};
@@ -967,13 +997,37 @@ sub download_session_graphs ($$$) {
 		my $host_encoded    = path_encode $host;
 		my $service_encoded = path_encode $service;
 		my $panels = query_panels_to_naemon2influx_grafana_helper $host, $service;
-		my $url = $panels->{url};
-		my $ids = $panels->{id};
+		next unless defined $panels;
+
+		my $output = $ng->{output};
+		my (undef, $perfs_in_ng) = parse_output $output;
 
 		debuglog "  host:%s, service:%s", $host, $service;
-		foreach my $id ( @$ids ){
+		foreach my $panel ( @$panels ){
+			my $id  = $panel->{id} or next;
+			my $url = $panel->{url} or next;
 			debuglog "    panel_id:%d", $id;
-			my $png = download_panel_png_from_grafana $url, $id;
+
+			my $perfnames_in_panel = $panel->{performancenames};
+			if( @$perfs_in_ng and $perfnames_in_panel ){
+				debuglog "    cheking performance names %s ...",
+					"@{$perfnames_in_panel}";
+				my $this_panel_is_related_to_ng;
+				OUTSIDE:
+				foreach my $perf_in_ng ( @$perfs_in_ng ){
+					my $perfname_in_ng = $perf_in_ng->{name};
+					debuglog "    performance name in NG: %s.",
+						$perfname_in_ng;
+					foreach my $perfname_in_panel ( @$perfnames_in_panel ){
+						next unless $perfname_in_ng eq $perfname_in_panel;
+						$this_panel_is_related_to_ng = 1;
+						last OUTSIDE;
+					}
+				}
+				next unless $this_panel_is_related_to_ng;
+			}
+
+			my $png = download_panel_png_from_grafana $url;
 			my $f = "$host_encoded,$service_encoded,$id.png";
 			write_plain "$d/$f", $png;
 			my %graph = (
@@ -1061,7 +1115,19 @@ sub report ($$$$) {
 
 	# mail message
 	my @ngs;
-	foreach my $k ( sort {$a cmp $b} keys %$ngs ){ push @ngs, $ngs->{$k}; }
+	foreach my $k ( sort keys %$ngs ){
+		my $orig_ng = $ngs->{$k};
+		my ($messages, $perfs) = parse_output $orig_ng->{output};
+		push @ngs, {
+			timestamp    => $orig_ng->{timestamp},
+			host         => $orig_ng->{host},
+			service      => $orig_ng->{service},
+			state        => $orig_ng->{state},
+			output       => $orig_ng->{output},
+			performances => $perfs,
+			messages     => $messages,
+		};
+	}
 	my @nghistory;
 	foreach my $k (
 		sort {
@@ -1137,7 +1203,19 @@ sub generate_session_page ($$$) {
 	my ($ss, $sid, $status) = @_;
 	my $ngs = $status->{ngs};
 	my @ngs;
-	foreach my $k ( sort {$a cmp $b} keys %$ngs ){ push @ngs, $ngs->{$k}; }
+	foreach my $k ( sort keys %$ngs ){
+		my $orig_ng = $ngs->{$k};
+		my ($messages, $perfs) = parse_output $orig_ng->{output};
+		push @ngs, {
+			timestamp    => $orig_ng->{timestamp},
+			host         => $orig_ng->{host},
+			service      => $orig_ng->{service},
+			state        => $orig_ng->{state},
+			output       => $orig_ng->{output},
+			performances => $perfs,
+			messages     => $messages,
+		};
+	}
 	my $graphs = $ss->{$sid}->{graphs};
 	my @graphs;
 	foreach my $k ( sort {$a cmp $b} keys %$graphs ){ push @graphs, $graphs->{$k}; }
@@ -1409,6 +1487,7 @@ foreach my $sid ( list_sessions $ss ){
 debuglog "downloading graphs for new sessions...";
 foreach my $sid ( list_sessions $ss ){
 	next if session_is_expired $ss, $sid;
+	next if session_is_in_transition $ss, $sid;
 	next if session_has_graphs $ss, $sid;
 	my $sg     = get_session_servicegroup $ss, $sid;
 	my $status = get_servicegroup_status  $sgs, $sg;
@@ -1419,6 +1498,7 @@ debuglog "replacing expired graphs to downloaded graphs...";
 if( graphs_are_expired ){
 	foreach my $sid ( list_sessions $ss ){
 		next if session_is_expired $ss, $sid;
+		next if session_is_in_transition $ss, $sid;
 		set_graphs_timestamp timestamp time;
 		my $sg     = get_session_servicegroup $ss, $sid;
 		my $status = get_servicegroup_status  $sgs, $sg;

@@ -1,0 +1,6 @@
+
+=== Database_.* TableSpace ===
+
+tablespace\[.*\]_avail		crit    [1.00,999.99]
+tablespace\[.*\]_used		warn    [0.00,100.00]
+

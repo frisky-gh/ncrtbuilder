@@ -86,7 +86,7 @@ $r =~ m"^
 	    CRITICAL\ -\ (.*)
 	)
 $"x or do {
-	print "web[$shortname]_status=2\n";
+	print "web[$shortname]-status=2\n";
 };
 my $result = $2;
 my $statuscode = $3;
@@ -95,9 +95,9 @@ my $message = $5;
 my $elapsed = ns $6;
 my $size = nB $7;
 my $status = $statuscode eq $wantstatus ? 0 : 1;
-print "web[$shortname]_size=$size\n";
-print "web[$shortname]_elapsed=$elapsed\n";
-print "web[$shortname]_status=$status\n";
+print "web[$shortname]-size=$size\n";
+print "web[$shortname]-elapsed=$elapsed\n";
+print "web[$shortname]-status=$status\n";
 
 exit 0;
 

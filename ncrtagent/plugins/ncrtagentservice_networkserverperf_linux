@@ -78,9 +78,9 @@ foreach my $port ( sort keys %rules ){
 
 	my $n = int $connections;
 	$n = -1 unless $listen;
-	print "port[$port]_conns=$n\n";
-	print "port[$port]_sendq=$sendq\n";
-	print "port[$port]_recvq=$recvq\n";
+	print "port[$port]-conns=$n\n";
+	print "port[$port]-sendq=$sendq\n";
+	print "port[$port]-recvq=$recvq\n";
 }
 
 exit 0;

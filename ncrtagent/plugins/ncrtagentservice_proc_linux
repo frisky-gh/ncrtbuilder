@@ -126,13 +126,13 @@ foreach my $category ( sort keys %must_check_count ){
 	my $procs = 0;
 	$procs = int keys %{$procs{$category}} if defined $procs{$category};
 	my $threads = int $threads{$category};
-	print "proc[$category]_procs=$procs\n";
-	print "proc[$category]_threads=$threads\n";
+	print "proc[$category]-procs=$procs\n";
+	print "proc[$category]-threads=$threads\n";
 }
 foreach my $category ( sort keys %must_check_elapsed ){
 	my $elapsed = $elapsed{$category} + 0;
 	my $elapsed_min = n $elapsed / 60;
-	print "proc[$category]_elapsed=$elapsed_min\n";
+	print "proc[$category]-elapsed=$elapsed_min\n";
 }
 
 exit 0;

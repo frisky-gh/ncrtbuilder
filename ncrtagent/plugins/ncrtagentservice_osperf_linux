@@ -2,11 +2,17 @@
 
 use strict;
 
+our $HISTORY_EXPIRYTERM_H = 1;
+
 if( @ARGV < 2 ){
 	print "usage: % $0 CONFDIR WORKDIR\n";
 	exit 1;
 }
 
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+####
 sub n ($) {
 	return sprintf "%.2f", $_[0];
 }
@@ -17,6 +23,99 @@ sub nMB ($) {
 	return sprintf "%.2fMB", $_[0];
 }
 
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
+	foreach my $k ( sort {$a cmp $b} keys %$var ){
+		next if $k eq 'timestamp';
+		push @ltsv, "$k:".$var->{$k};
+	}
+	return join "\t", @ltsv;
+}
+
+sub ltsv2var ( $ ){
+	my ($ltsv) = @_;
+	my %var;
+	foreach my $kv ( split m"\t", $ltsv ){
+		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
+			next;
+		};
+		my $k = $1;
+		my $v = $2;
+		$var{$k} = $v;
+	}
+	return %var;
+}
+
+sub calc_delta ($$\%) {
+	my ($f, $longterm_h, $curr) = @_;
+	my @history;
+
+	my $now = time;
+	my $longterm_limit  = $now - $longterm_h * 60 * 60;
+	my $shortterm_limit = $now - 59;
+
+	# load history
+	if( open my $h, '<', $f ){
+		while( <$h> ){
+			chomp;
+			my %v = ltsv2var $_;
+			push @history, \%v;
+		}
+		close $h;
+	}
+
+	# search origin
+	my $shortterm_origin;
+	foreach my $e ( @history ){
+		last	if $e->{timestamp} > $shortterm_limit;
+		$shortterm_origin = $e;
+	}
+	my $longterm_origin;
+	foreach my $e ( @history ){
+		last	if $e->{timestamp} > $shortterm_limit;
+		last	if $e->{timestamp} > $longterm_limit and
+			defined $longterm_origin;
+		$longterm_origin = $e;
+	}
+
+	# store history
+	open my $h, '>', "$f.$$" or do {
+		die "$f.$$: cannot open, stopped";
+	};
+	push @history, { 'timestamp' => $now,  %$curr };
+	foreach my $e ( @history ){
+		next if $e->{timestamp} < $longterm_limit;
+		print $h var2ltsv( %$e ), "\n";
+	}
+	close $h;
+	unlink $f;
+	rename "$f.$$", $f;
+
+	# calc difference
+	my %shortterm_delta;
+	if( $shortterm_origin ){
+		my $deltat = $now - $shortterm_origin->{timestamp};
+		while( my ($k, $v) = each %$curr ){
+			my $v2 = $shortterm_origin->{$k} // next;
+			$shortterm_delta{$k} = ($v - $v2) / $deltat;
+		}
+	}
+	my %longterm_delta;
+	if( $longterm_origin ){
+		my $deltat = $now - $longterm_origin->{timestamp};
+		while( my ($k, $v) = each %$curr ){
+			my $v2 = $longterm_origin->{$k} // next;
+			$longterm_delta{$k} = ($v - $v2) / $deltat;
+		}
+	}
+
+	return \%shortterm_delta, \%longterm_delta;
+}
+
+####
+
 # metrics
 my %m;
 # thresholds
@@ -26,7 +125,8 @@ my @ct;
 my @w;
 my @c;
 
-# cpu
+# load curr cpu jiffies
+my %curr;
 my $f = '/proc/stat';
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
@@ -34,22 +134,27 @@ open my $h, '<', $f or do {
 while( <$h> ){
 	chomp;
 	next unless m"^cpu\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)";
-	my $user_jf = $1;
-	my $nice_jf = $2;
-	my $system_jf = $3;
-	my $idle_jf = $4;
-	my $iowait_jf = $5;
-	my $irq_jf = $6;
-	my $softirq_jf = $7;
-	my $all_jf = $user_jf + $nice_jf + $system_jf + $idle_jf + $iowait_jf + $irq_jf + $softirq_jf;
-	$m{'cpu_user_pct'}   = nP 100 * $user_jf / $all_jf;
-	$m{'cpu_system_pct'} = nP 100 * $system_jf / $all_jf;
-	$m{'cpu_idle_pct'}   = nP 100 * $idle_jf / $all_jf;
-	$m{'cpu_iowait_pct'} = nP 100 * $iowait_jf / $all_jf;
-	$m{'cpu_other_pct'}  = nP 100 * ($nice_jf + $irq_jf + $softirq_jf) / $all_jf;
-	last;
+	$curr{user} = $1;
+	my $nice = $2;
+	$curr{system} = $3;
+	$curr{idle} = $4;
+	$curr{iowait} = $5;
+	my $irq = $6;
+	my $softirq = $7;
+	$curr{other} = $nice + $irq + $softirq;
 }
 close $h;
+
+my $longterm = sprintf "%dH", $HISTORY_EXPIRYTERM_H;
+my ($shortd, $longd) = calc_delta "$WORKDIR/osperf_cpu.history", $HISTORY_EXPIRYTERM_H, %curr;
+my $shortterm_jiffies = $shortd->{user} + $shortd->{system} + $shortd->{iowait} + $shortd->{idle};
+my $longterm_jiffies  = $longd->{user} + $longd->{system} + $longd->{iowait} + $longd->{idle};
+foreach my $i ( 'user', 'system', 'iowait', 'idle' ){
+	$m{"cpu-${i}-pct"} = nP 100 * $shortd->{$i} / $shortterm_jiffies
+		if $shortterm_jiffies > 0;
+	$m{"cpu-${i}-longtermavg[$longterm]-pct"} = nP 100 * $longd->{$i} / $longterm_jiffies
+		if $longterm_jiffies > 0;
+}
 
 # memory/swap
 my $f = '/proc/meminfo';
@@ -59,23 +164,23 @@ open my $h, '<', $f or do {
 while( <$h> ){
 	chomp;
 	next unless m"^(MemTotal|MemAvailable|MemFree|Buffers|Cached|SwapCached|SReclaimable|Shmem|SwapTotal|SwapFree):\s+(\d+) kB";
-	if   ( $1 eq 'MemTotal'     ){ $m{'mem_total'}        = nMB $2 / 1024; }
-	elsif( $1 eq 'MemAvalablel' ){ $m{'mem_available'}    = nMB $2 / 1024; }
-	elsif( $1 eq 'MemFree'      ){ $m{'mem_free'}         = nMB $2 / 1024; }
-	elsif( $1 eq 'Buffers'      ){ $m{'mem_buffers'}      = nMB $2 / 1024; }
-	elsif( $1 eq 'Cached'       ){ $m{'mem_cached'}       = nMB $2 / 1024; }
-	elsif( $1 eq 'SwapCached'   ){ $m{'mem_swapcached'}   = nMB $2 / 1024; }
-	elsif( $1 eq 'SReclaimable' ){ $m{'mem_sreclaimable'} = nMB $2 / 1024; }
-	elsif( $1 eq 'Shmem'        ){ $m{'mem_shmem'}        = nMB $2 / 1024; }
-	elsif( $1 eq 'SwapTotal'    ){ $m{'swap_total'}       = nMB $2 / 1024; }
-	elsif( $1 eq 'SwapFree'     ){ $m{'swap_free'}        = nMB $2 / 1024; }
+	if   ( $1 eq 'MemTotal'     ){ $m{'mem-total'}        = nMB $2 / 1024; }
+	elsif( $1 eq 'MemAvalablel' ){ $m{'mem-available'}    = nMB $2 / 1024; }
+	elsif( $1 eq 'MemFree'      ){ $m{'mem-free'}         = nMB $2 / 1024; }
+	elsif( $1 eq 'Buffers'      ){ $m{'mem-buffers'}      = nMB $2 / 1024; }
+	elsif( $1 eq 'Cached'       ){ $m{'mem-cached'}       = nMB $2 / 1024; }
+	elsif( $1 eq 'SwapCached'   ){ $m{'mem-swapcached'}   = nMB $2 / 1024; }
+	elsif( $1 eq 'SReclaimable' ){ $m{'mem-sreclaimable'} = nMB $2 / 1024; }
+	elsif( $1 eq 'Shmem'        ){ $m{'mem-shmem'}        = nMB $2 / 1024; }
+	elsif( $1 eq 'SwapTotal'    ){ $m{'swap-total'}       = nMB $2 / 1024; }
+	elsif( $1 eq 'SwapFree'     ){ $m{'swap-free'}        = nMB $2 / 1024; }
 }
 close $h;
-unless( defined $m{'mem_available'} ){
-	$m{'mem_available'} = nMB $m{'mem_buffers'} + $m{'mem_cached'} + $m{'mem_free'} + $m{'mem_sreclaimable'} - $m{'mem_shmem'};
+unless( defined $m{'mem-available'} ){
+	$m{'mem-available'} = nMB $m{'mem-buffers'} + $m{'mem-cached'} + $m{'mem-free'} + $m{'mem-sreclaimable'} - $m{'mem-shmem'};
 }
-$m{'mem_available_pct'} = nP 100 * $m{'mem_available'} / $m{'mem_total'};
-$m{'swap_free_pct'} = nP 100 * $m{'swap_free'} / $m{'swap_total'};
+$m{'mem-available-pct'} = nP 100 * $m{'mem-available'} / $m{'mem-total'};
+$m{'swap-free-pct'} = nP 100 * $m{'swap-free'} / $m{'swap-total'};
 
 # proc/thread
 opendir my $d, '/proc' or do {
@@ -111,23 +216,53 @@ close $h;
 $m{'loadavg'} = n $loadavg;
 
 # io
-open my $h, '-|', 'LANG=C sar -b 1 5' or do {
-	die "sar: cannot execute, stopped";
+my %dev;
+my $f = '/proc/diskstats';
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
 };
-my $last;
-while( <$h> ){ $last = $_; }
+while( <$h> ){
+	chomp;
+	next unless m"^\s*
+		(\d+)\s+(\d+)\s+([-\w]+)\s+
+		(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+
+		(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+
+		(\d+)
+	"x;
+	my $dev = $3;
+	$dev{$dev}->{'read-times'} = $5;
+	$dev{$dev}->{'read-sectors'} = $6;
+	$dev{$dev}->{'write-times'} = $9;
+	$dev{$dev}->{'write-sectors'} = $10;
+}
 close $h;
-my @avg = split m"\s+", $last;
-$m{'io_tps'} = n $avg[1];
-$m{'io_rtps'} = n $avg[2];
-$m{'io_wtps'} = n $avg[3];
-$m{'io_brps'} = n $avg[4];
-$m{'io_bwps'} = n $avg[5];
+
+foreach my $dev ( keys %dev ){
+	delete $dev{$1} if $dev =~ m/^(.*[a-z])\d+$/ and exists $dev{$1};
+	delete $dev{$dev} if $dev =~ m"^fd\d+$";
+	delete $dev{$dev} if $dev =~ m"^sr\d+$";
+	delete $dev{$dev} if $dev =~ m"^loop\d+$";
+	delete $dev{$dev} if $dev =~ m"^ram\d+$";
+}
+my %io;
+while( my ($dev, $values) = each %dev ){
+	while( my ($k, $v) = each %$values ){ $io{"dev[$dev]-$k"} = $v; }
+}
+
+my ($shortd, $longd) = calc_delta "$WORKDIR/osperf_io.history", $HISTORY_EXPIRYTERM_H, %io;
+foreach my $k ( keys %$shortd ){
+	my $shortd_key = $k; $shortd_key =~ s/_(.)[a-z]+$/_${1}pm/;
+	$m{$shortd_key} = n $shortd->{$k} * 60;
+	my $longd_key = $k; $longd_key =~ s/_(.)[a-z]+$/_1h_avg_${1}pm/;
+	$m{$longd_key} = n $longd->{$k} * 60;
+}
 
 #
 foreach my $k ( sort keys %m ){
 	my $v = $m{$k};
 	print "$k=$v\n";
 }
+
+exit 0;
 
 
