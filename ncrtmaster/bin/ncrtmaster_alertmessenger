@@ -93,7 +93,7 @@ our $RECIPIENT_EXPIRYDATE = timestamp time-($conf{RECIPIENT_LIFETIME}// 6*60)*60
 our $GRAPH_EXPIRYDATE     = timestamp time-($conf{GRAPH_LIFETIME}    //   10)*60;
 
 our $MINOR_DETECTION_LIMIT = timestamp time -  8 * 60 * 60;
-our $MAJOR_DETECTION_LIMIT = timestamp time -       5 * 60;
+our $MAJOR_DETECTION_LIMIT = timestamp time -       2 * 60;
 our $CRIT_DETECTION_LIMIT  = timestamp time -       1 * 60;
 our $MINOR_LASTSEND_LIMIT  = timestamp time -  8 * 60 * 60;
 our $MAJOR_LASTSEND_LIMIT  = timestamp time -      20 * 60;
@@ -958,13 +958,13 @@ sub parse_output ($) {
 	my @messages;
 	foreach my $field ( split m" / ", $output ){
 		if( $field =~ m"^(UNKNOWN|WARNING|WARN|CRITICAL|CRIT)$" ){
-			push @messages, $field;
+			#push @messages, $field;
 		}elsif( $field =~ m"^
 			(?<name> .*):
-			(?<value> [-+]?(?:\d+\.\d+|\d|\.\d+))
+			(?<value> [-+]?(?:\d+\.\d+|\d+|\.\d+))
 			\(
 				(?<side> upper|lower)-(?<priority> crit|warn)-thr:
-				(?<threshold> [-+]?(?:\d+\.\d+|\d|\.\d+))
+				(?<threshold> [-+]?(?:\d+\.\d+|\d+|\.\d+))
 				
 			\)
 		$"x ){
@@ -997,6 +997,7 @@ sub download_session_graphs ($$$) {
 		my $host_encoded    = path_encode $host;
 		my $service_encoded = path_encode $service;
 		my $panels = query_panels_to_naemon2influx_grafana_helper $host, $service;
+		debuglog "  host:%s, service:%s, panels:%s", $host, $service, $panels;
 		next unless defined $panels;
 
 		my $output = $ng->{output};
@@ -1410,6 +1411,13 @@ sub get_session_servicegroup ($$) {
 	return $info->{servicegroup};
 }
 
+sub graph_is_newer_than_page ($$) {
+	my ($ss, $sid) = @_;
+	my $page_timestamp = $ss->{$sid}->{page_timestamp};
+	my $graph_timestamp = read_internal_timestamp "$WORKDIR/sg_graphs";
+	return $graph_timestamp gt $page_timestamp;
+}
+
 #### graphs download functions
 sub graphs_are_expired () {
 	my $timestamp;
@@ -1444,6 +1452,7 @@ foreach my $sg ( list_servicegroups $sgs ){
 
 	generate_session_page $ss, $sid, $status if $servicegroup_has_changes;
 	generate_session_page $ss, $sid, $status unless session_has_page $ss, $sid;
+	generate_session_page $ss, $sid, $status if graph_is_newer_than_page $ss, $sid;
 }
 
 foreach my $sg ( list_servicegroups $sgs ){

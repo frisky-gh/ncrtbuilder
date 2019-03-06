@@ -1,0 +1,4 @@
+.*		dev\[.*\]-write-longtermavg\[.*]-tpm	warn	[0,5000]
+.*		dev\[.*\]-read-longtermavg\[.*]-tpm	warn	[0,5000]
+
+

@@ -39,10 +39,12 @@ inc/
 /conf/*.rpm
 /conf/*.pem
 /conf/*.conf
+/conf/*.yml
 /conf/agent/*.hosts
 /conf/agent/*.rules
 /conf/agent/*.ignores
 /conf/agent/*.categories
+/conf/agent/*.conf
 /conf/master/*.conf
 /conf/gateway/*.conf
 /conf/threshold/*.thresholds

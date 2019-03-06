@@ -1,0 +1,193 @@
+#!/usr/bin/perl
+
+use strict;
+
+our $LONGTERM_H = 1;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+####
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+sub nP ($) {
+	return sprintf "%.2f%%", $_[0];
+}
+sub nMB ($) {
+	return sprintf "%.2fMB", $_[0];
+}
+
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
+	foreach my $k ( sort {$a cmp $b} keys %$var ){
+		next if $k eq 'timestamp';
+		push @ltsv, "$k:".$var->{$k};
+	}
+	return join "\t", @ltsv;
+}
+
+sub ltsv2var ( $ ){
+	my ($ltsv) = @_;
+	my %var;
+	foreach my $kv ( split m"\t", $ltsv ){
+		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
+			next;
+		};
+		my $k = $1;
+		my $v = $2;
+		$var{$k} = $v;
+	}
+	return %var;
+}
+
+sub calc_delta ($$\%) {
+	my ($f, $longterm_h, $curr) = @_;
+	my @history;
+
+	my $now = time;
+	my $longterm_limit  = $now - $longterm_h * 60 * 60;
+	my $shortterm_limit = $now - 59;
+
+	# load history
+	if( open my $h, '<', $f ){
+		while( <$h> ){
+			chomp;
+			my %v = ltsv2var $_;
+			push @history, \%v;
+		}
+		close $h;
+	}
+
+	# search origin
+	my $shortterm_origin;
+	foreach my $e ( @history ){
+		last	if $e->{timestamp} > $shortterm_limit;
+		$shortterm_origin = $e;
+	}
+	my $longterm_origin;
+	foreach my $e ( @history ){
+		last	if $e->{timestamp} > $shortterm_limit;
+		last	if $e->{timestamp} > $longterm_limit and
+			defined $longterm_origin;
+		$longterm_origin = $e;
+	}
+
+	# store history
+	open my $h, '>', "$f.$$" or do {
+		die "$f.$$: cannot open, stopped";
+	};
+	push @history, { 'timestamp' => $now,  %$curr };
+	foreach my $e ( @history ){
+		next if $e->{timestamp} < $longterm_limit;
+		print $h var2ltsv( %$e ), "\n";
+	}
+	close $h;
+	unlink $f;
+	rename "$f.$$", $f;
+
+	# calc difference
+	my %shortterm_delta;
+	if( $shortterm_origin ){
+		my $deltat = $now - $shortterm_origin->{timestamp};
+		while( my ($k, $v) = each %$curr ){
+			my $v2 = $shortterm_origin->{$k} // next;
+			$shortterm_delta{$k} = ($v - $v2) / $deltat;
+		}
+	}
+	my %longterm_delta;
+	if( $longterm_origin ){
+		my $deltat = $now - $longterm_origin->{timestamp};
+		while( my ($k, $v) = each %$curr ){
+			my $v2 = $longterm_origin->{$k} // next;
+			$longterm_delta{$k} = ($v - $v2) / $deltat;
+		}
+	}
+
+	return \%shortterm_delta, \%longterm_delta;
+}
+
+####
+
+my @category_rules;
+my $f = "$CONFDIR/agent/io.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*($|#)";
+	die "$f:$.: illegal format, stopped" unless m"^(\w+)=(.*)$";
+	$LONGTERM_H = 0 + $2 if $1 eq 'LONGTERM_H';
+}
+close $h;
+
+####
+# metrics
+my %m;
+# thresholds
+my @wt;
+my @ct;
+#
+my @w;
+my @c;
+
+# io
+my %dev;
+my $f = '/proc/diskstats';
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next unless m"^\s*
+		(\d+)\s+(\d+)\s+([-\w]+)\s+
+		(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+
+		(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+
+		(\d+)
+	"x;
+	my $dev = $3;
+	$dev{$dev}->{'read-times'} = $5;
+	$dev{$dev}->{'read-sectors'} = $6;
+	$dev{$dev}->{'write-times'} = $9;
+	$dev{$dev}->{'write-sectors'} = $10;
+}
+close $h;
+
+foreach my $dev ( keys %dev ){
+	delete $dev{$1} if $dev =~ m/^(.*[a-z])\d+$/ and exists $dev{$1};
+	delete $dev{$dev} if $dev =~ m"^fd\d+$";
+	delete $dev{$dev} if $dev =~ m"^sr\d+$";
+	delete $dev{$dev} if $dev =~ m"^loop\d+$";
+	delete $dev{$dev} if $dev =~ m"^ram\d+$";
+}
+my %io;
+while( my ($dev, $values) = each %dev ){
+	while( my ($k, $v) = each %$values ){ $io{"dev[$dev]-$k"} = $v; }
+}
+
+my $longterm = sprintf "%dH", $LONGTERM_H;
+my ($shortd, $longd) = calc_delta "$WORKDIR/osperf_io.history", $LONGTERM_H, %io;
+foreach my $k ( keys %$shortd ){
+	my $shortd_key = $k; $shortd_key =~ s/-(.)[a-z]+$/-${1}pm/;
+	$m{$shortd_key} = n $shortd->{$k} * 60;
+	my $longd_key = $k; $longd_key =~ s/-(.)[a-z]+$/-longtermavg[$longterm]-${1}pm/;
+	$m{$longd_key} = n $longd->{$k} * 60;
+}
+
+#
+foreach my $k ( sort keys %m ){
+	my $v = $m{$k};
+	print "$k=$v\n";
+}
+
+exit 0;
+
+

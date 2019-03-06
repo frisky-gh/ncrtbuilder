@@ -1,27 +1,32 @@
 ---
 
 - hosts: all
-#  vars:
-#    - include: "{{WORKDIR}}/vars.yml"
   tasks:
     - include_vars: "{{WORKDIR}}/vars.yml"
       tags: [ common ]
+    - include: "{{TOOLHOME}}/conf/ncrtmasters_playbook.yml"
+      tags: [ common ]
+
+    #### for Debian / Ubuntu
     - name: install packages for apt-key
       apt:
         name: [ dirmngr, nrpe-ng, pynag ]
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
-    #### Naemon
+    ## Naemon
     - name: add repository key
       apt_key:
         keyserver: keys.gnupg.net
         id: F8C1CA08A57B9ED7
         keyring: /etc/apt/trusted.gpg.d/labs.consol.de_key.gpg
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
     - name: add naemon repository
       apt_repository:
         repo: 'deb http://labs.consol.de/repo/stable/debian {{ansible_distribution_release}} main'
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
     - name: install naemon and dependancies
@@ -38,32 +43,10 @@
           - libtemplate-perl
           - libstring-random-perl
           - libmime-encwords-perl
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
-#      notify: restart naemon
-
-#- name: set thruk admin password
-#  htpasswd:
-#    path: /etc/naemon/htpasswd
-#    name: admin
-#    password: {{thruk_admin_password}}
-
-#    #### Nagflux
-#    - file:
-#        path: /opt/ncrtmaster
-#        state: directory
-#        owner: root
-#        group: root
-#
-#    - name: install build tools for Nagflux
-#      apt:
-#        name: [ golang, golang-github-influxdb-usage-client-dev, git ]
-#
-#    - name: build nagfluxsetup settings in Nagios / Naemon
-#      shell: "test -x /opt/ncrtmaster/bin/nagflux || ( export GOPATH=/opt/ncrtmaster ; go get -v -u github.com/griesbacher/nagflux ; go build github.com/griesbacher/nagflux )"
-#      failed_when: False
-
-    #### Naemon2Influx
+    ## Naemon2Influx
     - file:
         dest:    "{{item}}"
         state:   directory
@@ -73,21 +56,25 @@
       with_items:
           - "{{NCRTMASTERHOME}}"
           - "{{NCRTMASTERHOME}}/debs"
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
     - copy:
         dest:    "{{NCRTMASTERHOME}}/debs/{{NAEMON2INFLUX_DEB}}"
         src:     "{{TOOLHOME}}/conf/{{NAEMON2INFLUX_DEB}}"
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
     - name: install naemon2influx
       apt:
         deb:     "{{NCRTMASTERHOME}}/debs/{{NAEMON2INFLUX_DEB}}"
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
     - name: install naemon2influx
       apt:
         name: [ influxdb, influxdb-client, libwww-perl ]
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
     - name: setup Nagios / Naemon with naemon2influx
@@ -110,6 +97,7 @@
         - key:   service_perfdata_file
           value: /var/lib/naemon/service-perfdata
       notify: restart naemon
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
     - name: setup Nagios / Naemon with naemon2influx
@@ -117,6 +105,7 @@
         src: ncrt_naemon2influx.cfg
         dest: /etc/naemon/conf.d/ncrt_naemon2influx.cfg
       notify: restart naemon
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
     - name: setup naemon2influx
@@ -126,6 +115,7 @@
         owner: naemon
         group: naemon
       notify: restart naemon
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
     - name: setup naemon2influx
@@ -141,14 +131,21 @@
           value: "{{INFLUXDBUSER}}"
         - key:   password
           value: "{{INFLUXDBPASSWD}}"
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
-    #### InfluxDB
+    ## InfluxDB
     - name: install packages for influxdb client
       apt:
         name: [ python-requests, python-influxdb ]
+      when: "ansible_os_family == 'Debian'"
       tags: [ common ]
 
+    ## Grafana
+
+    #### for All Distros
+
+    ## InfluxDB
     - name: setup influxdb database for naemon2influx
       influxdb_database:
         hostname:      "{{INFLUXDBHOST}}"
@@ -169,26 +166,10 @@
       tags: [ common ]
 
     - name: setup influxdb for naemon2influx
-      #influxdb_query:
-      #  hostname:      "{{INFLUXDBHOST}}"
-      #  port:          "{{INFLUXDBPORT}}"
-      #  username:      "{{INFLUXDBADMINUSER}}"
-      #  password:      "{{INFLUXDBADMINPASSWD}}"
-      #  database_name: "{{INFLUXDBDATABASE}}"
-      #  query:         "grant all on {{INFLUXDBDATABASE}} to {{INFLUXDBUSER}}"
-      #failed_when: False
       shell: "influx -host {{INFLUXDBHOST}} -port {{INFLUXDBPORT}} -username {{INFLUXDBADMINUSER}} -password \"{{INFLUXDBADMINPASSWD}}\" -execute \"grant all on naemon to naemon\""
       tags: [ common ]
 
-    #### Grafana
-    #- name: fix #843263
-    #  lineinfile:
-    #    dest: /usr/share/grafana/public/app/app.js
-    #    regexp: "'ang-drag-drop',"
-    #    line:   "    //'ang-drag-drop',"
-    #  tags: [ common ]
-
-    #### NCRT
+    ## NCRT
     - name: setup modules in ncrt master
       synchronize:
         checksum: yes

@@ -9,6 +9,8 @@
   tasks:
     - include_vars: "{{WORKDIR}}/vars.yml"
       tags: [ common ]
+    - include: "{{TOOLHOME}}/conf/ncrtagents_playbook.yml"
+      tags: [ common ]
 
     #### for Debian / Ubuntu
     - name: install packages for nrpe plugins
@@ -47,6 +49,7 @@
       when: "ansible_os_family == 'RedHat'"
       tags: [ nrpe ]
 
+    #### for All Distros
     - file:
         path: /opt
         state: directory

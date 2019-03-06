@@ -215,48 +215,6 @@ while( <$h> ){
 close $h;
 $m{'loadavg'} = n $loadavg;
 
-# io
-my %dev;
-my $f = '/proc/diskstats';
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next unless m"^\s*
-		(\d+)\s+(\d+)\s+([-\w]+)\s+
-		(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+
-		(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+
-		(\d+)
-	"x;
-	my $dev = $3;
-	$dev{$dev}->{'read-times'} = $5;
-	$dev{$dev}->{'read-sectors'} = $6;
-	$dev{$dev}->{'write-times'} = $9;
-	$dev{$dev}->{'write-sectors'} = $10;
-}
-close $h;
-
-foreach my $dev ( keys %dev ){
-	delete $dev{$1} if $dev =~ m/^(.*[a-z])\d+$/ and exists $dev{$1};
-	delete $dev{$dev} if $dev =~ m"^fd\d+$";
-	delete $dev{$dev} if $dev =~ m"^sr\d+$";
-	delete $dev{$dev} if $dev =~ m"^loop\d+$";
-	delete $dev{$dev} if $dev =~ m"^ram\d+$";
-}
-my %io;
-while( my ($dev, $values) = each %dev ){
-	while( my ($k, $v) = each %$values ){ $io{"dev[$dev]-$k"} = $v; }
-}
-
-my ($shortd, $longd) = calc_delta "$WORKDIR/osperf_io.history", $HISTORY_EXPIRYTERM_H, %io;
-foreach my $k ( keys %$shortd ){
-	my $shortd_key = $k; $shortd_key =~ s/_(.)[a-z]+$/_${1}pm/;
-	$m{$shortd_key} = n $shortd->{$k} * 60;
-	my $longd_key = $k; $longd_key =~ s/_(.)[a-z]+$/_1h_avg_${1}pm/;
-	$m{$longd_key} = n $longd->{$k} * 60;
-}
-
 #
 foreach my $k ( sort keys %m ){
 	my $v = $m{$k};
