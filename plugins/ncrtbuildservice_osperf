@@ -51,6 +51,7 @@ my $f = "$WORKDIR/service2conf";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
+print $h "osperf	agent/osperf.conf\n";
 close $h;
 
 #### append service mapping

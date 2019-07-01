@@ -24,44 +24,19 @@ while( <$h> ){
 }
 close $h;
 
-#### load ncrt masters conf.
-my @ncrtmasters;
-my $f = "$CONFDIR/ncrtmasters.conf";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	push @ncrtmasters, $_;
-}
-close $h;
-
 #### load service conf.
-my $f = "$CONFDIR/gateway/ltsv.conf";
+my %vhost2vservices;
+my $f = "$CONFDIR/composite/procedure.conf";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
-my $vhost;
-my $vservice;
-my %vhost2vservice;
 while( <$h> ){
 	chomp;
 	next if m"^\s*(#|$)";
-	if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
-		$vhost = $1;
-		$vservice = $2;
-	}elsif( m"^(\w+=\S*)$" ){
-		#
-	}elsif( m"^
-		(\S+)\s+(/\S*)\s+(\S+)
-	$"x ){
-		my $host = $1;
-		my $path = $2;
-		my $fieldpattern = $3;
-		$vhost2vservice{$vhost}->{$vservice} = 1;
-	}else{
-		die "$f:$.: illegal format, stopped";
+	if( m"^===\s+(\S+)\s+(\S+)\s+<\s+(\S+(\s+\S+)*)\s+===$" ){
+		my $vhost = $1;
+		my $vservice = $2;
+		$vhost2vservices{$vhost}->{$vservice} = 1;
 	}
 }
 close $h;
@@ -71,7 +46,7 @@ my $f = "$WORKDIR/services";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "ltsv	gateway\n";
+print $h "procedure	composite\n";
 close $h;
 
 #### append conf info.
@@ -79,7 +54,7 @@ my $f = "$WORKDIR/service2conf";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "ltsv	gateway/ltsv.conf\n";
+print $h "procedure	composite/procedure.conf\n";
 close $h;
 
 #### append service mapping
@@ -88,13 +63,10 @@ open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 
-while( my ($vhost, $vservices) = each %vhost2vservice ){
+while( my ($vhost, $vservices) = each %vhost2vservices ){
 	foreach my $vservice ( sort keys %$vservices ){
-		print $h "$vhost	ltsv,$vservice\n";
+		print $h "$vhost	procedure,$vservice\n";
 	}
 }
 close $h;
-
-
-
 

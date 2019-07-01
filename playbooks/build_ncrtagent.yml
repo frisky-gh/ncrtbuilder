@@ -21,7 +21,7 @@
           - monitoring-plugins-common
           - monitoring-plugins-standard
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: install packages for nrpe
       apt:
@@ -41,7 +41,7 @@
         name:
           - nagios-plugins-nrpe
       when: "ansible_os_family == 'RedHat'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: install packages for nrpe
       yum:
@@ -55,7 +55,7 @@
         state: directory
         owner: root
         group: root
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: setup modules in ncrt agent
       synchronize:
@@ -80,6 +80,8 @@
         insertafter: EOF
       with_items:
         - { key: dont_blame_nrpe, value: 1 }
+        - { key: allowed_hosts, value: "{{NRPEALLOWEDHOSTS}}" }
+        - { key: server_port, value: "{{NRPEPORT}}" }
       notify: "restart {{AGENTPACKAGE}}"
       tags: [ nrpe ]
 
@@ -105,6 +107,7 @@
         - { key: ssl_cert_file, value: /etc/nagios/ncrt_cert.pem }
         - { key: ssl_key_file, value: /etc/nagios/ncrt_key.pem }
         - { key: dont_blame_nrpe, value: 1 }
+        - { key: server_port, value: "{{NRPEPORT}}" }
       notify: "restart {{AGENTPACKAGE}}"
       tags: [ nrpe-ng ]
 
@@ -139,10 +142,5 @@
       service:
         name:  nrpe-ng
         state: restarted
-
-
-
-
-
 
 

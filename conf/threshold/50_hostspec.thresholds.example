@@ -1,0 +1,17 @@
+
+=== rosetta networkserverperf ===
+port\[(80|443)\]/tcp					crit	[0,10]
+
+=== mizuhasu networktraffic ===
+link\[wlan2\]_rx_dropped_ppm				warn	[0,100]
+
+=== mizuhasu osperf ===
+procs							warn	[20,700]
+threads							warn	[20,700]
+
+=== mizuhasu proc ===
+proc\[nullmailer\]_count				crit	[4,4]
+
+=== rosetta proc ===
+proc\[thruk\]_elapsed					warn	[0,1440]
+

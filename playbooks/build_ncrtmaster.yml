@@ -12,7 +12,7 @@
       apt:
         name: [ dirmngr, nrpe-ng, pynag ]
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     ## Naemon
     - name: add repository key
@@ -21,13 +21,13 @@
         id: F8C1CA08A57B9ED7
         keyring: /etc/apt/trusted.gpg.d/labs.consol.de_key.gpg
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: add naemon repository
       apt_repository:
         repo: 'deb http://labs.consol.de/repo/stable/debian {{ansible_distribution_release}} main'
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: install naemon and dependancies
       apt:
@@ -44,7 +44,7 @@
           - libstring-random-perl
           - libmime-encwords-perl
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     ## Naemon2Influx
     - file:
@@ -57,25 +57,25 @@
           - "{{NCRTMASTERHOME}}"
           - "{{NCRTMASTERHOME}}/debs"
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - copy:
         dest:    "{{NCRTMASTERHOME}}/debs/{{NAEMON2INFLUX_DEB}}"
         src:     "{{TOOLHOME}}/conf/{{NAEMON2INFLUX_DEB}}"
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: install naemon2influx
       apt:
         deb:     "{{NCRTMASTERHOME}}/debs/{{NAEMON2INFLUX_DEB}}"
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: install naemon2influx
       apt:
         name: [ influxdb, influxdb-client, libwww-perl ]
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: setup Nagios / Naemon with naemon2influx
       lineinfile:
@@ -98,7 +98,7 @@
           value: /var/lib/naemon/service-perfdata
       notify: restart naemon
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: setup Nagios / Naemon with naemon2influx
       template:
@@ -106,7 +106,7 @@
         dest: /etc/naemon/conf.d/ncrt_naemon2influx.cfg
       notify: restart naemon
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: setup naemon2influx
       file:
@@ -116,7 +116,7 @@
         group: naemon
       notify: restart naemon
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: setup naemon2influx
       lineinfile:
@@ -132,14 +132,14 @@
         - key:   password
           value: "{{INFLUXDBPASSWD}}"
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     ## InfluxDB
     - name: install packages for influxdb client
       apt:
         name: [ python-requests, python-influxdb ]
       when: "ansible_os_family == 'Debian'"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     ## Grafana
 
@@ -153,7 +153,7 @@
         username:      "{{INFLUXDBADMINUSER}}"
         password:      "{{INFLUXDBADMINPASSWD}}"
         database_name: "{{INFLUXDBDATABASE}}"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: setup influxdb user for naemon2influx
       influxdb_user:
@@ -163,11 +163,11 @@
         password:      "{{INFLUXDBADMINPASSWD}}"
         user_name:     "{{INFLUXDBUSER}}"
         user_password: "{{INFLUXDBPASSWD}}"
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: setup influxdb for naemon2influx
       shell: "influx -host {{INFLUXDBHOST}} -port {{INFLUXDBPORT}} -username {{INFLUXDBADMINUSER}} -password \"{{INFLUXDBADMINPASSWD}}\" -execute \"grant all on naemon to naemon\""
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     ## NCRT
     - name: setup modules in ncrt master
@@ -208,7 +208,7 @@
         dest:  /etc/ssl/certs/ncrt_cert.pem
         src:   "{{TOOLHOME}}/conf/ncrt_cert.pem"
       notify: update ssl certs
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: setup ncrtmaster_alertmessenger cron
       cron:
@@ -227,12 +227,12 @@
         - printer.cfg
         - switch.cfg
         - windows.cfg
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: setup settings in Nagios / Naemon
       shell: "test -f /etc/naemon/conf.d/printerlocalhost.cfg && mv /etc/naemon/conf.d/localhost.cfg /etc/naemon/conf.d/localhost.cfg.unused"
       failed_when: False
-      tags: [ common ]
+      tags: [ commoninstall ]
 
     - name: setup settings in Nagios / Naemon
       template:

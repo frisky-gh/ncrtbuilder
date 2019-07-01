@@ -3,14 +3,14 @@
 use strict;
 
 if( @ARGV < 4 ){
-        print "usage: % $0 CONFDIR WORKDIR VIRTUALHOSTNAME INDEX\n";
+        print "usage: % $0 CONFDIR WORKDIR VIRTUALHOSTNAME VSERVICENAME\n";
         exit 1;
 }
 
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
 our $VIRTUALHOSTNAME = $ARGV[2];
-our $INDEX = $ARGV[3];
+our $VSERVICE = $ARGV[3];
 
 ####
 sub ns ($) {
@@ -22,7 +22,7 @@ sub nB ($) {
 }
 
 #### load service conf.
-my @rules;
+my %rules;
 my $f = "$CONFDIR/master/webactivity.conf.$VIRTUALHOSTNAME";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
@@ -31,45 +31,58 @@ while( <$h> ){
 	chomp;
 	next if m"^\s*($|#)";
 	die "$f:$.: illegal format, stopped" unless m"^
-		(\w+)
+		(\S+)
 		\s+
 		http(s)?://
-		(?:([^\s:]+):([^\s\@]+)\@)?
+		(?:([^\s:]+):([^\s\@]*)\@)?
 		([-0-9a-zA-Z.]+)
 		(?::(\d+))?
 		((/[^\s\?]*)?(?:\?(\S*))?)
 		\s+
 		(\d+)
+		(  (?: \s+ \S+ )*  )
+		\S*
 	$"x;
-	my $shortname = $1;
+	my $vservicename = $1;
 	my $secure = $2;
 	my $user = $3;
 	my $passwd = $4;
 	my $host = $5;
-	my $port = $6 || $secure ? 443 : 80;
+	my $port = $6 || ($secure ? 443 : 80);
 	my $path_query = $7;
 	my $path = $8;
 	my $query = $9;
 	my $status = $10;
+	my $options = $11;
 	my $args = "-H $host -p $port";
 	$args .= " -S" if $secure;
 	$args .= " -a \Q$user:$passwd\E" if $user;
 	$args .= " -u \Q$path_query\E" if $path_query;
+	if( $options ){
+		foreach my $option ( split m"\s+", $options ){
+			$args .= " \Q$option\E";
+		}
+	}
 	# same url string to the influx_url in build_ncrtmaster_website_activity
 	my $url = $secure ? "https" : "http";
 	$url .= "://";
 	$url .= "$user\@" if $user;
 	$url .= $host;
-	$url .= ":$5" if $5;
+	$url .= ":$port" if $port;
 	$url .= $path_query if $path_query;
-	push @rules, [$url, $status, $args, $shortname];
+	$rules{$vservicename} = [$url, $status, $args, $vservicename];
 }
 close $h;
 
 ####
-my ($url, $wantstatus, $args, $shortname) = @{$rules[$INDEX]};
+my ($url, $wantstatus, $args, $vservicename) = @{$rules{$VSERVICE} // []};
+unless( defined $url ){
+	print "web[$VSERVICE]-status=2\n";
+	exit 1;
+}
+
 my %d;
-my $f = "/usr/lib/nagios/plugins/check_http $args";
+my $f = "/usr/lib/nagios/plugins/check_http";
 open my $h, '-|', "$f $args" or do {
 	die "$f: cannot execute, stopped";
 };
@@ -86,7 +99,8 @@ $r =~ m"^
 	    CRITICAL\ -\ (.*)
 	)
 $"x or do {
-	print "web[$shortname]-status=2\n";
+	print "web[$vservicename]-status=2\n";
+	exit 0;
 };
 my $result = $2;
 my $statuscode = $3;
@@ -95,9 +109,9 @@ my $message = $5;
 my $elapsed = ns $6;
 my $size = nB $7;
 my $status = $statuscode eq $wantstatus ? 0 : 1;
-print "web[$shortname]-size=$size\n";
-print "web[$shortname]-elapsed=$elapsed\n";
-print "web[$shortname]-status=$status\n";
+print "web[$vservicename]-size=$size\n";
+print "web[$vservicename]-elapsed=$elapsed\n";
+print "web[$vservicename]-status=$status\n";
 
 exit 0;
 

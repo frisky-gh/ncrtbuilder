@@ -60,6 +60,23 @@ sub match ($@) {
 # data
 my %disk;
 
+# mounts
+my %mount;
+open my $h, '<', '/proc/mounts' or do {
+	die "/proc/mounts: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	my ($device, $mountpoint, $fs, $option) = split m"\s";
+	my $info = { status => undef };
+	foreach my $o ( split m",", $option ){
+		$info->{status} = "rw" if $o eq "rw";
+		$info->{status} = "ro" if $o eq "ro";
+	}
+	$mount{$mountpoint} = $info;
+}
+close $h;
+
 # df
 open my $h, '-|', "LANG=C df -P -B M" or do {
 	die "df: cannot execute, stopped";
@@ -76,14 +93,17 @@ while( <$h> ){
 		(?<target> \S.*)$"x;
 	next if match $+{target}, @ignore_rules;
 
+	my $avail = $+{total} - $+{used};
+	$avail = 0 if $mount{$+{target}}->{status} eq 'ro';
 	$disk{$+{target}}->{total}     = nMB $+{total};
 	$disk{$+{target}}->{used}      = nMB $+{used};
-	$disk{$+{target}}->{avail}     = nMB $+{total} - $+{used};
-	$disk{$+{target}}->{'avail-pct'} = $+{total} == 0 ? 0 :
-		nP 100 * ($+{total} - $+{used}) / $+{total};
+	$disk{$+{target}}->{avail}     = nMB $avail;
+	$disk{$+{target}}->{'avail-pct'} =
+		nP( $+{total} == 0 ? 0 : 100 * $avail / $+{total} );
 }
 close $h;
 
+# df -i
 open my $h, '-|', "LANG=C df -P -i" or do {
 	die "df: cannot execute, stopped";
 };
@@ -95,20 +115,23 @@ while( <$h> ){
 		(?<total>  \S+) \s+
 		(?<used>   \d+) \s+
 		(?<avail>  \d+) \s+
-		(?<pct>    \d+%) \s+
+		(?:-|(?<pct>\d+)%) \s+
 		(?<target> \S.*)$"x;
 	next if match $+{target}, @ignore_rules;
 
+	my $avail = $+{total} - $+{used};
+	$avail = 0 if $mount{$+{target}}->{status} eq 'ro';
 	$disk{$+{target}}->{itotal}     = n $+{total};
 	$disk{$+{target}}->{iused}      = n $+{used};
-	$disk{$+{target}}->{iavail}     = n $+{total} - $+{used};
-	$disk{$+{target}}->{'iavail-pct'} = $+{total} == 0 ? 0 :
-		nP 100 * ($+{total} - $+{used}) / $+{total};
+	$disk{$+{target}}->{iavail}     = n $avail;
+	$disk{$+{target}}->{'iavail-pct'} =
+		nP( $+{total} == 0 ? 0 : 100 * $avail / $+{total} );
 }
 close $h;
 
+# mount check
 foreach my $path ( @exist_rules ){
-	next if exists $disk{$path};
+	next if defined $mount{$path}->{status};
 	next if match $path, @ignore_rules;
 	$disk{$path}->{total}        = nMB 0;
 	$disk{$path}->{used}         = nMB 0;
@@ -120,6 +143,7 @@ foreach my $path ( @exist_rules ){
 	$disk{$path}->{'iavail-pct'} = nP 0;
 }
 
+# output
 foreach my $path ( sort keys %disk ){
 	my $values = $disk{$path};
 	foreach my $k ( sort keys %$values ){

@@ -1,0 +1,76 @@
+
+=== .* ===
+web\[.*\]_elapsed	warn	[0.00,30.00]
+# itempattern						sever	threshold
+
+=== .* .* ===
+gateway\[.*\]-status					crit	[0,0]
+realhost\[.*\]-ltsvfile\[.*\]-age			crit	[0.00,10.00]
+
+=== .* disk ===
+disk\[.*\]-avail-pct					warn	[ 5.00,100.00]
+disk\[.*\]-iavail-pct					warn	[40.00,100.00]
+disk\[/\]-avail-pct					crit	[ 0.01,100.00]
+disk\[/\]-iavail-pct					crit	[ 0.01,100.00]
+
+=== .* io ===
+dev\[.*\]-write-longtermavg\[.*]-tpm			warn	[0,3500]
+dev\[.*\]-read-longtermavg\[.*]-tpm			warn	[0,1600]
+
+=== .* networkserverperf ===
+port\[.*\]-conns					warn	[0,10]
+port\[.*\]-conns					crit	[0,100]
+port\[25/tcp\]-conns					crit	[0,20]
+port\[14022/tcp\]-conns					crit	[0,20]
+port\[5667/tcp\]-conns					crit	[0,20]
+
+=== .* networktraffic ===
+link\[.*\]-rx-throughput-mbps				warn	[0,100]
+link\[.*\]-rx-errors-ppm				warn	[0,0.01]
+link\[.*\]-rx-dropped-ppm				warn	[0,150.00]
+link\[.*\]-rx-overrun-ppm				warn	[0,0.01]
+link\[.*\]-tx-throughput-mbps				warn	[0,100]
+link\[.*\]-tx-errors-ppm				warn	[0,0.01]
+link\[.*\]-tx-dropped-ppm				warn	[0,0.01]
+link\[.*\]-tx-overrun-ppm				warn	[0,0.01]
+link\[.*\]-tx-collsns-ppm				warn	[0,0.01]
+
+link\[.*\]-rx-throughput-longtermavg\[.*\]-mbps		warn	[0,10]
+link\[.*\]-tx-throughput-longtermavg\[.*\]-mbps		warn	[0,10]
+link\[lo\]-rx-throughput-longtermavg\[.*\]-mbps		warn	[0,50]
+link\[lo\]-tx-throughput-longtermavg\[.*\]-mbps		warn	[0,50]
+
+=== .* osperf ===
+cpu-idle-longtermavg\[.*\]-pct				warn	[20.00,99.99]
+loadavg							warn	[0.00,10.00]
+loadavg							crit	[0.00,100.00]
+procs							warn	[20,400]
+procs							crit	[20,1000]
+mem-available-pct      					warn	[10.00,99.99]
+mem-available						crit	[100.0,99999.9]
+swap-free-pct						warn	[40.00,99.99]
+swap-free						crit	[100.0,99999.9]
+threads							warn	[20,500]
+threads							crit	[20,2000]
+
+=== .* proc ===
+proc\[postfix\]-procs					crit	[1,1]
+proc\[sshd\]-procs					crit	[1,2]
+proc\[rsyslog\]-procs					crit	[1,1]
+proc\[cron\]-procs					crit	[1,1]
+proc\[td-agent\]-procs					crit	[2,2]
+
+=== .* .*HTTP.* ===
+web\[.*\]-status					crit	[0,0]
+web\[.*\]-elapsed					warn	[0.00,30.00]
+
+=== .* JavaVM_.* ===
+heapmax-avail-pct				warn	[5.00,100.00]
+permmax-avail-pct				warn	[5.00,100.00]
+fd-avail-pct					warn	[40.00,100.00]
+thread-avail-pct				warn	[40.00,100.00]
+
+=== .* TableSpace ===
+
+tablespace\[.*\]-avail				warn	[1.00,999.99]
+tablespace\[UNDO\]-avail			warn	[0.00,999.99]

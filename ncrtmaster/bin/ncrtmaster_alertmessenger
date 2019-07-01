@@ -93,11 +93,11 @@ our $RECIPIENT_EXPIRYDATE = timestamp time-($conf{RECIPIENT_LIFETIME}// 6*60)*60
 our $GRAPH_EXPIRYDATE     = timestamp time-($conf{GRAPH_LIFETIME}    //   10)*60;
 
 our $MINOR_DETECTION_LIMIT = timestamp time -  8 * 60 * 60;
-our $MAJOR_DETECTION_LIMIT = timestamp time -       2 * 60;
+our $MAJOR_DETECTION_LIMIT = timestamp time -       3 * 60;
 our $CRIT_DETECTION_LIMIT  = timestamp time -       1 * 60;
 our $MINOR_LASTSEND_LIMIT  = timestamp time -  8 * 60 * 60;
-our $MAJOR_LASTSEND_LIMIT  = timestamp time -      20 * 60;
-our $CRIT_LASTSEND_LIMIT   = timestamp time -       5 * 60;
+our $MAJOR_LASTSEND_LIMIT  = timestamp time -       5 * 60;
+our $CRIT_LASTSEND_LIMIT   = timestamp time -       3 * 60;
 our $RESEND_LIMIT          = timestamp time - 12 * 60 * 60;
 our $HEALTH_THRESHOLD = 10;
 
@@ -615,6 +615,12 @@ sub load_servicegroups () {
 		}
 	}
 	closedir $d;
+
+	while( my ($sgname, $sg) = each %sgs ){
+		$sg->{ngs}        = {} unless defined $sg->{ngs};
+		$sg->{nghistory}  = {} unless defined $sg->{nghistory};
+		$sg->{recipients} = {} unless defined $sg->{recipients};
+	}
 	return \%sgs;
 }
 
@@ -642,7 +648,8 @@ sub servicegroup_has_changes ($$) {
 
 sub servicegroup_has_session ($$) {
 	my ($sgs, $sg) = @_;
-	return defined $sgs->{$sg}->{session};
+	return undef unless defined $sgs->{$sg}->{session};
+	return defined $sgs->{$sg}->{session}->{id};
 }
 
 sub servicegroup_has_expired_session ($$) {
@@ -685,157 +692,153 @@ sub list_servicegroup_recipients ($$) {
 	return keys %{$sgs->{$sg}->{recipients}};
 }
 
-sub update_servicegroup ($$) {
-	my ($sgs, $sg) = @_;
-	my $recipients = $sgs->{$sg}->{recipients};
-	my $ngs	= $sgs->{$sg}->{ngs};
-	my $nghistory  = $sgs->{$sg}->{nghistory};
-	my $lastchange = $sgs->{$sg}->{lastchange};
-	my $f = "$WORKDIR/sg_changes.$sg";
-	my $g = "$WORKDIR/sg_changes.$sg.tmp";
-	rename $f, $g or do {
-		die "$f: cannot rename, stopped";
-	};
-	open my $h, '<', $g or do {
-		die "$g: cannot open, stopped";
-	};
+sub update_ngs_in_servicegroup ($$) {
+	my ($sg, $ngchange) = @_;
+	my $recipients = $sg->{recipients};
+	my $ngs	       = $sg->{ngs};
+	my $nghistory  = $sg->{nghistory};
 
-	my $ngnum = keys %$ngs;
-	while( <$h> ){
-		chomp;
-		my %v = ltsv2var $_;
-		my $timestamp = $v{timestamp};
-		my $recipient = $v{recipient};
-		my $host    = $v{HOSTNAME};
-		my $service = $v{SERVICEDESC};
-		my $output  = $v{SERVICEOUTPUT};
-		my $state   = $v{SERVICESTATE};
-		unless( defined $timestamp and defined $recipient and
-			defined $host and defined $service and 
-			defined $output and $state ){
-			print "$f:$.: not exist timestamp.\n" unless defined $timestamp;
-			print "$f:$.: not exist recipient.\n" unless defined $recipient;
-			print "$f:$.: not exist HOSTNAME.\n" unless defined $host;
-			print "$f:$.: not exist SERVICEDESC.\n" unless defined $service;
-			print "$f:$.: not exist SERVICEOUTPUT.\n" unless defined $output;
-			print "$f:$.: not exist SERVICESTATE.\n" unless defined $state;
-			next;
-		}
+	my %v = ltsv2var $ngchange;
+	my $timestamp = $v{timestamp};
+	my $recipient = $v{recipient};
+	my $host    = $v{HOSTNAME};
+	my $service = $v{SERVICEDESC};
+	my $output  = $v{SERVICEOUTPUT};
+	my $state   = $v{SERVICESTATE};
 
-		# current state = OK, last state = OK
-		if    ( $state eq 'OK' && ! defined $ngs->{"$host,$service"} ){
-			debuglog "update_servicegroup: %s,%s: %s(OK)->%s(OK)",
-				$host, $service, $ngs->{"$host,$service"}, $state;
-			# nothing to do
-		# current state = OK, last state = NG
-		}elsif( $state eq 'OK' && defined $ngs->{"$host,$service"} ){
-			debuglog "update_servicegroup: %s,%s: %s(NG)->%s(OK)",
-				$host, $service, $ngs->{"$host,$service"}->{state}, $state;
-			debuglog "update_servicegroup: add nghistory: %s,%s,%s",
-				$timestamp, $host, $service;
-			$nghistory->{"$timestamp,$host,$service"} = {
+	unless( defined $timestamp and defined $recipient and
+		defined $host and defined $service and 
+		defined $output and $state ){
+		print "$f:$.: not exist timestamp.\n" unless defined $timestamp;
+		print "$f:$.: not exist recipient.\n" unless defined $recipient;
+		print "$f:$.: not exist HOSTNAME.\n" unless defined $host;
+		print "$f:$.: not exist SERVICEDESC.\n" unless defined $service;
+		print "$f:$.: not exist SERVICEOUTPUT.\n" unless defined $output;
+		print "$f:$.: not exist SERVICESTATE.\n" unless defined $state;
+		next;
+	}
+
+	# current state = OK, last state = OK
+	if    ( $state eq 'OK' && ! defined $ngs->{"$host,$service"} ){
+		debuglog "update_servicegroup: %s,%s: %s(OK)->%s(OK)",
+			$host, $service, $ngs->{"$host,$service"}, $state;
+		# nothing to do
+	# current state = OK, last state = NG
+	}elsif( $state eq 'OK' && defined $ngs->{"$host,$service"} ){
+		debuglog "update_servicegroup: %s,%s: %s(NG)->%s(OK)",
+			$host, $service, $ngs->{"$host,$service"}->{state}, $state;
+		debuglog "update_servicegroup: add nghistory: %s,%s,%s",
+			$timestamp, $host, $service;
+		$nghistory->{"$timestamp,$host,$service"} = {
+			'timestamp' => $timestamp,
+			'host' => $host,
+			'service' => $service,
+			'state' => $state,
+			'laststate' => $ngs->{"$host,$service"}->{state},
+		};
+		delete $ngs->{"$host,$service"};
+		$sg->{lastchange} = $timestamp;
+
+		if( $HEALTH_THRESHOLD == keys %$ngs ){
+			delete $ngs->{"-,HEALTH"};
+			$nghistory->{"$timestamp,-,HEALTH"} = {
 				'timestamp' => $timestamp,
-				'host' => $host,
-				'service' => $service,
-				'state' => $state,
-				'laststate' => $ngs->{"$host,$service"}->{state},
+				'host' => '-',
+				'service' => 'HEALTH',
+				'state' => 'OK',
+				'laststate' => 'NG',
 			};
-			delete $ngs->{"$host,$service"};
-			$lastchange = $timestamp;
+		}
+	# current state = NG, last state = OK
+	}elsif( ! defined $ngs->{"$host,$service"} ){
+		debuglog "update_servicegroup: %s,%s: %s(OK)->%s(NG)",
+			$host, $service, $ngs->{"$host,$service"}, $state;
+		debuglog "update_servicegroup: add nghistory: %s,%s,%s",
+			$timestamp, $host, $service;
+		$nghistory->{"$timestamp,$host,$service"} = {
+			'timestamp' => $timestamp,
+			'host' => $host,
+			'service' => $service,
+			'state' => $state,
+			'laststate' => 'OK',
+		};
+		$ngs->{"$host,$service"} = {
+			'timestamp' => $timestamp,
+			'host'      => $host,
+			'service'   => $service,
+			'state'     => $state,
+			'output'    => $output,
+		};
+		$sg->{lastchange} = $timestamp;
 
-			if( $ngnum-- == $HEALTH_THRESHOLD ){
-				delete $ngs->{"-,HEALTH"};
-				$nghistory->{"$timestamp,-,HEALTH"} = {
-					'timestamp' => $timestamp,
-					'host' => '-',
-					'service' => 'HEALTH',
-					'state' => 'OK',
-					'laststate' => 'NG',
-				};
-			}
-		# current state = NG, last state = OK
-		}elsif( ! defined $ngs->{"$host,$service"} ){
-			debuglog "update_servicegroup: %s,%s: %s(OK)->%s(NG)",
-				$host, $service, $ngs->{"$host,$service"}, $state;
-			debuglog "update_servicegroup: add nghistory: %s,%s,%s",
-				$timestamp, $host, $service;
-			$nghistory->{"$timestamp,$host,$service"} = {
+		if( $HEALTH_THRESHOLD == keys %$ngs ){
+			$ngs->{"-,HEALTH"} = {
 				'timestamp' => $timestamp,
-				'host' => $host,
-				'service' => $service,
-				'state' => $state,
+				'host'      => '-',
+				'service'   => 'HEALTH',
+				'state'     => 'NG',
+				'output'    => '',
+			};
+			$nghistory->{"$timestamp,-,HEALTH"} = {
+				'timestamp' => $timestamp,
+				'host' => '-',
+				'service' => 'HEALTH',
+				'state' => 'NG',
 				'laststate' => 'OK',
 			};
-			$ngs->{"$host,$service"} = {
-				'timestamp' => $timestamp,
-				'host'      => $host,
-				'service'   => $service,
-				'state'     => $state,
-				'output'    => $output,
-			};
-			$lastchange = $timestamp;
-
-			if( ++$ngnum == $HEALTH_THRESHOLD ){
-				$ngs->{"-,HEALTH"} = {
-					'timestamp' => $timestamp,
-					'host'      => '-',
-					'service'   => 'HEALTH',
-					'state'     => 'NG',
-					'output'    => '',
-				};
-				$nghistory->{"$timestamp,-,HEALTH"} = {
-					'timestamp' => $timestamp,
-					'host' => '-',
-					'service' => 'HEALTH',
-					'state' => 'NG',
-					'laststate' => 'OK',
-				};
-			}
-		# current state = NG, last state != current state
-		}elsif( $state ne $ngs->{"$host,$service"}->{state} ){
-			debuglog "update_servicegroup: %s,%s: %s(NG)->%s(NG)",
-				$host, $service, $ngs->{"$host,$service"}->{state}, $state;
-			debuglog "update_servicegroup: add nghistory: %s,%s,%s",
-				$timestamp, $host, $service;
-			$nghistory->{"$timestamp,$host,$service"} = {
-				'timestamp' => $timestamp,
-				'host' => $host,
-				'service' => $service,
-				'state' => $state,
-				'laststate' => $ngs->{"$host,$service"}->{state},
-			};
-			$ngs->{"$host,$service"} = {
-				'timestamp' => $timestamp,
-				'host'      => $host,
-				'service'   => $service,
-				'state'     => $state,
-				'output'    => $output,
-			};
-			$lastchange = $timestamp;
-		# current state = NG, last state = current state
-		}else{
-			debuglog "update_servicegroup: %s,%s: %s(NG)=>%s(NG)",
-				$host, $service, $ngs->{"$host,$service"}->{state}, $state;
-			$ngs->{"$host,$service"} = {
-				'timestamp' => $timestamp,
-				'host'      => $host,
-				'service'   => $service,
-				'state'     => $state,
-				'output'    => $output,
-			};
 		}
-
-		$recipients->{$recipient} = {
-			'recipient' => $recipient,
+	# current state = NG, last state != current state
+	}elsif( $state ne $ngs->{"$host,$service"}->{state} ){
+		debuglog "update_servicegroup: %s,%s: %s(NG)->%s(NG)",
+			$host, $service, $ngs->{"$host,$service"}->{state}, $state;
+		debuglog "update_servicegroup: add nghistory: %s,%s,%s",
+			$timestamp, $host, $service;
+		$nghistory->{"$timestamp,$host,$service"} = {
 			'timestamp' => $timestamp,
+			'host' => $host,
+			'service' => $service,
+			'state' => $state,
+			'laststate' => $ngs->{"$host,$service"}->{state},
+		};
+		$ngs->{"$host,$service"} = {
+			'timestamp' => $timestamp,
+			'host'      => $host,
+			'service'   => $service,
+			'state'     => $state,
+			'output'    => $output,
+		};
+		$sg->{lastchange} = $timestamp;
+	# current state = NG, last state = current state
+	}else{
+		debuglog "update_servicegroup: %s,%s: %s(NG)=>%s(NG)",
+			$host, $service, $ngs->{"$host,$service"}->{state}, $state;
+		$ngs->{"$host,$service"} = {
+			'timestamp' => $timestamp,
+			'host'      => $host,
+			'service'   => $service,
+			'state'     => $state,
+			'output'    => $output,
 		};
 	}
-	close $h;
 
-	# cleanup if servicegroup has expired NGs
+	$recipients->{$recipient} = {
+		'recipient' => $recipient,
+		'timestamp' => $timestamp,
+	};
+}
+
+sub cleanup_expired_ngs_in_servicegroup ($) {
+	my ($sg) = @_;
+	my $recipients = $sg->{recipients};
+	my $ngs	       = $sg->{ngs};
+	my $nghistory  = $sg->{nghistory};
+
+	debuglog "update_servicegroup: cleanuping...";
 	foreach my $k ( keys %$ngs ){
 		my $v = $ngs->{$k};
+		debuglog "update_servicegroup: cleanup: %s", $k;
 		next if $v->{timestamp} gt $NG_EXPIRYDATE;
+		debuglog "update_servicegroup: canceled.";
 
 		my $timestamp = $v->{timestamp};
 		my $host      = $v->{host};
@@ -849,9 +852,9 @@ sub update_servicegroup ($$) {
 			'state'     => 'OK',
 			'laststate' => $laststate,
 		};
-		$lastchange = $NOW;
+		$sg->{lastchange} = $NOW;
 
-		if( $ngnum-- == $HEALTH_THRESHOLD ){
+		if( $HEALTH_THRESHOLD == keys %$ngs ){
 			delete $ngs->{"-,HEALTH"};
 			$nghistory->{"$NOW,-,HEALTH"} = {
 				'timestamp' => $NOW,
@@ -862,19 +865,42 @@ sub update_servicegroup ($$) {
 			};
 		}
 	}
+}
 
-	$sgs->{$sg}->{recipients} = $recipients;
-	$sgs->{$sg}->{ngs}        = $ngs;
-	$sgs->{$sg}->{lastchange} = $lastchange;
-	$sgs->{$sg}->{nghistory}  = $nghistory;
-	write_servicegroup_ngs	$sg, $ngs;
-	write_servicegroup_nghistory  $sg, $nghistory;
-	write_servicegroup_recipients $sg, $recipients;
-	write_servicegroup_lastchange $sg, $lastchange;
-	unlink $g or do {
-		die "$g: cannot remove, stopped";
-	};
-	delete $sgs->{$sg}->{has_changes};
+sub update_servicegroup ($$) {
+	my ($sgs, $sgname) = @_;
+	my $f = "$WORKDIR/sg_changes.$sgname";
+	my $g = "$WORKDIR/sg_changes.$sgname.tmp";
+	my $sg = $sgs->{$sgname};
+
+	if ( -f $f ){
+		rename $f, $g or do {
+			die "$f: cannot rename, stopped";
+		};
+		open my $h, '<', $g or do {
+			die "$g: cannot open, stopped";
+		};
+		while( <$h> ){
+			chomp;
+			update_ngs_in_servicegroup $sg, $_;
+		}
+		close $h;
+	}
+
+	# cleanup if servicegroup has expired NGs
+	cleanup_expired_ngs_in_servicegroup $sg;
+
+	debuglog "update_servicegroup: write_servicegroup: %s", $sgname;
+	write_servicegroup_ngs	      $sgname, $sg->{ngs};
+	write_servicegroup_nghistory  $sgname, $sg->{nghistory};
+	write_servicegroup_recipients $sgname, $sg->{recipients};
+	write_servicegroup_lastchange $sgname, $sg->{lastchange};
+	if ( -f $g ){
+		unlink $g or do {
+			die "$g: cannot remove, stopped";
+		};
+	}
+	delete $sg->{has_changes};
 }
 
 #### report functions
@@ -987,6 +1013,8 @@ sub download_session_graphs ($$$) {
 	my $ngs = $status->{ngs};
 	my $d = "$SESSIONDIR/sess_$sid";
 
+	return unless defined $ngs;
+	return unless %$ngs;
 	debuglog "download graphs into session '%s'.", $sid;
 
 	my $t = time;
@@ -1433,6 +1461,8 @@ sub set_graphs_timestamp ($) {
 
 ####
 
+debuglog "updating all service groups...";
+
 my $sgs = load_servicegroups;
 my $ss = load_sessions;
 foreach my $sg ( list_servicegroups $sgs ){
@@ -1480,6 +1510,10 @@ foreach my $sg ( list_servicegroups $sgs ){
 	}
 }
 
+debuglog "has completed to update all service groups.";
+
+debuglog "updating all sessions...";
+
 foreach my $sid ( list_sessions $ss ){
 	next unless session_is_expired $ss, $sid;
 	if    ( session_is_current $ss, $sid ){
@@ -1516,4 +1550,5 @@ if( graphs_are_expired ){
 	set_graphs_timestamp timestamp time;
 }
 
+debuglog "has completed to update all sessions.";
 

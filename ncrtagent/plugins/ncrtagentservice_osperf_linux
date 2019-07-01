@@ -2,7 +2,7 @@
 
 use strict;
 
-our $HISTORY_EXPIRYTERM_H = 1;
+our $LONGTERM_H = 1;
 
 if( @ARGV < 2 ){
 	print "usage: % $0 CONFDIR WORKDIR\n";
@@ -116,6 +116,21 @@ sub calc_delta ($$\%) {
 
 ####
 
+my @category_rules;
+my $f = "$CONFDIR/agent/osperf.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*($|#)";
+	die "$f:$.: illegal format, stopped" unless m"^(\w+)=(.*)$";
+	$LONGTERM_H = 0 + $2 if $1 eq 'LONGTERM_H';
+}
+close $h;
+
+####
+
 # metrics
 my %m;
 # thresholds
@@ -145,8 +160,8 @@ while( <$h> ){
 }
 close $h;
 
-my $longterm = sprintf "%dH", $HISTORY_EXPIRYTERM_H;
-my ($shortd, $longd) = calc_delta "$WORKDIR/osperf_cpu.history", $HISTORY_EXPIRYTERM_H, %curr;
+my $longterm = sprintf "%dH", $LONGTERM_H;
+my ($shortd, $longd) = calc_delta "$WORKDIR/osperf_cpu.history", $LONGTERM_H, %curr;
 my $shortterm_jiffies = $shortd->{user} + $shortd->{system} + $shortd->{iowait} + $shortd->{idle};
 my $longterm_jiffies  = $longd->{user} + $longd->{system} + $longd->{iowait} + $longd->{idle};
 foreach my $i ( 'user', 'system', 'iowait', 'idle' ){

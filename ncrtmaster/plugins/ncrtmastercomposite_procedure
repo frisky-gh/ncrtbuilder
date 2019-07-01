@@ -1,0 +1,62 @@
+#!/usr/bin/perl
+
+use strict;
+
+our ($TOOLHOME, $PLUGINSDIR, $CONFDIR);
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = "$1/..";
+	while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+	$PLUGINSDIR = "$TOOLHOME/plugins";
+	$CONFDIR = "$TOOLHOME/conf";
+}
+use lib "$TOOLHOME/lib/perl5";
+use NCRTStackMachine;
+
+if( @ARGV < 4 ){
+	print "usage: % $0 CONFDIR WORKDIR VHOST VSERVICE\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $VHOST = $ARGV[2];
+our $VSERVICE = $ARGV[3];
+
+####
+my %m;
+while( <STDIN> ){
+	chomp;
+	next unless m"^([^=]+)=([-+]?\d+(\.\d+)?)$";
+	my $key = $1;
+	my $value = $2;
+	$m{$key} = $value;
+}
+
+## load service conf.
+my $f = "$CONFDIR/composite/procedure.conf.$VHOST.$VSERVICE";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+
+my $memory = new_memory;
+$memory->{IMPORT} = \%m;
+eval {
+	while( <$h> ){
+		chomp;
+		evaluate_expr $memory, $_;
+	}
+};
+if( $@ ){
+	print "UNKNOWN $f: $@\n";
+	exit 3;
+}
+close $h;
+
+##
+while( my ($k, $v) = each %{$memory->{EXPORT}} ){
+	print "$k=$v\n";
+}
+
+exit 0;
+

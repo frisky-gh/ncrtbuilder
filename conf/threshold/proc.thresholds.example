@@ -1,4 +1,0 @@
-# hostpattern	categorypattern	
-.*		proc\[nullmailer\]_count	crit	[1,1]
-mizuhasu	proc\[nullmailer\]_count	crit	[4,4]
-rosetta		proc\[thruk\]_elapsed		warn	[0,1440]

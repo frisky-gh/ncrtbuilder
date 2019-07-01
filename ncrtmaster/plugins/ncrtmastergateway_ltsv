@@ -3,7 +3,7 @@
 use strict;
 
 if( @ARGV < 5 ){
-        print "usage: % $0 CONFDIR WORKDIR ACCESSOR VIRTUALHOSTNAME INDEX\n";
+        print "usage: % $0 CONFDIR WORKDIR ACCESSOR VHOST VSERVICE\n";
         exit 1;
 }
 
@@ -11,7 +11,7 @@ our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
 our $ACCESSOR = $ARGV[2];
 our $VHOST = $ARGV[3];
-our $INDEX = $ARGV[4];
+our $VSERVICE = $ARGV[4];
 
 ####
 sub ns ($) {
@@ -23,7 +23,7 @@ sub nB ($) {
 }
 
 #### load service conf.
-my $f = "$CONFDIR/gateway/ltsv.conf.$VHOST.$INDEX";
+my $f = "$CONFDIR/gateway/ltsv.conf.$VHOST.$VSERVICE";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
