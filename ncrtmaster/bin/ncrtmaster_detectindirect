@@ -2,22 +2,20 @@
 
 use strict;
 
-our ($TOOLHOME, $PLUGINSDIR, $CONFDIR);
-BEGIN {
-	$0 =~ m"^(.*)/";
-	$TOOLHOME = "$1/..";
-	while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
-	$PLUGINSDIR = "$TOOLHOME/plugins";
-	$CONFDIR = "$TOOLHOME/conf";
-}
-use lib "$TOOLHOME/lib/perl5";
+$0 =~ m"^(.*)/";
+our $TOOLHOME = "$1/..";
+while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+our $BINDIR = "$TOOLHOME/bin";
+our $PLUGINSDIR = "$TOOLHOME/plugins";
+our $CONFDIR = "$TOOLHOME/conf";
 
-if( @ARGV < 1 ){
-	print "usage: % $0 SERVICE VSERVICE\n";
+if( @ARGV < 3 ){
+	print "usage: % $0 SERVICE VHOST VSERVICE\n";
 	exit 3;
 }
 my $service = $ARGV[0];
-my $vservice = $ARGV[1] // $service;
+my $vhost = $ARGV[1];
+my $vservice = $ARGV[2];
 
 # setup work directory
 our $WORKDIR;
@@ -28,25 +26,30 @@ else{
 }
 unless( -d $WORKDIR ){ mkdir $WORKDIR or die "$WORKDIR: cannot create, stopped"; }
 
+# accessor
+my $accessor = "$BINDIR/ncrtmaster_passthrough $service $vhost $vservice";
+
 # metrics
 my %m;
 #
 my @w;
 my @c;
+my @r;
 
 # read from service's output
-my $f = "$PLUGINSDIR/ncrtagentservice_${service}_linux";
-open my $e, '-|', "$f $CONFDIR $WORKDIR $vservice" or do {
+my $f = "$PLUGINSDIR/ncrtmasterindirect_$service";
+open my $e, '-|', "$f $CONFDIR $WORKDIR \"$accessor\" $vhost $vservice" or do {
 	print "UNKNOWN $f: not found.\n";
 	exit 3;
 };
 while( <$e> ){
 	chomp;
 	next if m"^\s*(#|$)";
-	die "$_, stopped" unless m"^([-\.\w/\[\]]+)=(\S+)$";
+	die "$_, stopped" unless m"^([-\w/\[\].:@\$%#\*]+)=(\S+)$";
 	my $k = $1;
 	my $v = $2;
-	$m{$k} = $v;
+	if( $k eq 'output' ){ push @r, $v; }
+	else                { $m{$k} = $v; }
 }
 close $e;
 
@@ -56,38 +59,11 @@ if( $plugin_rc > 0 ){
 	$plugin_has_failed = 1;
 }
 
-# statistics
-my $f = "$CONFDIR/statistic/statistics.$vservice";
-if( open my $h, '<', $f ){
-	use NCRTStackMachine;
-	use NCRTTimeSeries;
-	my $memory = new_memory;
-	my $timeseries = new_timeseries;
-	load_timeseries $timeseries, "vservice", $WORKDIR;
-	add_timeseries $timeseries, \%m;
-	$memory->{IMPORT} = \%m;
-	$memory->{TIMESERIES} = $timeseries;
-	eval {
-		while( <$h> ){
-			chomp;
-			evaluate_expr $memory, $_;
-		}
-	};
-	if( $@ ){
-		print "UNKNOWN $f: $@\n";
-		exit 3;
-	}
-	close $h;
-	while( my ($k, $v) = each %{$memory->{EXPORT}} ){ $m{$k} = $v; }
-	my $lifetime = $memory->{TIMESERIES_LIFETIME};
-	store_timeseries $timeseries, "vservice", $WORKDIR, $lifetime if $lifetime > 0;
-}
-
 # thresholds
 my @wt;
 my @ct;
 # load thresholds
-my $f = "$CONFDIR/threshold/thresholds.$vservice";
+my $f = "$CONFDIR/threshold/thresholds.$vhost.$vservice";
 open my $h, '<', $f or do {
 	print "UNKNOWN $f: not found.\n";
 	exit 3;
@@ -95,10 +71,7 @@ open my $h, '<', $f or do {
 while( <$h> ){
 	chomp;
 	next if m"^\s*(#|$)";
-	unless( m"^(\S+)\s+(crit|warn)\s+\[\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\]$" ){
-		print "UNKNOWN $f:$.: illegal format in \"$_\".\n";
-		exit 3;
-	}
+	die unless m"^(\S+)\s+(crit|warn)\s+\[\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\]$";
 	my $itempattern = qr"^$1$";
 	my $severity = $2;
 	my $lower = $3;
@@ -133,6 +106,7 @@ foreach my $k ( keys %m ){
 my @p;
 foreach my $k ( sort keys %m ){
 	my $v = $m{$k};
+	my $c;
 	my $critical_occurred;
 	my ($min, $max);
 	
@@ -144,11 +118,10 @@ foreach my $k ( sort keys %m ){
 
 	my $key_text = $unit ? "$k\[$unit\]" : "$k";
 
-	my $c;
 	if( $cm{$k} ){
 		my ($lower, $upper) = @{$cm{$k}};
 		$c = "$lower:$upper";
-		if    ( $value < $lower ){
+		if    ( $v < $lower ){
 			push @c, "$key_text:${value}(lower-crit-thr:$lower)";
 			$critical_occurred = 1;
 		}elsif( $v > $upper ){
@@ -162,9 +135,9 @@ foreach my $k ( sort keys %m ){
 		$w = "$lower:$upper";
 		if    ( $critical_occurred ){
 			# ignore
-		}elsif( $value < $lower ){
+		}elsif( $v < $lower ){
 			push @w, "$key_text:${value}(lower-warn-thr:$lower)";
-		}elsif( $value > $upper ){
+		}elsif( $v > $upper ){
 			push @w, "$key_text:${value}(upper-warn-thr:$upper)";
 		}
 	}
@@ -175,11 +148,9 @@ foreach my $k ( sort keys %m ){
 #
 my $r = 'OK';
 my $rc = 0;
-my @r;
 if( $plugin_has_failed ){
-	$r = 'UNKNOWN';
-	$rc = 3;
-	push @r, "$service plugin has failed.";
+	$r = 'CRIT';
+	$rc = 2;
 }
 elsif( @c ){ $r = 'CRIT'; $rc = 2; }
 elsif( @w ){ $r = 'WARN';  $rc = 1; }

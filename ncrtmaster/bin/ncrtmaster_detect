@@ -5,17 +5,16 @@ use strict;
 $0 =~ m"^(.*)/";
 our $TOOLHOME = "$1/..";
 while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
-our $BINDIR = "$TOOLHOME/bin";
 our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $CONFDIR = "$TOOLHOME/conf";
 
-if( @ARGV < 3 ){
-	print "usage: % $0 SERVICE VHOST VSERVICE\n";
+if( @ARGV < 2 ){
+	print "usage: % $0 SERVICE VHOST [VSERVICE]\n";
 	exit 3;
 }
 my $service = $ARGV[0];
 my $vhost = $ARGV[1];
-my $vservice = $ARGV[2];
+my $vservice = $ARGV[2] // $service;
 
 # setup work directory
 our $WORKDIR;
@@ -26,19 +25,15 @@ else{
 }
 unless( -d $WORKDIR ){ mkdir $WORKDIR or die "$WORKDIR: cannot create, stopped"; }
 
-# accessor
-my $accessor = "$BINDIR/ncrtmaster_gatewayaccess $service $vhost $vservice";
-
 # metrics
 my %m;
 #
 my @w;
 my @c;
-my @r;
 
 # read from service's output
-my $f = "$PLUGINSDIR/ncrtmastergateway_$service";
-open my $e, '-|', "$f $CONFDIR $WORKDIR \"$accessor\" $vhost $vservice" or do {
+my $f = "$PLUGINSDIR/ncrtmastermeasure_$service";
+open my $e, '-|', "$f $CONFDIR $WORKDIR $vhost $vservice" or do {
 	print "UNKNOWN $f: not found.\n";
 	exit 3;
 };
@@ -48,16 +43,17 @@ while( <$e> ){
 	die "$_, stopped" unless m"^([-\w/\[\].:@\$%#\*]+)=(\S+)$";
 	my $k = $1;
 	my $v = $2;
-	if( $k eq 'output' ){ push @r, $v; }
-	else                { $m{$k} = $v; }
+	$m{$k} = $v;
 }
 close $e;
 
-my $plugin_has_failed;
 my $plugin_rc = $? >> 8;
+my $plugin_has_failed;
 if( $plugin_rc > 0 ){
 	$plugin_has_failed = 1;
 }
+
+# statistics
 
 # thresholds
 my @wt;
@@ -148,9 +144,12 @@ foreach my $k ( sort keys %m ){
 #
 my $r = 'OK';
 my $rc = 0;
+my @r;
+
 if( $plugin_has_failed ){
-	$r = 'CRIT';
-	$rc = 2;
+	$r = 'UNKNOWN';
+	$rc = 3;
+	push @r, "$service plugin has failed.";
 }
 elsif( @c ){ $r = 'CRIT'; $rc = 2; }
 elsif( @w ){ $r = 'WARN';  $rc = 1; }

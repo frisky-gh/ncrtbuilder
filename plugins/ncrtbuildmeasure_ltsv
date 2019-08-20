@@ -24,26 +24,54 @@ while( <$h> ){
 }
 close $h;
 
-#### load linuxhosts.
-my %targets;
-my $f = "$WORKDIR/hosts";
+#### load ncrt masters conf.
+my @ncrtmasters;
+my $f = "$CONFDIR/master.hosts";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
 while( <$h> ){
 	chomp;
-	my ($host, $hosttype) = split m"\s+";
-	next unless $hosttype =~ m"^(linux)$";
-	$targets{$host} = 1;
+	next if m"^\s*(#|$)";
+	push @ncrtmasters, $_;
 }
-close $f;
+close $h;
+
+#### load service conf.
+my $f = "$CONFDIR/indirect/ltsv.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+my $vhost;
+my $vservice;
+my %vhost2vservice;
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+		$vhost = $1;
+		$vservice = $2;
+	}elsif( m"^(\w+=\S*)$" ){
+		#
+	}elsif( m"^
+		(\S+)\s+(/\S*)\s+(\S+)
+	$"x ){
+		my $host = $1;
+		my $path = $2;
+		my $fieldpattern = $3;
+		$vhost2vservice{$vhost}->{$vservice} = 1;
+	}else{
+		die "$f:$.: illegal format, stopped";
+	}
+}
+close $h;
 
 #### append service info.
 my $f = "$WORKDIR/services";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "disk	agent	display_name=\"Disk\"\n";
+print $h "ltsv	indirect\n";
 close $h;
 
 #### append conf info.
@@ -51,8 +79,7 @@ my $f = "$WORKDIR/service2conf";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "disk	agent/disk.rules\n";
-print $h "disk	agent/disk.ignores\n";
+print $h "ltsv	indirect/ltsv.conf\n";
 close $h;
 
 #### append service mapping
@@ -60,8 +87,14 @@ my $f = "$WORKDIR/host2service";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-foreach my $i ( keys %targets ){
-	print $h "$i\tdisk\n";
+
+while( my ($vhost, $vservices) = each %vhost2vservice ){
+	foreach my $vservice ( sort keys %$vservices ){
+		print $h "$vhost	ltsv,$vservice\n";
+	}
 }
 close $h;
+
+
+
 

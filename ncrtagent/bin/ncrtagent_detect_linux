@@ -2,19 +2,22 @@
 
 use strict;
 
-$0 =~ m"^(.*)/";
-our $TOOLHOME = "$1/..";
-while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
-our $PLUGINSDIR = "$TOOLHOME/plugins";
-our $CONFDIR = "$TOOLHOME/conf";
+our ($TOOLHOME, $PLUGINSDIR, $CONFDIR);
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = "$1/..";
+	while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+	$PLUGINSDIR = "$TOOLHOME/plugins";
+	$CONFDIR = "$TOOLHOME/conf";
+}
+use lib "$TOOLHOME/lib/perl5";
 
-if( @ARGV < 2 ){
-	print "usage: % $0 SERVICE VHOST [VSERVICE]\n";
+if( @ARGV < 1 ){
+	print "usage: % $0 SERVICE VSERVICE\n";
 	exit 3;
 }
 my $service = $ARGV[0];
-my $vhost = $ARGV[1];
-my $vservice = $ARGV[2] // $service;
+my $vservice = $ARGV[1] // $service;
 
 # setup work directory
 our $WORKDIR;
@@ -32,34 +35,59 @@ my @w;
 my @c;
 
 # read from service's output
-my $f = "$PLUGINSDIR/ncrtmasterservice_$service";
-open my $e, '-|', "$f $CONFDIR $WORKDIR $vhost $vservice" or do {
+my $f = "$PLUGINSDIR/ncrtagentmeasure_${service}_linux";
+open my $e, '-|', "$f $CONFDIR $WORKDIR $vservice" or do {
 	print "UNKNOWN $f: not found.\n";
 	exit 3;
 };
 while( <$e> ){
 	chomp;
 	next if m"^\s*(#|$)";
-	die "$_, stopped" unless m"^([-\w/\[\].:@\$%#\*]+)=(\S+)$";
+	die "$_, stopped" unless m"^([-\.\w/\[\]]+)=(\S+)$";
 	my $k = $1;
 	my $v = $2;
 	$m{$k} = $v;
 }
 close $e;
 
-my $plugin_rc = $? >> 8;
 my $plugin_has_failed;
+my $plugin_rc = $? >> 8;
 if( $plugin_rc > 0 ){
 	$plugin_has_failed = 1;
 }
 
 # statistics
+my $f = "$CONFDIR/statistic/statistics.$vservice";
+if( open my $h, '<', $f ){
+	use NCRTStackMachine;
+	use NCRTTimeSeries;
+	my $memory = new_memory;
+	my $timeseries = new_timeseries;
+	load_timeseries $timeseries, "vservice", $WORKDIR;
+	add_timeseries $timeseries, \%m;
+	$memory->{IMPORT} = \%m;
+	$memory->{TIMESERIES} = $timeseries;
+	eval {
+		while( <$h> ){
+			chomp;
+			evaluate_expr $memory, $_;
+		}
+	};
+	if( $@ ){
+		print "UNKNOWN $f: $@\n";
+		exit 3;
+	}
+	close $h;
+	while( my ($k, $v) = each %{$memory->{EXPORT}} ){ $m{$k} = $v; }
+	my $lifetime = $memory->{TIMESERIES_LIFETIME};
+	store_timeseries $timeseries, "vservice", $WORKDIR, $lifetime if $lifetime > 0;
+}
 
 # thresholds
 my @wt;
 my @ct;
 # load thresholds
-my $f = "$CONFDIR/threshold/thresholds.$vhost.$vservice";
+my $f = "$CONFDIR/threshold/thresholds.$vservice";
 open my $h, '<', $f or do {
 	print "UNKNOWN $f: not found.\n";
 	exit 3;
@@ -67,7 +95,10 @@ open my $h, '<', $f or do {
 while( <$h> ){
 	chomp;
 	next if m"^\s*(#|$)";
-	die unless m"^(\S+)\s+(crit|warn)\s+\[\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\]$";
+	unless( m"^(\S+)\s+(crit|warn)\s+\[\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\]$" ){
+		print "UNKNOWN $f:$.: illegal format in \"$_\".\n";
+		exit 3;
+	}
 	my $itempattern = qr"^$1$";
 	my $severity = $2;
 	my $lower = $3;
@@ -102,7 +133,6 @@ foreach my $k ( keys %m ){
 my @p;
 foreach my $k ( sort keys %m ){
 	my $v = $m{$k};
-	my $c;
 	my $critical_occurred;
 	my ($min, $max);
 	
@@ -114,10 +144,11 @@ foreach my $k ( sort keys %m ){
 
 	my $key_text = $unit ? "$k\[$unit\]" : "$k";
 
+	my $c;
 	if( $cm{$k} ){
 		my ($lower, $upper) = @{$cm{$k}};
 		$c = "$lower:$upper";
-		if    ( $v < $lower ){
+		if    ( $value < $lower ){
 			push @c, "$key_text:${value}(lower-crit-thr:$lower)";
 			$critical_occurred = 1;
 		}elsif( $v > $upper ){
@@ -131,9 +162,9 @@ foreach my $k ( sort keys %m ){
 		$w = "$lower:$upper";
 		if    ( $critical_occurred ){
 			# ignore
-		}elsif( $v < $lower ){
+		}elsif( $value < $lower ){
 			push @w, "$key_text:${value}(lower-warn-thr:$lower)";
-		}elsif( $v > $upper ){
+		}elsif( $value > $upper ){
 			push @w, "$key_text:${value}(upper-warn-thr:$upper)";
 		}
 	}
@@ -145,7 +176,6 @@ foreach my $k ( sort keys %m ){
 my $r = 'OK';
 my $rc = 0;
 my @r;
-
 if( $plugin_has_failed ){
 	$r = 'UNKNOWN';
 	$rc = 3;

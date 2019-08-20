@@ -27,13 +27,13 @@ close $h;
 #### load linuxhosts.
 my %targets;
 my $f = "$WORKDIR/hosts";
-open my $h, '<', $f or do {
+open my $h, '<', "$WORKDIR/hosts" or do {
 	die "$f: cannot open, stopped";
 };
 while( <$h> ){
 	chomp;
-	my ($host, $hosttype) = split m"\s+";
-	next unless $hosttype =~ m"^(linux)$";
+	my ($host, $agenttype) = split m"\s+";
+	next unless $agenttype =~ m"^(linux)$";
 	$targets{$host} = 1;
 }
 close $h;
@@ -43,7 +43,7 @@ my $f = "$WORKDIR/services";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "networkserverperf	agent	display_name=\"Network Server Connections\"\n";
+print $h "osperf	agent	display_name=\"OS Performance\"\n";
 close $h;
 
 #### append conf info.
@@ -51,7 +51,7 @@ my $f = "$WORKDIR/service2conf";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "networkserverperf	agent/networkserverperf.rules\n";
+print $h "osperf	agent/osperf.conf\n";
 close $h;
 
 #### append service mapping
@@ -60,8 +60,9 @@ open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 foreach my $i ( keys %targets ){
-	print $h "$i\tnetworkserverperf\n";
+	print $h "$i\tosperf\n";
 }
 close $h;
+
 
 

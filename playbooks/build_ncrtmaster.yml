@@ -1,6 +1,11 @@
 ---
 
 - hosts: all
+  vars:
+    repository:
+      Debian: "deb http://labs.consol.de/repo/stable/debian {{ansible_distribution_release}} main"
+      Ubuntu: "deb http://labs.consol.de/repo/stable/ubuntu {{ansible_distribution_release}} main"
+
   tasks:
     - include_vars: "{{WORKDIR}}/vars.yml"
       tags: [ common ]
@@ -10,7 +15,27 @@
     #### for Debian / Ubuntu
     - name: install packages for apt-key
       apt:
-        name: [ dirmngr, nrpe-ng, pynag ]
+        name: [ dirmngr, pynag ]
+      when: "ansible_os_family == 'Debian'"
+      tags: [ commoninstall ]
+
+    - name: install packages for nrpe-ng
+      apt:
+        name: [ nrpe-ng ]
+      when: "ansible_os_family == 'Debian'"
+      tags: [ commoninstall, nrpe-ng ]
+
+    ## NCRT
+    - name: install naemon and dependancies
+      apt:
+        name:
+          - libjson-xs-perl
+          - libemail-sender-perl
+          - libemail-mime-perl
+          - libtemplate-perl
+          - libstring-random-perl
+          - libmime-encwords-perl
+          - liburi-query-perl
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
@@ -25,7 +50,7 @@
 
     - name: add naemon repository
       apt_repository:
-        repo: 'deb http://labs.consol.de/repo/stable/debian {{ansible_distribution_release}} main'
+        repo: "{{ repository[ansible_os_family] }}"
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
@@ -38,11 +63,7 @@
           - nagios-plugins
           - naemon-thruk
           - python-passlib
-          - libemail-sender-perl
-          - libemail-mime-perl
-          - libtemplate-perl
-          - libstring-random-perl
-          - libmime-encwords-perl
+          - nagios-nrpe-plugin
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
@@ -190,8 +211,8 @@
     - name: setup gateway accessor
       template:
         mode: 0755
-        src: "ncrtmaster_gatewayaccess"
-        dest: "{{NCRTMASTERHOME}}/bin/ncrtmaster_gatewayaccess"
+        src: "ncrtmaster_passthrough"
+        dest: "{{NCRTMASTERHOME}}/bin/ncrtmaster_passthrough"
       tags: [ common ]
 
     - name: setup settings in ncrt master

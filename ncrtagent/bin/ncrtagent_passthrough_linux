@@ -29,8 +29,8 @@ unless( -d $WORKDIR ){ mkdir $WORKDIR or die "$WORKDIR: cannot create, stopped";
 my %m;
 
 # read from service's output
-open my $e, '-|', "$PLUGINSDIR/ncrtagentgateway_${service}_linux $CONFDIR $WORKDIR $vhost $vservice" or do {
-	print "UNKNOWN $PLUGINSDIR/ncrtagentservice_${service}_linux: not found.\n";
+open my $e, '-|', "$PLUGINSDIR/ncrtagentindirect_${service}_linux $CONFDIR $WORKDIR $vhost $vservice" or do {
+	print "UNKNOWN $PLUGINSDIR/ncrtagentindirect_${service}_linux: not found.\n";
 	exit 3;
 };
 while( <$e> ){

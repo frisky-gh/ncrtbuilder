@@ -5,6 +5,9 @@
     nrpeconfdir:
       Debian: /etc/nagios/nrpe.d
       RedHat: /etc/nrpe.d
+    nrpe:
+      Debian: nagios-nrpe-server
+      RedHat: nrpe
 
   tasks:
     - include_vars: "{{WORKDIR}}/vars.yml"
@@ -36,22 +39,30 @@
       tags: [ nrpe-ng ]
 
     #### for RedHat / CentOS
-    - name: install packages for nrpe plugins
+    - name: install EPEL repository
       yum:
         name:
-          - nagios-plugins-nrpe
+          - epel-release
+      when: "ansible_os_family == 'RedHat'"
+      tags: [ commoninstall ]
+
+    - name: install packages for nrpe plugins
+      yum:
+        name: [ nagios-plugins-nrpe ]
+        enablerepo: epel
       when: "ansible_os_family == 'RedHat'"
       tags: [ commoninstall ]
 
     - name: install packages for nrpe
       yum:
         name: [ nrpe ]
+        enablerepo: epel
       when: "ansible_os_family == 'RedHat'"
       tags: [ nrpe ]
 
     #### for All Distros
     - file:
-        path: /opt
+        path: "{{NCRTAGENTHOME}}"
         state: directory
         owner: root
         group: root
@@ -135,7 +146,7 @@
 
     - name: restart nrpe
       service:
-        name:  nrpe
+        name:  "{{ nrpe[ansible_os_family] }}"
         state: restarted
 
     - name: restart nrpe-ng

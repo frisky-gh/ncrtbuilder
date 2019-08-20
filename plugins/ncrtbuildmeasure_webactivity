@@ -26,7 +26,7 @@ close $h;
 
 #### load ncrt masters conf.
 my @ncrtmasters;
-my $f = "$CONFDIR/ncrtmasters.conf";
+my $f = "$CONFDIR/master.hosts";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -38,7 +38,7 @@ while( <$h> ){
 close $h;
 
 #### load detector conf.
-my $f = "$CONFDIR/master/webactivity.conf";
+my $f = "$CONFDIR/agentless/webactivity.conf";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -84,14 +84,14 @@ close $h;
 open my $h, '>>', "$WORKDIR/services" or do {
 	die "$f: cannot open, stopped";
 };
-print $h "webactivity	master\n";
+print $h "webactivity	agentless\n";
 close $h;
 
 #### append conf info.
 open my $h, '>>', "$WORKDIR/service2conf" or do {
 	die "$f: cannot open, stopped";
 };
-print $h "webactivity	master/webactivity.conf\n";
+print $h "webactivity	agentless/webactivity.conf\n";
 close $h;
 
 #### append service mapping

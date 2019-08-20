@@ -2,7 +2,7 @@
 
 use strict;
 
-our $LONGTERM_H = 1;
+our $HISTORY_EXPIRYTERM_H = 2;
 
 if( @ARGV < 2 ){
 	print "usage: % $0 CONFDIR WORKDIR\n";
@@ -16,11 +16,9 @@ our $WORKDIR = $ARGV[1];
 sub n ($) {
 	return sprintf "%.2f", $_[0];
 }
-sub nP ($) {
-	return sprintf "%.2f%%", $_[0];
-}
-sub nMB ($) {
-	return sprintf "%.2fMB", $_[0];
+
+sub nc ($) {
+	return sprintf "%d", $_[0];
 }
 
 sub var2ltsv ( \% ){
@@ -114,77 +112,95 @@ sub calc_delta ($$\%) {
 	return \%shortterm_delta, \%longterm_delta;
 }
 
-####
-
-my @category_rules;
-my $f = "$CONFDIR/agent/io.conf";
+#### load detector conf. for agents
+my @ignore_rules;
+my $f = "$CONFDIR/agent/networktraffic.ignores";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
 while( <$h> ){
 	chomp;
-	next if m"^\s*($|#)";
-	die "$f:$.: illegal format, stopped" unless m"^(\w+)=(.*)$";
-	$LONGTERM_H = 0 + $2 if $1 eq 'LONGTERM_H';
+	next if m"^\s*(#|$)";
+	die "$f:$.:$_: illegal format, stopped" unless m"^!(\S+)$";
+	push @ignore_rules, qr"^$2$";
 }
 close $h;
 
 ####
-# metrics
-my %m;
-# thresholds
-my @wt;
-my @ct;
-#
-my @w;
-my @c;
+# data
+my %d;
+my %lastd;
+my @history;
 
-# io
-my %dev;
-my $f = '/proc/diskstats';
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
+# load curr data
+open my $h, '-|', "ip -s link" or do {
+	die "ip: cannot execute, stopped";
 };
+my $ifname;
+my $mode;
 while( <$h> ){
 	chomp;
-	next unless m"^\s*
-		(\d+)\s+(\d+)\s+([-\w]+)\s+
-		(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+
-		(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+
-		(\d+)
-	"x;
-	my $dev = $3;
-	$dev{$dev}->{'read-times'} = $5;
-	$dev{$dev}->{'read-sectors'} = $6;
-	$dev{$dev}->{'write-times'} = $9;
-	$dev{$dev}->{'write-sectors'} = $10;
+	next unless m"^(?:
+		(\d+:\s+(?: (\w+) | \w+\@(if\d+) ):\s+<[^>]*>((?:\s+\S+\s+\S+)*)) |
+		(\s+RX:) |
+		(\s+TX:) |
+		(\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+))
+	).*$"x;
+	# new link
+	if    ( $1 ne '' ){
+		$ifname = $2 || $3;
+		foreach my $r ( @ignore_rules ){
+			next unless $ifname =~ $r;
+			$ifname = undef;
+			last;
+		}
+	# rx
+	}elsif( $5 ne '' ){
+		$mode = 'rx';
+	# tx
+	}elsif( $6 ne '' ){
+		$mode = 'tx';
+	# statistics
+	}elsif( $7 ne '' && $mode eq 'rx' ){
+		next unless defined $ifname;
+		$d{"link[$ifname]-rx-bytes-cnt"}   = $8;
+		$d{"link[$ifname]-rx-packets-cnt"} = $9;
+		$d{"link[$ifname]-rx-errors-cnt"}  = $10;
+		$d{"link[$ifname]-rx-dropped-cnt"} = $11;
+		$d{"link[$ifname]-rx-overrun-cnt"} = $12;
+		$d{"link[$ifname]-rx-mcast-cnt"}   = $13;
+	# statistics
+	}elsif( $7 ne '' && $mode eq 'tx' ){
+		next unless defined $ifname;
+		$d{"link[$ifname]-tx-bytes-cnt"}   = $8;
+		$d{"link[$ifname]-tx-packets-cnt"} = $9;
+		$d{"link[$ifname]-tx-errors-cnt"}  = $10;
+		$d{"link[$ifname]-tx-dropped-cnt"} = $11;
+		$d{"link[$ifname]-tx-carrier-cnt"} = $12;
+		$d{"link[$ifname]-tx-collsns-cnt"} = $13;
+	}
 }
 close $h;
 
-foreach my $dev ( keys %dev ){
-	delete $dev{$1} if $dev =~ m/^(.*[a-z])\d+$/ and exists $dev{$1};
-	delete $dev{$dev} if $dev =~ m"^fd\d+$";
-	delete $dev{$dev} if $dev =~ m"^sr\d+$";
-	delete $dev{$dev} if $dev =~ m"^loop\d+$";
-	delete $dev{$dev} if $dev =~ m"^ram\d+$";
-}
-my %io;
-while( my ($dev, $values) = each %dev ){
-	while( my ($k, $v) = each %$values ){ $io{"dev[$dev]-$k"} = $v; }
-}
+my $longterm = sprintf "%dH", $HISTORY_EXPIRYTERM_H;
 
-my $longterm = sprintf "%dH", $LONGTERM_H;
-my ($shortd, $longd) = calc_delta "$WORKDIR/osperf_io.history", $LONGTERM_H, %io;
+my ($shortd, $longd) = calc_delta "$WORKDIR/networktraffic.history", $HISTORY_EXPIRYTERM_H, %d;
 foreach my $k ( keys %$shortd ){
-	my $shortd_key = $k; $shortd_key =~ s/-(.)[a-z]+$/-${1}pm/;
-	$m{$shortd_key} = n $shortd->{$k} * 60;
-	my $longd_key = $k; $longd_key =~ s/-(.)[a-z]+$/-longtermavg[$longterm]-${1}pm/;
-	$m{$longd_key} = n $longd->{$k} * 60;
+	my $shortv = $shortd->{$k};
+	my $longv = $longd->{$k};
+	die unless $k =~ m"-(\w+)-cnt$";
+	if( $1 eq 'bytes' ){
+		$d{"$`-throughput-mbps"} = n $shortv / 1000000 * 8;
+		$d{"longtermavg-of-$`-throughput-mbps"} = n $longv / 1000000 * 8;
+	}else{
+		$d{"$`-$1-ppm"} = n $shortv * 60;
+		$d{"longtermavg-of-$`-$1-ppm"} = n $longv * 60;
+	}
 }
 
-#
-foreach my $k ( sort keys %m ){
-	my $v = $m{$k};
+# output
+foreach my $k ( sort keys %d ){
+	my $v = $d{$k};
 	print "$k=$v\n";
 }
 

@@ -14,8 +14,8 @@ disk\[/\]-avail-pct					crit	[ 0.01,100.00]
 disk\[/\]-iavail-pct					crit	[ 0.01,100.00]
 
 === .* io ===
-dev\[.*\]-write-longtermavg\[.*]-tpm			warn	[0,3500]
-dev\[.*\]-read-longtermavg\[.*]-tpm			warn	[0,1600]
+longtermavg-of-dev\[.*\]-write-tpm			warn	[0,3500]
+longtermavg-of-dev\[.*\]-read-tpm			warn	[0,1600]
 
 === .* networkserverperf ===
 port\[.*\]-conns					warn	[0,10]
@@ -35,13 +35,13 @@ link\[.*\]-tx-dropped-ppm				warn	[0,0.01]
 link\[.*\]-tx-overrun-ppm				warn	[0,0.01]
 link\[.*\]-tx-collsns-ppm				warn	[0,0.01]
 
-link\[.*\]-rx-throughput-longtermavg\[.*\]-mbps		warn	[0,10]
-link\[.*\]-tx-throughput-longtermavg\[.*\]-mbps		warn	[0,10]
-link\[lo\]-rx-throughput-longtermavg\[.*\]-mbps		warn	[0,50]
-link\[lo\]-tx-throughput-longtermavg\[.*\]-mbps		warn	[0,50]
+longtermavg-of-link\[.*\]-rx-throughput-mbps		warn	[0,10]
+longtermavg-of-link\[.*\]-tx-throughput-mbps		warn	[0,10]
+longtermavg-of-link\[lo\]-rx-throughput-mbps		warn	[0,50]
+longtermavg-of-link\[lo\]-tx-throughput-mbps		warn	[0,50]
 
 === .* osperf ===
-cpu-idle-longtermavg\[.*\]-pct				warn	[20.00,99.99]
+longtermavg-of-cpu-idle-pct				warn	[20.00,99.99]
 loadavg							warn	[0.00,10.00]
 loadavg							crit	[0.00,100.00]
 procs							warn	[20,400]

@@ -40,14 +40,17 @@ inc/
 /conf/*.pem
 /conf/*.conf
 /conf/*.yml
+/conf/*.tt
+/conf/*.hosts
+/conf/*.rules
 # detector settings
 /conf/agent/*.hosts
 /conf/agent/*.rules
 /conf/agent/*.ignores
 /conf/agent/*.categories
 /conf/agent/*.conf
-/conf/master/*.conf
-/conf/gateway/*.conf
+/conf/agentless/*.conf
+/conf/indirect/*.conf
 /conf/composite/*.conf
 # statictic settings
 /conf/statistic/*.statistics

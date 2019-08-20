@@ -44,7 +44,7 @@ unless( -d $WORKDIR ){ mkdir_or_die $WORKDIR; }
 
 ####
 my %conf;
-my $f = "$CONFDIR/servicegroup.conf";
+my $f = "$CONFDIR/ncrtbuild.conf";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -1166,7 +1166,7 @@ sub report ($$$$) {
 		next if $nghistory->{$k}->{timestamp} le $report_lastchange;
 		push @nghistory, $nghistory->{$k};
 	}
-	my $template = read_plain "$CONFDIR/servicegroup_mail.tt";
+	my $template = read_plain "$CONFDIR/messenger_mail.tt";
 	my $sessionurl = "$SESSIONURLBASE/sess_$sid/";
 	my $mail = generate_by_template $template,
 		'reason' => $reason,
@@ -1249,7 +1249,7 @@ sub generate_session_page ($$$) {
 	my @graphs;
 	foreach my $k ( sort {$a cmp $b} keys %$graphs ){ push @graphs, $graphs->{$k}; }
 
-	my $template = read_plain "$CONFDIR/servicegroup_status.tt";
+	my $template = read_plain "$CONFDIR/messenger_webpage.tt";
 	my $html = generate_by_template $template,
 		'SERVICEGROUP' => $status->{servicegroup},
 		'ngs'    => \@ngs,
@@ -1326,7 +1326,7 @@ sub renewal_session ($$$) {
 	write_internal_singleline "$d/info.ltsv", \%info;
 
 	my $sessionurl = "$SESSIONURLBASE/sess_$new_sid/";
-	my $template = read_plain "$CONFDIR/servicegroup_jump.tt";
+	my $template = read_plain "$CONFDIR/messenger_expiredwebpage.tt";
 	my $html = generate_by_template $template,
 		 'new_sid' => $new_sid, 'SESSIONURL' => $sessionurl;
 	my $old_d = "$SESSIONDIR/sess_$old_sid";

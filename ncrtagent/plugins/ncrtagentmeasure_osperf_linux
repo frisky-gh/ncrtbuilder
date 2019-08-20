@@ -16,8 +16,12 @@ our $WORKDIR = $ARGV[1];
 sub n ($) {
 	return sprintf "%.2f", $_[0];
 }
-sub nP ($) {
-	return sprintf "%.2f%%", $_[0];
+sub nP ($$) {
+	if( $_[1] > 0 ){
+		return sprintf "%.2f%%", 100 * $_[0] / $_[1];
+	}else{
+		return sprintf "%.2f%%", 0;
+	}
 }
 sub nMB ($) {
 	return sprintf "%.2fMB", $_[0];
@@ -165,9 +169,9 @@ my ($shortd, $longd) = calc_delta "$WORKDIR/osperf_cpu.history", $LONGTERM_H, %c
 my $shortterm_jiffies = $shortd->{user} + $shortd->{system} + $shortd->{iowait} + $shortd->{idle};
 my $longterm_jiffies  = $longd->{user} + $longd->{system} + $longd->{iowait} + $longd->{idle};
 foreach my $i ( 'user', 'system', 'iowait', 'idle' ){
-	$m{"cpu-${i}-pct"} = nP 100 * $shortd->{$i} / $shortterm_jiffies
+	$m{"cpu-${i}-pct"} = nP $shortd->{$i}, $shortterm_jiffies
 		if $shortterm_jiffies > 0;
-	$m{"cpu-${i}-longtermavg[$longterm]-pct"} = nP 100 * $longd->{$i} / $longterm_jiffies
+	$m{"longtermavg-of-cpu-${i}-pct"} = nP $longd->{$i}, $longterm_jiffies
 		if $longterm_jiffies > 0;
 }
 
@@ -194,8 +198,8 @@ close $h;
 unless( defined $m{'mem-available'} ){
 	$m{'mem-available'} = nMB $m{'mem-buffers'} + $m{'mem-cached'} + $m{'mem-free'} + $m{'mem-sreclaimable'} - $m{'mem-shmem'};
 }
-$m{'mem-available-pct'} = nP 100 * $m{'mem-available'} / $m{'mem-total'};
-$m{'swap-free-pct'} = nP 100 * $m{'swap-free'} / $m{'swap-total'};
+$m{'mem-available-pct'} = nP $m{'mem-available'}, $m{'mem-total'};
+$m{'swap-free-pct'} = nP $m{'swap-free'}, $m{'swap-total'};
 
 # proc/thread
 opendir my $d, '/proc' or do {

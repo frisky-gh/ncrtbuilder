@@ -32,8 +32,8 @@ open my $h, '<', $f or do {
 };
 while( <$h> ){
 	chomp;
-	my ($host, $hosttype) = split m"\s+";
-	next unless $hosttype =~ m"^(linux)$";
+	my ($host, $agenttype) = split m"\s+";
+	next unless $agenttype =~ m"^(linux)$";
 	$targets{$host} = 1;
 }
 close $h;
@@ -43,7 +43,7 @@ my $f = "$WORKDIR/services";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "proc	agent	display_name=\"Process\"\n";
+print $h "networktraffic	agent	display_name=\"Network Traffic\"\n";
 close $h;
 
 #### append conf info.
@@ -51,9 +51,7 @@ my $f = "$WORKDIR/service2conf";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "proc	agent/proc.categories\n";
-print $h "proc	agent/proc_count.rules\n";
-print $h "proc	agent/proc_elapsed.rules\n";
+print $h "networktraffic	agent/networktraffic.ignores\n";
 close $h;
 
 #### append service mapping
@@ -62,10 +60,8 @@ open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 foreach my $i ( keys %targets ){
-	print $h "$i\tproc\n";
+	print $h "$i\tnetworktraffic\n";
 }
 close $h;
-
-
 
 

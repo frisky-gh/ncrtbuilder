@@ -1,0 +1,105 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 4 ){
+	print "usage: % $0 CONFDIR WORKDIR VHOST VSERVICE_INDEX\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $vhost = $ARGV[2];
+our $vservice_index = $ARGV[3];
+
+####
+sub ltsv2var ($) {
+	my ($ltsv) = @_;
+	my %var;
+	foreach my $kv ( split m"\t", $ltsv ){
+		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
+			next;
+		};
+		my $k = $1;
+		my $v = $2;
+		$var{$k} = $v;
+	}
+	return %var;
+}
+
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+sub nP ($) {
+	return sprintf "%.2f%%", $_[0];
+}
+sub nMB ($) {
+	return sprintf "%.2fMB", $_[0];
+}
+
+#### load service conf.
+my %option;
+my %file2rules;
+my $f = "$CONFDIR/indirect/ltsv.conf.$vhost.$vservice_index";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	if( m"^(\w+)=(\S*)$" ){
+		$option{$1} = $2;
+	}elsif( m"^(\S+)\s+(\S+)$" ){
+		my $file = $1;
+		my $key_re = $2;
+		push @{$file2rules{$file}}, [qr"$key_re", {%option}];
+	}else{
+		die "$f:$.:$_: illegal format, stopped";
+	}
+}
+close $h;
+
+####
+my $realhost = ` hostname `;
+chomp $realhost;
+
+my $rc = 0;
+my @output;
+while( my ($ltsvfile, $rules) = each %file2rules ){
+	open my $h, '-|', "tail -1 $ltsvfile" or do {
+		die "$ltsvfile: cannot open, stopped";
+	};
+	my $ltsv = <$h>;
+	close $h;
+	chomp $ltsv;
+	die "$ltsvfile: cannot open, stopped" if $ltsv eq "";
+
+	my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+	    $atime,$mtime,$ctime,$blksize,$blocks) = stat $ltsvfile;
+	my ($filename) = $ltsvfile =~ m"(?:^|/)([^/]+)$";
+	my $age = (time - $mtime) / 60;
+	printf "realhost[%s]-ltsvfile[%s]-age=%.2f\n", $realhost, $filename, $age;
+
+	my %var = ltsv2var $ltsv;
+	foreach my $rule ( @$rules ){
+		my ($key_re, $option) = @$rule;
+		if( ($option->{timeout} || 99999999 ) < (time - $mtime) / 60 ){
+			$rc = 1;
+			push @output, "$ltsvfile: expired.";
+			next;
+		}
+
+		while( my ($k, $v) = each %var ){
+			next unless $k =~ $key_re;
+			print "$k=$v\n";
+		}
+	}
+}
+
+if( @output ){
+	my $output = join ' / ', @output;
+	print "output=$output\n";
+}
+
+exit $rc;
+

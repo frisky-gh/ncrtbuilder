@@ -1,4 +1,0 @@
-# host		service		priority	address		action
-.*		.*		.*		.*		notify
-.*		.*		.*		.*		daily
-

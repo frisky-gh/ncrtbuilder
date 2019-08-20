@@ -27,23 +27,23 @@ close $h;
 #### load linuxhosts.
 my %targets;
 my $f = "$WORKDIR/hosts";
-open my $h, '<', "$WORKDIR/hosts" or do {
+open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
 while( <$h> ){
 	chomp;
-	my ($host, $hosttype) = split m"\s+";
-	next unless $hosttype =~ m"^(linux)$";
+	my ($host, $agenttype) = split m"\s+";
+	next unless $agenttype =~ m"^(linux)$";
 	$targets{$host} = 1;
 }
-close $h;
+close $f;
 
 #### append service info.
 my $f = "$WORKDIR/services";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "io	agent	display_name=\"Block Device I/O\"\n";
+print $h "disk	agent	display_name=\"Disk\"\n";
 close $h;
 
 #### append conf info.
@@ -51,7 +51,8 @@ my $f = "$WORKDIR/service2conf";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "io	agent/io.conf\n";
+print $h "disk	agent/disk.rules\n";
+print $h "disk	agent/disk.ignores\n";
 close $h;
 
 #### append service mapping
@@ -60,9 +61,7 @@ open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 foreach my $i ( keys %targets ){
-	print $h "$i\tio\n";
+	print $h "$i\tdisk\n";
 }
 close $h;
-
-
 
