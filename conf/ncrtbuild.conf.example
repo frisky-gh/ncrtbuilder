@@ -17,3 +17,5 @@ INFLUXDBPASSWD=naemon
 AGENTPACKAGE=nrpe
 NRPEPORT=5666
 NRPETLS=yes
+
+SESSIONDIR=/var/www/pub/ncrtmaster

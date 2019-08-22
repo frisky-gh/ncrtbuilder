@@ -42,15 +42,14 @@
     ## Naemon
     - name: add repository key
       apt_key:
-        keyserver: keys.gnupg.net
-        id: F8C1CA08A57B9ED7
-        keyring: /etc/apt/trusted.gpg.d/labs.consol.de_key.gpg
+        data: "{{ lookup('file','naemon.asc') }}"
+        keyring: /etc/apt/trusted.gpg.d/naemon.gpg
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
     - name: add naemon repository
       apt_repository:
-        repo: "{{ repository[ansible_os_family] }}"
+        repo: "{{ repository[ansible_distribution] }}"
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
@@ -67,7 +66,7 @@
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
-    ## Naemon2Influx
+    ## Naemon2Influx / Naemon2Influx-Grafana-Helper
     - file:
         dest:    "{{item}}"
         state:   directory
@@ -81,18 +80,24 @@
       tags: [ commoninstall ]
 
     - copy:
-        dest:    "{{NCRTMASTERHOME}}/debs/{{NAEMON2INFLUX_DEB}}"
-        src:     "{{TOOLHOME}}/conf/{{NAEMON2INFLUX_DEB}}"
+        dest: "{{NCRTMASTERHOME}}/debs/{{item}}"
+        src:  "{{TOOLHOME}}/conf/{{item}}"
+      with_items:
+        - "{{NAEMON2INFLUX_DEB}}"
+        - "{{NAEMON2INFLUX_GRAFANA_HELPER_DEB}}"
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
-    - name: install naemon2influx
+    - name: install naemon2influx / naemon2influx-grafana-helper
       apt:
-        deb:     "{{NCRTMASTERHOME}}/debs/{{NAEMON2INFLUX_DEB}}"
+        deb: "{{NCRTMASTERHOME}}/debs/{{item}}"
+      with_items:
+        - "{{NAEMON2INFLUX_DEB}}"
+        - "{{NAEMON2INFLUX_GRAFANA_HELPER_DEB}}"
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
-    - name: install naemon2influx
+    - name: install packages required by naemon2influx
       apt:
         name: [ influxdb, influxdb-client, libwww-perl ]
       when: "ansible_os_family == 'Debian'"
@@ -163,6 +168,18 @@
       tags: [ commoninstall ]
 
     ## Grafana
+    - name: add repository key for grafana
+      apt_key:
+        data: "{{ lookup('file','grafana.asc') }}"
+        keyring: /etc/apt/trusted.gpg.d/grafana.gpg
+      when: "ansible_os_family == 'Debian'"
+      tags: [ commoninstall ]
+
+    - name: install packages for grafana
+      apt:
+        name: [ grafana ]
+      when: "ansible_os_family == 'Debian'"
+      tags: [ commoninstall ]
 
     #### for All Distros
 

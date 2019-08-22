@@ -4,7 +4,7 @@ use strict;
 use String::Random 'random_regex';
 use Encode;
 use Template;
-use JSON;
+use JSON::XS;
 use URI::Escape;
 use URI::Query;
 use HTTP::Daemon;
