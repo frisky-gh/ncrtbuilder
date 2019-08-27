@@ -1,0 +1,9 @@
+* Grafana ユーザの自動セットアップ
+* Grafana Oraganizationの自動セットアップ
+* Grafana データソースへの influxDB の自動セットアップ
+* Grafana API Keyの自動セットアップ
+* Grafana Oraganization名からGrafana Organization ID の取得
+* naemon2influx / naemon2influx-grafana-helper の ncrtmaster 環境でのビルド
+* ncrtmaster のCentOSサポートの追加
+* naemon2influx / naemon2influx-grafana-helper の CentOSサポートの追加
+* 

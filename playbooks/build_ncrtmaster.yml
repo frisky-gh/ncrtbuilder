@@ -23,23 +23,30 @@
       apt:
         name: [ nrpe-ng ]
       when: "ansible_os_family == 'Debian'"
-      tags: [ commoninstall, nrpe-ng ]
+      tags: [ nrpe-ng ]
 
-    ## NCRT
-    - name: install naemon and dependancies
+    ## InfluxDB (install)
+    - name: install packages for influxdb
       apt:
-        name:
-          - libjson-xs-perl
-          - libemail-sender-perl
-          - libemail-mime-perl
-          - libtemplate-perl
-          - libstring-random-perl
-          - libmime-encwords-perl
-          - liburi-query-perl
+        name: [ influxdb, influxdb-client, python-requests, python-influxdb ]
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
-    ## Naemon
+    ## Grafana (install)
+    - name: add repository key for grafana
+      apt_key:
+        data: "{{ lookup('file','grafana.asc') }}"
+        keyring: /etc/apt/trusted.gpg.d/grafana.gpg
+      when: "ansible_os_family == 'Debian'"
+      tags: [ commoninstall ]
+
+    - name: install packages for grafana
+      apt:
+        name: [ grafana ]
+      when: "ansible_os_family == 'Debian'"
+      tags: [ commoninstall ]
+
+    ## Naemon (install)
     - name: add repository key
       apt_key:
         data: "{{ lookup('file','naemon.asc') }}"
@@ -66,7 +73,22 @@
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
-    ## Naemon2Influx / Naemon2Influx-Grafana-Helper
+    ## NCRT (install)
+    - name: install naemon and dependancies
+      apt:
+        name:
+          - libjson-xs-perl
+          - libjson-pp-perl
+          - libemail-sender-perl
+          - libemail-mime-perl
+          - libtemplate-perl
+          - libstring-random-perl
+          - libmime-encwords-perl
+          - liburi-query-perl
+      when: "ansible_os_family == 'Debian'"
+      tags: [ commoninstall ]
+
+    ## Naemon2Influx / Naemon2Influx-Grafana-Helper (install)
     - file:
         dest:    "{{item}}"
         state:   directory
@@ -99,91 +121,13 @@
 
     - name: install packages required by naemon2influx
       apt:
-        name: [ influxdb, influxdb-client, libwww-perl ]
-      when: "ansible_os_family == 'Debian'"
-      tags: [ commoninstall ]
-
-    - name: setup Nagios / Naemon with naemon2influx
-      lineinfile:
-        dest: "/etc/naemon/naemon.cfg"
-        regexp: "^{{item.key}}="
-        line:   "{{item.key}}={{item.value}}"
-        insertafter: EOF
-      with_items:
-        - key:   process_performance_data
-          value: 1
-        - key:   service_perfdata_file_processing_command
-          value: ncrt-process-service-perfdata-naemon2influx
-        - key:   service_perfdata_file_mode
-          value: a
-        - key:   service_perfdata_file_processing_interval
-          value: 5
-        - key:   service_perfdata_file_template
-          value: '$TIMET$\t$HOSTNAME$\t$SERVICEDESC$\t$SERVICESTATE$\t$SERVICEPERFDATA$'
-        - key:   service_perfdata_file
-          value: /var/lib/naemon/service-perfdata
-      notify: restart naemon
-      when: "ansible_os_family == 'Debian'"
-      tags: [ commoninstall ]
-
-    - name: setup Nagios / Naemon with naemon2influx
-      template:
-        src: ncrt_naemon2influx.cfg
-        dest: /etc/naemon/conf.d/ncrt_naemon2influx.cfg
-      notify: restart naemon
-      when: "ansible_os_family == 'Debian'"
-      tags: [ commoninstall ]
-
-    - name: setup naemon2influx
-      file:
-        dest: /etc/naemon/naemon2influx.cfg
-        mode: 0640
-        owner: naemon
-        group: naemon
-      notify: restart naemon
-      when: "ansible_os_family == 'Debian'"
-      tags: [ commoninstall ]
-
-    - name: setup naemon2influx
-      lineinfile:
-        dest: /etc/naemon/naemon2influx.cfg
-        regexp: "^{{item.key}}="
-        line:   "{{item.key}}={{item.value}}"
-        insertafter: EOF
-      with_items:
-        - key:   output
-          value: "http://{{INFLUXDBHOST}}:{{INFLUXDBPORT}}"
-        - key:   username
-          value: "{{INFLUXDBUSER}}"
-        - key:   password
-          value: "{{INFLUXDBPASSWD}}"
-      when: "ansible_os_family == 'Debian'"
-      tags: [ commoninstall ]
-
-    ## InfluxDB
-    - name: install packages for influxdb client
-      apt:
-        name: [ python-requests, python-influxdb ]
-      when: "ansible_os_family == 'Debian'"
-      tags: [ commoninstall ]
-
-    ## Grafana
-    - name: add repository key for grafana
-      apt_key:
-        data: "{{ lookup('file','grafana.asc') }}"
-        keyring: /etc/apt/trusted.gpg.d/grafana.gpg
-      when: "ansible_os_family == 'Debian'"
-      tags: [ commoninstall ]
-
-    - name: install packages for grafana
-      apt:
-        name: [ grafana ]
+        name: [ libwww-perl ]
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
     #### for All Distros
 
-    ## InfluxDB
+    ## InfluxDB (setting)
     - name: setup influxdb database for naemon2influx
       influxdb_database:
         hostname:      "{{INFLUXDBHOST}}"
@@ -207,7 +151,69 @@
       shell: "influx -host {{INFLUXDBHOST}} -port {{INFLUXDBPORT}} -username {{INFLUXDBADMINUSER}} -password \"{{INFLUXDBADMINPASSWD}}\" -execute \"grant all on naemon to naemon\""
       tags: [ commoninstall ]
 
-    ## NCRT
+    ## Grafana (setting)
+
+    ## Naemon (setting)
+    - name: remove unused default settings for Nagios / Naemon
+      shell: "test -f /etc/naemon/conf.d/{{item}} && mv /etc/naemon/conf.d/{{item}} /etc/naemon/conf.d/{{item}}.unused"
+      failed_when: False
+      with_items:
+        - localhost.cfg
+        - printer.cfg
+        - switch.cfg
+        - windows.cfg
+      tags: [ common ]
+
+    - name: setup static setting files (by NCRT) for Nagios / Naemon
+      template:
+        src: "{{item}}"
+        dest: "/etc/naemon/conf.d/{{item}}"
+      with_items:
+        - ncrt_naemon2influx.cfg
+        - ncrt_naemon_commands.cfg
+        - ncrt_naemon_timeperiods.cfg
+      notify: restart naemon
+      tags: [ common ]
+
+    - name: setup dynamic setting files (by NCRT) for Nagios / Naemon
+      template:
+        src: "{{WORKDIR}}/{{item}}"
+        dest: "/etc/naemon/conf.d/{{item}}"
+      with_items:
+        - ncrt_servicetemplates.cfg
+        - ncrt_services.cfg
+        - ncrt_hosttemplates.cfg
+        - ncrt_hosts.cfg
+        - ncrt_users.cfg
+        - ncrt_addresses.cfg
+        - ncrt_hostgroups.cfg
+        - ncrt_servicegroups.cfg
+      notify: restart naemon
+      tags: [ common ]
+
+    - name: setup dynamic setting items Nagios / Naemon with naemon2influx
+      lineinfile:
+        dest: "/etc/naemon/naemon.cfg"
+        regexp: "^{{item.key}}="
+        line:   "{{item.key}}={{item.value}}"
+        insertafter: EOF
+      with_items:
+        - key:   process_performance_data
+          value: 1
+        - key:   service_perfdata_file_processing_command
+          value: ncrt-process-service-perfdata-naemon2influx
+        - key:   service_perfdata_file_mode
+          value: a
+        - key:   service_perfdata_file_processing_interval
+          value: 5
+        - key:   service_perfdata_file_template
+          value: '$TIMET$\t$HOSTNAME$\t$SERVICEDESC$\t$SERVICESTATE$\t$SERVICEPERFDATA$'
+        - key:   service_perfdata_file
+          value: /var/lib/naemon/service-perfdata
+      notify: restart naemon
+      tags: [ common ]
+
+    ## NCRT (setting)
     - name: setup modules in ncrt master
       synchronize:
         checksum: yes
@@ -232,21 +238,12 @@
         dest: "{{NCRTMASTERHOME}}/bin/ncrtmaster_passthrough"
       tags: [ common ]
 
-    - name: setup settings in ncrt master
-      template:
-        src: "{{item}}"
-        dest: "/etc/naemon/conf.d/{{item}}"
-      with_items:
-        - ncrt_naemon_commands.cfg
-        - ncrt_naemon_timeperiods.cfg
-      tags: [ common ]
-
     - name: setup nrpe server cert/key
       copy:
         dest:  /etc/ssl/certs/ncrt_cert.pem
         src:   "{{TOOLHOME}}/conf/ncrt_cert.pem"
       notify: update ssl certs
-      tags: [ commoninstall ]
+      tags: [ common ]
 
     - name: setup ncrtmaster_alertmessenger cron
       cron:
@@ -257,36 +254,48 @@
         job: "{{NCRTMASTERHOME}}/bin/ncrtmaster_alertmessenger cron 2>> ~/.ncrt.cronerror 1>&2"
       tags: [ common ]
 
-    - name: setup settings in Nagios / Naemon
-      shell: "test -f /etc/naemon/conf.d/{{item}} && mv /etc/naemon/conf.d/{{item}} /etc/naemon/conf.d/{{item}}.unused"
-      failed_when: False
-      with_items:
-        - localhost.cfg
-        - printer.cfg
-        - switch.cfg
-        - windows.cfg
-      tags: [ commoninstall ]
-
-    - name: setup settings in Nagios / Naemon
-      shell: "test -f /etc/naemon/conf.d/printerlocalhost.cfg && mv /etc/naemon/conf.d/localhost.cfg /etc/naemon/conf.d/localhost.cfg.unused"
-      failed_when: False
-      tags: [ commoninstall ]
-
-    - name: setup settings in Nagios / Naemon
-      template:
-        src: "{{WORKDIR}}/{{item}}"
-        dest: "/etc/naemon/conf.d/{{item}}"
-      with_items:
-        - ncrt_servicetemplates.cfg
-        - ncrt_services.cfg
-        - ncrt_hosttemplates.cfg
-        - ncrt_hosts.cfg
-        - ncrt_users.cfg
-        - ncrt_addresses.cfg
-        - ncrt_hostgroups.cfg
-        - ncrt_servicegroups.cfg
+    ## Naemon2Influx / Naemon2Influx-Grafana-Helper (setting)
+    - name: setup naemon2influx setting file
+      file:
+        dest: /etc/naemon/naemon2influx.cfg
+        mode: 0640
+        owner: naemon
+        group: naemon
       notify: restart naemon
       tags: [ common ]
+
+    - name: setup naemon2influx settings
+      lineinfile:
+        dest: /etc/naemon/naemon2influx.cfg
+        regexp: "^{{item.key}}="
+        line:   "{{item.key}}={{item.value}}"
+        insertafter: EOF
+      with_items:
+        - key:   output
+          value: "http://{{INFLUXDBHOST}}:{{INFLUXDBPORT}}"
+        - key:   username
+          value: "{{INFLUXDBUSER}}"
+        - key:   password
+          value: "{{INFLUXDBPASSWD}}"
+        - key:   perfformat
+          value: "time	label	label	tag=state	data"
+      tags: [ common ]
+
+    - name: setup naemon2influx-grafana-helper settings
+      lineinfile:
+        dest: /etc/naemon/naemon2influx-grafana-helper.conf
+        regexp: "^{{item.key}}="
+        line:   "{{item.key}}={{item.value}}"
+        insertafter: EOF
+      with_items:
+        - key:   GRAFANAURL
+          value: "{{GRAFANAURL}}"
+        - key:   GRAFANAAPIKEY
+          value: "{{GRAFANAAPIKEY}}"
+        - key:   GRAFANADATASOURCE
+          value: "{{GRAFANADATASOURCE}}"
+      tags: [ common ]
+
 
   handlers:
     - name: update ssl certs

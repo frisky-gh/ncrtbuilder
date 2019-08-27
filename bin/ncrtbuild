@@ -224,14 +224,23 @@ while( <$h> ){
 }
 close $h;
 
-our $ANSIBLEOPTIONS = $ncrtconf{'ANSIBLEOPTIONS'};
-our $NCRTAGENTHOME  = $ncrtconf{'NCRTAGENTHOME'};
-our $NCRTMASTERHOME = $ncrtconf{'NCRTMASTERHOME'};
-our $HELPERURL      = $ncrtconf{'HELPERURL'};
-our $GRAFANADB      = $ncrtconf{'GRAFANADB'};
-our $GRAFANAUSER    = $ncrtconf{'GRAFANAUSER'};
-our $GRAFANAPASSWD  = $ncrtconf{'GRAFANAPASSWD'};
-our $GRAFANAORGID   = $ncrtconf{'GRAFANAORGID'};
+our $ANSIBLEOPTIONS      = $ncrtconf{'ANSIBLEOPTIONS'};
+
+our $NCRTAGENTHOME       = $ncrtconf{'NCRTAGENTHOME'};
+our $AGENTPACKAGE	 = $ncrtconf{'AGENTPACKAGE'} || 'nrpe';
+our $NRPEPORT	         = $ncrtconf{'NRPEPORT'} // '5666';
+our $NRPETLS	         = $ncrtconf{'NRPETLS'} // 'yes';
+our $NRPEALLOWEDHOSTS	 = $ncrtconf{'NRPEALLOWEDHOSTS'};
+
+our $NCRTMASTERHOME      = $ncrtconf{'NCRTMASTERHOME'};
+
+our $GRAFANAURL          = $ncrtconf{'GRAFANAURL'} // 'http://example.com/grafana';
+our $GRAFANADATASOURCE   = $ncrtconf{'GRAFANADATASOURCE'};
+our $GRAFANAUSER         = $ncrtconf{'GRAFANAUSER'};
+our $GRAFANAPASSWD       = $ncrtconf{'GRAFANAPASSWD'};
+our $GRAFANAORGID        = $ncrtconf{'GRAFANAORGID'};
+our $GRAFANAAPIKEY       = $ncrtconf{'GRAFANAAPIKEY'};
+
 our $INFLUXDBHOST	 = $ncrtconf{'INFLUXDBHOST'} // 'localhost';
 our $INFLUXDBPORT	 = $ncrtconf{'INFLUXDBPORT'} // '8086';
 our $INFLUXDBADMINUSER   = $ncrtconf{'INFLUXDBADMINUSER'}   // 'admin';
@@ -239,10 +248,8 @@ our $INFLUXDBADMINPASSWD = $ncrtconf{'INFLUXDBADMINPASSWD'} // 'admin';
 our $INFLUXDBUSER	 = $ncrtconf{'INFLUXDBUSER'}     // 'naemon';
 our $INFLUXDBPASSWD      = $ncrtconf{'INFLUXDBPASSWD'}   // 'naemon';
 our $INFLUXDBDATABASE    = $ncrtconf{'INFLUXDBDATABASE'} // 'naemon';
-our $AGENTPACKAGE	 = $ncrtconf{'AGENTPACKAGE'} || 'nrpe';
-our $NRPEPORT	         = $ncrtconf{'NRPEPORT'} // '5666';
-our $NRPETLS	         = $ncrtconf{'NRPETLS'} // 'yes';
-our $NRPEALLOWEDHOSTS	 = $ncrtconf{'NRPEALLOWEDHOSTS'};
+
+our $HELPERURL           = $ncrtconf{'HELPERURL'} // 'http://example.com/naemon2influx-grafana-helper';
 
 sub get_naemon2influx_deb ($) {
 	my ($d) = @_;
@@ -1442,10 +1449,12 @@ print $h <<"EOF";
 ---
 
  HELPERURL:           "$HELPERURL"
- GRAFANADB:           "$GRAFANADB"
+ GRAFANAURL:          "$GRAFANAURL"
+ GRAFANADATASOURCE:   "$GRAFANADATASOURCE"
  GRAFANAUSER:         "$GRAFANAUSER"
  GRAFANAPASSWD:       "$GRAFANAPASSWD"
  GRAFANAORGID:        "$GRAFANAORGID"
+ GRAFANAAPIKEY:       "$GRAFANAAPIKEY"
  NCRTAGENTHOME:       "$NCRTAGENTHOME"
  NCRTMASTERHOME:      "$NCRTMASTERHOME"
  NAEMON2INFLUX_DEB:   "$NAEMON2INFLUX_DEB"

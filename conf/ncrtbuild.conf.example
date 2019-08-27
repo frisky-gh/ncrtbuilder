@@ -1,11 +1,31 @@
 
 ANSIBLEOPTIONS=-u root
+
+#### NCRTAgent settings
 NCRTAGENTHOME=/opt/ncrtagent
+AGENTPACKAGE=nrpe
+NRPEPORT=5666
+NRPETLS=yes
+
+#### NCRTMaster settings
 NCRTMASTERHOME=/opt/ncrtmaster
+SESSIONDIR=/var/www/pub/ncrtmaster
+
+#### naemon2influx-grafana-helper settings
 HELPERURL=http://example.com/naemon2influx-grafana-helper/
+
+#### Grafana settings
+GRAFANAURL=https://example.com/grafana
+GRAFANAADMINUSER=still_making
+GRAFANAADMINPASSWD=still_making
+GRAFANADATASOURCE=influxdb
 GRAFANADB=naemon
 GRAFANAUSER=naemon
 GRAFANAPASSWD=naemon
+GRAFANAAPIKEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+GRAFANAORGID=3
+
+#### InfluxDB settings
 INFLUXDBHOST=localhost
 INFLUXDBPORT=8086
 INFLUXDBDATABASE=naemon
@@ -14,8 +34,3 @@ INFLUXDBADMINPASSWD=admin
 INFLUXDBUSER=naemon
 INFLUXDBPASSWD=naemon
 
-AGENTPACKAGE=nrpe
-NRPEPORT=5666
-NRPETLS=yes
-
-SESSIONDIR=/var/www/pub/ncrtmaster
