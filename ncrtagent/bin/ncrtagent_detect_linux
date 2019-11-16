@@ -63,7 +63,7 @@ if( open my $h, '<', $f ){
 	use NCRTTimeSeries;
 	my $memory = new_memory;
 	my $timeseries = new_timeseries;
-	load_timeseries $timeseries, "vservice", $WORKDIR;
+	load_timeseries $timeseries, $vservice, $WORKDIR;
 	add_timeseries $timeseries, \%m;
 	$memory->{IMPORT} = \%m;
 	$memory->{TIMESERIES} = $timeseries;
@@ -80,7 +80,7 @@ if( open my $h, '<', $f ){
 	close $h;
 	while( my ($k, $v) = each %{$memory->{EXPORT}} ){ $m{$k} = $v; }
 	my $lifetime = $memory->{TIMESERIES_LIFETIME};
-	store_timeseries $timeseries, "vservice", $WORKDIR, $lifetime if $lifetime > 0;
+	store_timeseries $timeseries, $vservice, $WORKDIR, $lifetime if $lifetime > 0;
 }
 
 # thresholds
