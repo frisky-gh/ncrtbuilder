@@ -26,17 +26,17 @@ close $h;
 
 #### load hosts
 my %host2service;
-my $f = "$WORKDIR/host2service";
+my $f = "$WORKDIR/host2service2measure";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
 while( <$h> ){
 	chomp;
-	m"^(\S+)\s+(\w+)(?:,(\w+))?$" or die "$f:$.: illegal format, stopped";
+	m"^(\S+)\s+(\w+)\s+(\w+)$" or die "$f:$.: illegal format, stopped";
 	my $host = $1;
-	my $rservice = $2;
-	my $vservice = $3;
-	push @{$host2service{$host}}, ($vservice || $rservice);
+	my $service = $2;
+	my $measure = $3;
+	push @{$host2service{$host}}, ($service || $measure);
 }
 close $h;
 
@@ -92,7 +92,7 @@ while( my ($host, $service) = each %host2service ){
 }
 close $h;
 
-my $f = "$WORKDIR/hostservice2contact";
+my $f = "$WORKDIR/host2service2contact";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -119,7 +119,7 @@ while( my ($host) = each %host2service ){
 }
 close $h;
 
-my $f = "$WORKDIR/hostservice2group";
+my $f = "$WORKDIR/host2service2group";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };

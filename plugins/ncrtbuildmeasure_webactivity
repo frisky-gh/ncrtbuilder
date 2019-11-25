@@ -80,28 +80,31 @@ while( <$h> ){
 }
 close $h;
 
-#### append service info.
-open my $h, '>>', "$WORKDIR/services" or do {
+#### append measure info.
+my $f = "$WORKDIR/measures";
+open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 print $h "webactivity	agentless\n";
 close $h;
 
 #### append conf info.
-open my $h, '>>', "$WORKDIR/service2conf" or do {
+my $f = "$WORKDIR/measure2conf";
+open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 print $h "webactivity	agentless/webactivity.conf\n";
 close $h;
 
 #### append service mapping
-open my $h, '>>', "$WORKDIR/host2service" or do {
+my $f = "$WORKDIR/host2service2measure";
+open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 while( my ($vhost, $rules) = each %vhost2rules ){
 	foreach my $rule ( @$rules ){
 		my $shortname = $rule->[0];
-		print $h "$vhost	webactivity,$shortname\n";
+		print $h "$vhost	$shortname	webactivity\n";
 	}
 }
 close $h;

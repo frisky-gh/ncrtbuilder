@@ -43,7 +43,7 @@ inc/
 /conf/*.tt
 /conf/*.hosts
 /conf/*.rules
-# detector settings
+# settings for measures
 /conf/agent/*.hosts
 /conf/agent/*.rules
 /conf/agent/*.ignores
@@ -52,10 +52,15 @@ inc/
 /conf/agentless/*.conf
 /conf/indirect/*.conf
 /conf/composite/*.conf
-# statictic settings
-/conf/statistic/*.statistics
 # threshold settings
 /conf/threshold/*.thresholds
+# settings for metric merge
+/conf/metricmerge/*.mergerules
+# settings for filters
+/conf/metricfilter/*.filterrules
+/conf/thresholdfilter/*.filterrules
+# filters
+/filters/*.filter
 #
 /ncrtmaster/conf/*.conf
 /ncrtmaster/conf/*.tt

@@ -71,9 +71,17 @@
     - name: setup modules in ncrt agent
       synchronize:
         checksum: yes
-        rsync_opts: [ "-OJ", "--chown=root:root" ]
+        rsync_opts: [ "-OJ", "--chown=root:root", "--exclude=/filters/" ]
         src: "{{TOOLHOME}}/ncrtagent/"
         dest: "{{NCRTAGENTHOME}}/"
+      tags: [ common ]
+
+    - name: setup filters
+      synchronize:
+        checksum: yes
+        rsync_opts: [ "-OJ", "--chown=root:root" ]
+        src: "{{TOOLHOME}}/filters/"
+        dest: "{{NCRTAGENTHOME}}/filters/"
       tags: [ common ]
 
     - name: setup nrpe server cert/key

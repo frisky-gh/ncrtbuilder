@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
+use IPC::Open2;
 
 our ($TOOLHOME, $PLUGINSDIR, $CONFDIR);
 BEGIN {
@@ -20,13 +21,13 @@ our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $FILTERSDIR = "$TOOLHOME/filters";
 our $CONFDIR = "$TOOLHOME/conf";
 
-if( @ARGV < 2 ){
-	print "usage: % $0 MEASURE HOST SERVICE\n";
+if( @ARGV < 4 ){
+	print "usage: % $0 MEASURE HOST SERVICE PERFDATA ...\n";
 	exit 3;
 }
 my $measure = $ARGV[0];
 my $host = $ARGV[1];
-my $service = $ARGV[2] // $measure;
+my $service = $ARGV[2];
 
 # setup work directory
 our $WORKDIR;
@@ -48,8 +49,8 @@ our $PLUGIN_HAS_FAILED;
 #### 6. thresholds are evaluated if contain expressions.
 #### 7. warnings / criticals are detected from metrics and thresholds.
 
-# 1. measure plugin generates metrics.
-my %m1 = generate_metrics_from_mastermeasure $measure, $host, $service;
+# 1. import metrics from commandline args
+my %m1 = generate_metrics_from_commandline_args $measure, $host, $service, splice(@ARGV, 3);
 
 # 2. metrics pass through some filters if required.
 my %m2 = pass_through_filters $measure, $host, $service, "metricfilter", %m1;

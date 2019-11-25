@@ -12,12 +12,13 @@ BEGIN {
 }
 use lib "$TOOLHOME/lib/perl5";
 
-if( @ARGV < 1 ){
-	print "usage: % $0 SERVICE VSERVICE\n";
+if( @ARGV < 2 ){
+	print "usage: % $0 MEASURE HOST SERVICE\n";
 	exit 3;
 }
-my $service = $ARGV[0];
-my $vservice = $ARGV[1] // $service;
+my $measure = $ARGV[0];
+my $host    = $ARGV[1];
+my $service = $ARGV[2] // $measure;
 
 # setup work directory
 our $WORKDIR;
@@ -34,9 +35,9 @@ my %m;
 my @w;
 my @c;
 
-# read from service's output
-my $f = "$PLUGINSDIR/ncrtagentmeasure_${service}_linux";
-open my $e, '-|', "$f $CONFDIR $WORKDIR $vservice" or do {
+# read from measure's output
+my $f = "$PLUGINSDIR/ncrtagentmeasure_${measure}_linux";
+open my $e, '-|', "$f $CONFDIR $WORKDIR $service" or do {
 	print "UNKNOWN $f: not found.\n";
 	exit 3;
 };
@@ -57,13 +58,13 @@ if( $plugin_rc > 0 ){
 }
 
 # statistics
-my $f = "$CONFDIR/statistic/statistics.$vservice";
+my $f = "$CONFDIR/statistic/statistics.$service";
 if( open my $h, '<', $f ){
 	use NCRTStackMachine;
 	use NCRTTimeSeries;
 	my $memory = new_memory;
 	my $timeseries = new_timeseries;
-	load_timeseries $timeseries, $vservice, $WORKDIR;
+	load_timeseries $timeseries, $service, $WORKDIR;
 	add_timeseries $timeseries, \%m;
 	$memory->{IMPORT} = \%m;
 	$memory->{TIMESERIES} = $timeseries;
@@ -80,14 +81,14 @@ if( open my $h, '<', $f ){
 	close $h;
 	while( my ($k, $v) = each %{$memory->{EXPORT}} ){ $m{$k} = $v; }
 	my $lifetime = $memory->{TIMESERIES_LIFETIME};
-	store_timeseries $timeseries, $vservice, $WORKDIR, $lifetime if $lifetime > 0;
+	store_timeseries $timeseries, $service, $WORKDIR, $lifetime if $lifetime > 0;
 }
 
 # thresholds
 my @wt;
 my @ct;
 # load thresholds
-my $f = "$CONFDIR/threshold/thresholds.$vservice";
+my $f = "$CONFDIR/threshold/thresholds.$host.$service";
 open my $h, '<', $f or do {
 	print "UNKNOWN $f: not found.\n";
 	exit 3;
@@ -179,7 +180,7 @@ my @r;
 if( $plugin_has_failed ){
 	$r = 'UNKNOWN';
 	$rc = 3;
-	push @r, "$service plugin has failed.";
+	push @r, "$measure plugin has failed.";
 }
 elsif( @c ){ $r = 'CRIT'; $rc = 2; }
 elsif( @w ){ $r = 'WARN';  $rc = 1; }

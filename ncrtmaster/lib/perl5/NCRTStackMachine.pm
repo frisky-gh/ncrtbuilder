@@ -1,6 +1,12 @@
 package NCRTStackMachine;
 
 use strict;
+use Exporter 'import';
+
+our @EXPORT = (
+	'new_memory',
+	'evaluate_expr',
+);
 
 ####
 sub func_mean ($$@) {
@@ -115,6 +121,16 @@ sub evaluate_bracket ($\@) {
 			my $value = evaluate_rightvalue $memory, shift @args;
 			push @$stack, {type=>"num", value=>1};
 			$memory->{EXPORT}->{$name} = $value;
+			return;
+		}elsif( $func_name eq 'get' ){
+			my $name = evaluate_rightvalue $memory, shift @args;
+			push @$stack, {type=>"str", value=>$memory->{VALUES}->{$name}};
+			return;
+		}elsif( $func_name eq 'set' ){
+			my $name  = evaluate_rightvalue $memory, shift @args;
+			my $value = evaluate_rightvalue $memory, shift @args;
+			push @$stack, {type=>"num", value=>1};
+			$memory->{VALUES}->{$name} = $value;
 			return;
 		}elsif( $func_name eq 'min' ){
 			my $r;
@@ -300,13 +316,12 @@ sub new_memory () {
 	my $memory = {
 		'IMPORT' => {},
 		'EXPORT' => {},
+		'VALUES' => {},
 		'VAR' => {},
 		'TIMESERIES' => {},
 	};
 	return $memory;
 }
 
-*main::new_memory = \&new_memory;
-*main::evaluate_expr = \&evaluate_expr;
 1;
 

@@ -38,8 +38,8 @@ while( <$h> ){
 }
 close $h;
 
-#### append service info.
-my $f = "$WORKDIR/services";
+#### append measure info.
+my $f = "$WORKDIR/measures";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -47,7 +47,7 @@ print $h "io	agent	display_name=\"Block Device I/O\"\n";
 close $h;
 
 #### append conf info.
-my $f = "$WORKDIR/service2conf";
+my $f = "$WORKDIR/measure2conf";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -55,12 +55,12 @@ print $h "io	agent/io.conf\n";
 close $h;
 
 #### append service mapping
-my $f = "$WORKDIR/host2service";
+my $f = "$WORKDIR/host2service2measure";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 foreach my $i ( keys %targets ){
-	print $h "$i\tio\n";
+	print $h "$i\tio\tio\n";
 }
 close $h;
 

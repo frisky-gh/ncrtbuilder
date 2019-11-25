@@ -217,9 +217,17 @@
     - name: setup modules in ncrt master
       synchronize:
         checksum: yes
-        rsync_opts: [ "-OJ", "--chown=root:root" ]
+        rsync_opts: [ "-OJ", "--chown=root:root", "--exclude=/filters/" ]
         src: "{{TOOLHOME}}/ncrtmaster/"
         dest: "{{NCRTMASTERHOME}}/"
+      tags: [ common ]
+
+    - name: setup filters
+      synchronize:
+        checksum: yes
+        rsync_opts: [ "-OJ", "--chown=root:root" ]
+        src: "{{TOOLHOME}}/filters/"
+        dest: "{{NCRTMASTERHOME}}/filters/"
       tags: [ common ]
 
     - name: setup settings in ncrt master
