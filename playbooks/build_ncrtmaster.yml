@@ -38,6 +38,7 @@
         data: "{{ lookup('file','grafana.asc') }}"
         keyring: /etc/apt/trusted.gpg.d/grafana.gpg
       when: "ansible_os_family == 'Debian'"
+      no_log: True
       tags: [ commoninstall ]
 
     - name: install packages for grafana
@@ -52,6 +53,7 @@
         data: "{{ lookup('file','naemon.asc') }}"
         keyring: /etc/apt/trusted.gpg.d/naemon.gpg
       when: "ansible_os_family == 'Debian'"
+      no_log: True
       tags: [ commoninstall ]
 
     - name: add naemon repository

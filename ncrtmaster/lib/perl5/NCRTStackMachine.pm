@@ -6,6 +6,7 @@ use Exporter 'import';
 our @EXPORT = (
 	'new_memory',
 	'evaluate_expr',
+	'evaluate_rightvalue',
 );
 
 ####
@@ -318,7 +319,7 @@ sub new_memory () {
 		'EXPORT' => {},
 		'VALUES' => {},
 		'VAR' => {},
-		'TIMESERIES' => {},
+		'TIMESERIES' => undef,
 	};
 	return $memory;
 }

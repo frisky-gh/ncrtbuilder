@@ -757,8 +757,8 @@ open my $h, '<', $f or do {
 };
 while( <$h> ){
 	chomp;
-	my ($service, $conf) = split m"\s+";
-	push @{$measure2conf{$service}}, $conf;
+	my ($measure, $conf) = split m"\s+";
+	push @{$measure2conf{$measure}}, $conf;
 }
 close $h;
 
@@ -874,15 +874,15 @@ sub diff (\%\%) {
 	return %d;
 }
 
-my %vhostvservices;
 while( my ($measure, $measuretype) = each %measure2measuretype ){
 	last unless $plan{step7};
 	next unless $measuretype eq 'indirect';
 	my @confs = @{$measure2conf{$measure}};
 
+	my %vhostvservice2proxyhosts;
 	foreach my $conf ( @confs ){
-		my %vhostvservice2rules;
 		my $vhostvservice;
+		my %vhostvservice2rules;
 		my %option;
 		my $f = "$CONFDIR/$conf";
 		open my $h, '<', $f or do {
@@ -893,57 +893,56 @@ while( my ($measure, $measuretype) = each %measure2measuretype ){
 			next if m"^\s*(#|$)";
 			if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
 				$vhostvservice = "$1 $2";
-				$vhostvservices{$vhostvservice} = 1;
 				%option = ();
 			}elsif( m"^(\w+)=(\S*)$" ){
 				$option{$1} = $2;
 			}elsif( m"^(\S+)\s+(\S.*)$" ){
-				push @{$vhostvservice2rules{$vhostvservice}}, [$1, $2, {%option}];
+				push @{$vhostvservice2rules{$vhostvservice}}, [qr"$1", $2, {%option}];
 			}else{
 				die "$f:$.: illegal format, stopped";
 			}
 		}
 		close $h;
 
-		while( my ($host, $agenttype) = each %host2agenttype ){
-			foreach my $vhostvservice ( sort keys %vhostvservices ){
+		while( my ($proxyhost, $agenttype) = each %host2agenttype ){
+			foreach my $vhostvservice ( sort keys %vhostvservice2rules ){
 				my ($vhost, $vservice) = split m"\s+", $vhostvservice;
 				my $rules = $vhostvservice2rules{$vhostvservice};
-				my $f = "$WORKDIR/ncrtagent/$host/$conf.$vhost.$vservice";
-				open my $h, '>', $f or do {
-					die "$f: cannot open, stopped";
-				};
 				my %option;
+				my @settings;
 				foreach my $rule ( @$rules ){
-					my ($targethost, $item, $targetoption) = @$rule;
-					next unless $host eq $targethost;
-					my %d = diff %option, %$targetoption;
+					my ($proxyhost_re, $setting, $option) = @$rule;
+					next unless $proxyhost =~ $proxyhost_re;
+					my %d = diff %option, %$option;
 					while( my ($k, $v) = each %d ){
-						print $h "$k=$v\n";
+						push @settings, "$k=$v";
 						$option{$k} = $v;
 					}
-					print $h $item, "\n";
+					push @settings, $setting;
 				}
-				close $h;
-			}
-		}
-		foreach my $master ( @ncrtmasters ){
-			foreach my $vhostvservice ( sort keys %vhostvservices ){
-				my ($vhost, $vservice) = split m"\s+", $vhostvservice;
-				my $rules = $vhostvservice2rules{$vhostvservice};
-				my $f = "$WORKDIR/ncrtmaster/$master/$conf.$vhost.$vservice";
+				next unless @settings;
+				my $f = "$WORKDIR/ncrtagent/$proxyhost/$conf.$vhost.$vservice";
 				open my $h, '>', $f or do {
 					die "$f: cannot open, stopped";
 				};
-				my %marked;
-				foreach my $rule ( @$rules ){
-					my $host = $rule->[0];
-					next if $marked{$host};
-					print $h $host, "\n";
-					$marked{$host} = 1;
-				}
+				foreach( @settings ){ print $h $_, "\n"; }
 				close $h;
+				$vhostvservice2proxyhosts{$vhostvservice}->{$proxyhost} = 1;
 			}
+		}
+	}
+	foreach my $master ( @ncrtmasters ){
+		foreach my $vhostvservice ( sort keys %vhostvservice2proxyhosts ){
+			my $proxyhosts = $vhostvservice2proxyhosts{$vhostvservice};
+			my ($vhost, $vservice) = split m"\s+", $vhostvservice;
+			my $f = "$WORKDIR/ncrtmaster/$master/indirect/$measure.proxyhosts.$vhost.$vservice";
+			open my $h, '>', $f or do {
+				die "$f: cannot open, stopped";
+			};
+			foreach my $proxyhost ( sort keys %$proxyhosts ){
+				print $h $proxyhost, "\n";
+			}
+			close $h;
 		}
 	}
 }
@@ -992,7 +991,7 @@ sub generate_filter_settings ($\%\@) {
 
 		my $f;
 		if( $measuretype eq 'agent' ){
-			my $f = "$WORKDIR/ncrtagent/$host/$filtertype/$filtertype.$service";
+			my $f = "$WORKDIR/ncrtagent/$host/$filtertype/$filtertype.$host.$service";
 			open my $h, '>', $f or do {
 				die "$f: cannot open, stopped";
 			};

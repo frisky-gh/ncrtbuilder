@@ -1,6 +1,14 @@
 package NCRTTimeSeries;
 
 use strict;
+use Exporter 'import';
+
+our @EXPORT = (
+	'new_timeseries',
+	'load_timeseries',
+	'store_timeseries',
+	'add_timeseries',
+);
 
 sub timestamp ($) {
 	my ($sec, $min, $hour, $day, $mon, $year) = localtime shift;
@@ -160,10 +168,6 @@ sub new_timeseries () {
 #		if $longterm_jiffies > 0;
 #}
 
-*main::new_timeseries = \&new_timeseries;
-*main::load_timeseries = \&load_timeseries;
-*main::store_timeseries = \&store_timeseries;
-*main::add_timeseries = \&add_timeseries;
 
 1;
 

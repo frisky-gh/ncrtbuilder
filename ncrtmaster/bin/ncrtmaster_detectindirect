@@ -2,20 +2,31 @@
 
 use strict;
 
-$0 =~ m"^(.*)/";
-our $TOOLHOME = "$1/..";
-while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+our ($TOOLHOME, $PLUGINSDIR, $CONFDIR);
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = "$1/..";
+	while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+	$PLUGINSDIR = "$TOOLHOME/plugins";
+	$CONFDIR = "$TOOLHOME/conf";
+}
+use lib "$TOOLHOME/lib/perl5";
+use NCRTCommon;
+use NCRTStackMachine;
+use NCRTTimeSeries;
+
 our $BINDIR = "$TOOLHOME/bin";
 our $PLUGINSDIR = "$TOOLHOME/plugins";
+our $FILTERSDIR = "$TOOLHOME/filters";
 our $CONFDIR = "$TOOLHOME/conf";
 
 if( @ARGV < 3 ){
-	print "usage: % $0 SERVICE VHOST VSERVICE\n";
+	print "usage: % $0 MEASURE HOST SERVICE\n";
 	exit 3;
 }
-my $service = $ARGV[0];
-my $vhost = $ARGV[1];
-my $vservice = $ARGV[2];
+my $measure = $ARGV[0];
+my $host = $ARGV[1];
+my $service = $ARGV[2];
 
 # setup work directory
 our $WORKDIR;
@@ -26,136 +37,44 @@ else{
 }
 unless( -d $WORKDIR ){ mkdir $WORKDIR or die "$WORKDIR: cannot create, stopped"; }
 
+our @OUTPUTS;
+our $PLUGIN_HAS_FAILED;
+
+#### 1. measure plugin generates metrics.
+#### 2. metrics pass through some filters if required.
+#### 3. metrics are evaluated if contain expressions.
+#### 4. threshold setting generates thresholds.
+#### 5. thresholds pass through some filters if required.
+#### 6. thresholds are evaluated if contain expressions.
+#### 7. warnings / criticals are detected from metrics and thresholds.
+
 # accessor
-my $accessor = "$BINDIR/ncrtmaster_passthrough $service $vhost $vservice";
+my $accessor = "$BINDIR/ncrtmaster_passthrough";
 
-# metrics
-my %m;
-#
-my @w;
-my @c;
-my @r;
+# 1. accessor generates metrics.
+my %m1 = generate_metrics_from_accessor $measure, $host, $service, $accessor;
 
-# read from service's output
-my $f = "$PLUGINSDIR/ncrtmasterindirect_$service";
-open my $e, '-|', "$f $CONFDIR $WORKDIR \"$accessor\" $vhost $vservice" or do {
-	print "UNKNOWN $f: not found.\n";
-	exit 3;
-};
-while( <$e> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die "$_, stopped" unless m"^([-\w/\[\].:@\$%#\*]+)=(\S+)$";
-	my $k = $1;
-	my $v = $2;
-	if( $k eq 'output' ){ push @r, $v; }
-	else                { $m{$k} = $v; }
-}
-close $e;
+# 2. metrics pass through some filters if required.
+my %m2 = pass_through_filters $measure, $host, $service, "metricfilter", %m1;
 
-my $plugin_has_failed;
-my $plugin_rc = $? >> 8;
-if( $plugin_rc > 0 ){
-	$plugin_has_failed = 1;
-}
+# 3. metrics are evaluated if include expression.
+my %m3 = evaluate_values $measure, $host, $service, %m2;
 
-# thresholds
-my @wt;
-my @ct;
-# load thresholds
-my $f = "$CONFDIR/threshold/thresholds.$vhost.$vservice";
-open my $h, '<', $f or do {
-	print "UNKNOWN $f: not found.\n";
-	exit 3;
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die unless m"^(\S+)\s+(crit|warn)\s+\[\s*([-+]?\d+(?:\.\d+)?)\s*,\s*([-+]?\d+(?:\.\d+)?)\s*\]$";
-	my $itempattern = qr"^$1$";
-	my $severity = $2;
-	my $lower = $3;
-	my $upper = $4;
-	if    ( $severity eq 'crit' ){
-		push @ct, [ $itempattern, $lower, $upper ];
-	}elsif( $severity eq 'warn' ){
-		push @wt, [ $itempattern, $lower, $upper ];
-	}
-}
-close $h;
+# 4. threshold setting generates thresholds.
+my %t1 = generate_thresholds $measure, $host, $service, %m3;
 
-# threshold per metric
-my %wm;
-my %cm;
+# 5. thresholds pass through some filters if required.
+my %t2 = pass_through_filters $measure, $host, $service, "thresholdfilter", %t1;
 
-# select thretholds
-foreach my $k ( keys %m ){
-	foreach my $t ( @wt ){
-		my ($re, $lower, $upper) = @$t;
-		next unless $k =~ $re;
-		$wm{$k} = [$lower, $upper];
-	}
-	foreach my $t ( @ct ){
-		my ($re, $lower, $upper) = @$t;
-		next unless $k =~ $re;
-		$cm{$k} = [$lower, $upper];
-	}
-}
+# 6. thresholds are evaluated if contain expressions.
+my %t3 = evaluate_values $measure, $host, $service, %t2;
 
-#
-my @p;
-foreach my $k ( sort keys %m ){
-	my $v = $m{$k};
-	my $c;
-	my $critical_occurred;
-	my ($min, $max);
-	
-	next unless $v =~ m"^([-+]?\d+(?:\.\d+)?)(.*)$";
-	my $value = $1;
-	my $unit = $2;
-	if   ( $unit eq '%' ) { $min = '0.00'; $max = '100.00'; }
-	elsif( $unit eq 'MB' ){ $min = '0.00'; }
+# 7. warnings / criticals is detected from metrics and thresholds.
+my ($statuscode, $output, $perfdata) = generate_detection_results $measure, $host, $service, %t3;
 
-	my $key_text = $unit ? "$k\[$unit\]" : "$k";
+print "$output | $perfdata\n";
+exit $statuscode;
 
-	if( $cm{$k} ){
-		my ($lower, $upper) = @{$cm{$k}};
-		$c = "$lower:$upper";
-		if    ( $v < $lower ){
-			push @c, "$key_text:${value}(lower-crit-thr:$lower)";
-			$critical_occurred = 1;
-		}elsif( $v > $upper ){
-			push @c, "$key_text:${value}(upper-crit-thr:$upper)";
-			$critical_occurred = 1;
-		}
-	}
-	my $w;
-	if( $wm{$k} ){
-		my ($lower, $upper) = @{$wm{$k}};
-		$w = "$lower:$upper";
-		if    ( $critical_occurred ){
-			# ignore
-		}elsif( $v < $lower ){
-			push @w, "$key_text:${value}(lower-warn-thr:$lower)";
-		}elsif( $v > $upper ){
-			push @w, "$key_text:${value}(upper-warn-thr:$upper)";
-		}
-	}
-	my $p = "$k=$v;$w;$c;$min;$max";
-	push @p, $p;
-}
 
-#
-my $r = 'OK';
-my $rc = 0;
-if( $plugin_has_failed ){
-	$r = 'CRIT';
-	$rc = 2;
-}
-elsif( @c ){ $r = 'CRIT'; $rc = 2; }
-elsif( @w ){ $r = 'WARN';  $rc = 1; }
-
-print join(' / ', $r, @r, @c, @w), "| ", join(' ', @p), "\n";
-exit $rc;
 
 
