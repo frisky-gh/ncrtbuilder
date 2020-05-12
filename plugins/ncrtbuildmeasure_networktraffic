@@ -51,6 +51,7 @@ my $f = "$WORKDIR/measure2conf";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
+print $h "networktraffic	agent/networktraffic.conf\n";
 print $h "networktraffic	agent/networktraffic.ignores\n";
 close $h;
 
