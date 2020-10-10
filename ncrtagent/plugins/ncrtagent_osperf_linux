@@ -59,6 +59,7 @@ sub calc_delta ($$\%) {
 	my $now = time;
 	my $longterm_limit  = $now - $longterm_h * 60 * 60;
 	my $shortterm_limit = $now - 59;
+	my $allclear_limit   = $now - $longterm_h * 60 * 60 / 2;
 
 	# load history
 	if( open my $h, '<', $f ){
@@ -68,6 +69,12 @@ sub calc_delta ($$\%) {
 			push @history, \%v;
 		}
 		close $h;
+	}
+
+	# if last record in history is older than 1/2 of longterm_h,
+	# all records have expired.
+	if( @history and $history[-1]->{timestamp} < $allclear_limit ){
+		@history = ();
 	}
 
 	# search origin

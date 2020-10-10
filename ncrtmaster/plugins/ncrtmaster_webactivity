@@ -10,7 +10,7 @@ if( @ARGV < 5 ){
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
 our $MEASURE = $ARGV[2];
-our $VIRTUALHOSTNAME = $ARGV[3];
+our $VHOST = $ARGV[3];
 our $VSERVICE = $ARGV[4];
 
 ####
@@ -24,7 +24,7 @@ sub nB ($) {
 
 #### load service conf.
 my %rules;
-my $f = "$CONFDIR/agentless/webactivity.conf.$VIRTUALHOSTNAME";
+my $f = "$CONFDIR/agentless/webactivity.conf.$MEASURE.$VHOST";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };

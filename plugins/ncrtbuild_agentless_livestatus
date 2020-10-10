@@ -1,0 +1,97 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+#### load global conf.
+my %ncrtconf;
+my $f = "$CONFDIR/ncrtbuild.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\w+)=(.*)$";
+	$ncrtconf{$1} = $2;
+}
+close $h;
+
+#### load ncrt masters conf.
+my @ncrtmasters;
+my $f = "$CONFDIR/master.hosts";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	push @ncrtmasters, $_;
+}
+close $h;
+
+#### load detector conf.
+my $f = "$CONFDIR/agentless/livestatus.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+my $vhost;
+my %vhost2vservice2info;
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	if( m"^===\s+(\S+)\s+===$" ){
+		$vhost = $1;
+	}elsif( m"^
+		(\S+)
+		\s+
+		(\S+)
+		(\s+ ([-\w]+),([-\w]+))+
+		\S*
+	$"x ){
+		my ($vservice, $socket, @host_desc) = split m"\s+";
+		push @{$vhost2vservice2info{$vhost}->{$vservice}}, [$socket, @host_desc];
+	}else{
+		die "$f:$.: illegal format, stopped";
+	}
+}
+close $h;
+
+#### append measure info.
+my $f = "$WORKDIR/measures";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "livestatus	agentless\n";
+close $h;
+
+#### append conf info.
+my $f = "$WORKDIR/measure2conf";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "livestatus	agentless/livestatus.conf\n";
+close $h;
+
+#### append service mapping
+my $f = "$WORKDIR/host2service2measure";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($vhost, $vservice2info) = each %vhost2vservice2info ){
+	while( my ($vservice, $info) = each %$vservice2info ){
+		print $h "$vhost	$vservice	livestatus\n";
+	}
+}
+close $h;
+
+
+
+

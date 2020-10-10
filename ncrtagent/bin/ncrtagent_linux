@@ -1,0 +1,254 @@
+#!/usr/bin/perl
+
+our ($TOOLHOME, $PLUGINSDIR, $CONFDIR);
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = "$1/..";
+	while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+	$TOOLHOME =~ s{/$}{};
+	$PLUGINSDIR = "$TOOLHOME/plugins";
+	$CONFDIR = "$TOOLHOME/conf";
+}
+use lib "$TOOLHOME/lib/perl5";
+
+use English;
+use IO::Handle;
+use URI::Escape;
+use HTTP::Daemon;
+use HTTP::Status;
+use LWP::UserAgent;
+use IPC::Open2;
+use Template;
+use strict;
+
+our $NAME = 'ncrtagent_linux';
+our $LOGFILE  = '/var/log/naemon/ncrtagent.log';
+our $WORKDIR;
+
+####
+our $LOGFH = *STDERR;
+our $DEBUG = 0;
+
+sub debuglog ($;@) {
+	return unless $DEBUG;
+	my ($format, @args) = @_;
+	my ($sec,$min,$hour,$day,$mon,$year) = localtime time;
+	my $t = sprintf '%04d-%02d-%02d_%02d:%02d:%02d', $year+1900, $mon+1, $day, $hour, $min, $sec;
+	printf $LOGFH "$t $format\n", @args;
+}
+
+sub accesslog ($;@) {
+	my ($format, @args) = @_;
+	my ($sec,$min,$hour,$day,$mon,$year) = localtime time;
+	my $t = sprintf '%04d-%02d-%02d_%02d:%02d:%02d', $year+1900, $mon+1, $day, $hour, $min, $sec;
+	printf $LOGFH "$t $format\n", @args;
+}
+
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "host_service:".$var->{host_service} if defined $var->{host_service};
+	foreach my $k ( sort {$a cmp $b} keys %$var ){
+		next if $k eq 'host_service';
+                push @ltsv, "$k:".$var->{$k};
+	}
+	return join "\t", @ltsv;
+}
+
+sub ltsv2var ( $ ){
+	my ($ltsv) = @_;
+	my %var;
+	foreach my $kv ( split m"\t", $ltsv ){
+		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
+			next;
+		};
+		my $k = $1;
+		my $v = $2;
+		$var{$k} = $v;
+	}
+	return %var;
+}
+
+####
+sub setup_workdir () {
+	if( $ENV{'HOME'} ){ $WORKDIR = $ENV{'HOME'} . "/.ncrt"; }
+	else{
+        	my ($name, $pw, $uid, $gid, $quota, $comment, $gcos,
+		    $home, $shell, $expire ) = getpwuid $<;
+        	$WORKDIR = "$home/.ncrt";
+	}
+	unless( -d $WORKDIR ){
+		mkdir $WORKDIR or die "$WORKDIR: cannot create, stopped";
+ 	}
+}
+
+sub read_conf () {
+	my %conf = (
+		'listen_address' => '0.0.0.0',
+		'listen_port' => 46848,
+		'DEBUG' => 0,
+	);
+
+	my $conffile = "$CONFDIR/ncrtagent_linux.conf";
+	open my $h, '<', $conffile or do {
+		die "cannot open $conffile: $OS_ERROR, stopped";
+	};
+	while (<$h>) {
+		next if m"^\s*(#|$)";
+		die "$conffile:$.: illegal format, stopped" unless m"^(\w+)=(.*)$";
+		$conf{$1} = $2;
+	}
+	close $h or do {
+		die "close failed for $conffile: $OS_ERROR, stopped";
+	};
+	return \%conf;
+}
+
+sub read_command ($) {
+	my ($cmd) = @_;
+
+	#my $out, my $in;
+	my $pid = open2 my $out, my $in, $cmd;
+	close $in;
+
+	my @messages;
+	my %metrics;
+	while( <$out> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$_, stopped" unless m"^([-\w/\[\].:@\$%#\*]+)=(.*)$";
+		my $k = $1;
+		my $v = $2;
+		if( $k eq 'message' ){ push @messages, $v; }
+		elsif( $v =~ m"^([-+]?\d+(?:\.\d+)?)([%a-zA-Z]*)$" ){
+			$metrics{$k} = $v;
+		}
+	}
+	close $out;
+
+	waitpid $pid, 0;
+	my $plugin_rc = $? >> 8;
+	return undef, undef if $plugin_rc > 0;
+	return \%metrics, \@messages;
+}
+
+####
+sub action_measure ($$$$$) {
+	my ($conf, $conn, $measure, $host, $service) = @_;
+	my $cmd = "$PLUGINSDIR/ncrtagent_${measure}_linux $CONFDIR $WORKDIR $host $service";
+	my ($metrics, $messages) = read_command $cmd;
+
+	my $content;
+	foreach my $k ( sort keys %$metrics ){
+		my $v = $$metrics{$k};
+		$content .= "$k=$v\n";
+	}
+	foreach my $v ( @$messages ){
+		$content .= "message=$v\n";
+	}
+
+	my $res = HTTP::Response->new;
+	$res->code(200);
+	$res->header('Content-Type' => 'text/plain');
+	$res->content($content);
+	$conn->send_response($res);
+}
+
+
+####
+sub cmd_cron ($) {
+	my ($conf) = @_;
+}
+
+sub cmd_daemon ($) {
+	my ($conf) = @_;
+
+	if( open $LOGFH, '>>', $LOGFILE ){ $LOGFH->autoflush; }
+
+	if( $$conf{daemon_user} ne '' ){
+		my ($name, $pw, $uid, $gid, $quota, $comment, $gcos,
+		    $home, $shell) = getpwnam $$conf{daemon_user};
+		$( = $gid unless $( == $gid;
+		$) = $gid unless $) == $gid;
+		$< = $uid unless $< == $uid;
+		$> = $uid unless $> == $uid;
+		$ENV{HOME} = $home;
+	}
+	setup_workdir;
+
+
+	my $pid = fork;
+	if( $pid != 0 ){
+		my $f = "$WORKDIR/ncrtagent_linux.pid";
+		open my $h, '>', $f or die;
+		print $h "$pid\n";
+		close $h;
+		return;
+	}
+
+	$0 = $NAME;
+	my $d = HTTP::Daemon->new(
+		'ReuseAddr' => 1,
+		'LocalAddr' => $$conf{listen_address},
+		'LocalPort' => $$conf{listen_port}
+	) or do {
+		die sprintf 'cannot listen %s:%d: %s, stopped',
+			$$conf{listen_address}, $$conf{listen_port}, $OS_ERROR;
+	};
+
+	$SIG{'TERM'} = sub {
+		#$d->shutdown;
+		$d->close;
+	};
+	$SIG{'HUP'} = sub {
+		if( open $LOGFH, '>>', $LOGFILE ){ $LOGFH->autoflush; }
+		else{ $LOGFH = *STDERR; }
+	};
+	$SIG{'CHLD'} = 'IGNORE';
+
+	while (my $conn = $d->accept) {
+		my $req = $conn->get_request;
+		next unless $req;
+		my $method = $req->method;
+		my $path = uri_unescape $req->uri->path;
+		accesslog 'req: method=%s path=%s', $method, $path;
+		if( $path =~ m"/measure/([-\w]+)/([-\w]+)/([-\w]+)" ){
+			my $measure = $1;
+			my $host = $2;
+			my $service = $3;
+			my $pid = fork;
+			if( $pid == 0 ){
+				$d->close;
+				$SIG{'CHLD'} = 'DEFAULT';
+				action_measure $conf, $conn,
+					$measure, $host, $service;
+				exit 0;
+			}
+		}else{
+			$conn->send_error(RC_FORBIDDEN);
+		}
+		$conn->close;
+		undef $conn;
+	}
+}
+
+####
+my $conf = read_conf;
+$DEBUG = $conf->{DEBUG};
+
+
+####
+if    ( $ARGV[0] eq "daemon" ){
+	cmd_daemon $conf;
+	exit 0;
+}elsif( $ARGV[0] eq "cron" ){
+	setup_workdir;
+	cmd_cron $conf;
+	exit 0;
+}else{
+	print "usage: % $0 {daemon|cron}\n";
+	exit 0;
+}
+
+
+

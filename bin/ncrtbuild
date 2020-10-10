@@ -1,20 +1,27 @@
 #!/usr/bin/perl
 
+use Cwd 'abs_path';
+our $TOOLHOME;
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = abs_path "$1/..";
+	while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+	$TOOLHOME =~ s{/$}{};
+}
+use lib "$TOOLHOME/lib/perl5";
+
 use strict;
 use Getopt::Long;
-use Cwd 'abs_path';
 use URI::Escape;
 use Socket;
 
-$0 =~ m"^(.*)/";
-our $TOOLHOME = abs_path("$1/..");
-our $PLUGINSDIR = "$TOOLHOME/plugins";
-our $PLAYBOOKSDIR = "$TOOLHOME/playbooks";
-our $CONFDIR = "$TOOLHOME/conf";
-our $SRCDIR = "$TOOLHOME/src";
 our $TMPDIR = "/tmp";
 our $WORKDIR = "$TMPDIR/ncrt_work.$$";
 
+our $PLUGINSDIR = "$TOOLHOME/plugins";
+our $CONFDIR = "$TOOLHOME/conf";
+our $PLAYBOOKSDIR = "$TOOLHOME/playbooks";
+our $SRCDIR = "$TOOLHOME/src";
 our $AGENTCONFDIR = "$TOOLHOME/ncrtagent/conf";
 our $MASTERCONFDIR = "$TOOLHOME/ncrtmaster/conf";
  
@@ -332,6 +339,8 @@ foreach my $e ( sort readdir $h ){
 			my $importhost = $1;
 			my $importservice = $2;
 
+			# TODO: check for the existance of importhost, importservice
+
 			push @{$vhost2vservice2importspecs{$vhost}->{$vservice}}, [$importhost, $importservice];
 		}else{
 			die "$f:$.: illegal format, stopped";
@@ -341,18 +350,22 @@ foreach my $e ( sort readdir $h ){
 }
 close $h;
 
-#### find all plugins
+#### find all build plugins
 my @agenttype_plugins;
-my @measure_plugins;
+my @agent_plugins;
+my @agentless_plugins;
+my @indirect_plugins;
 my @contact_plugins;
 opendir my $d, $PLUGINSDIR or do {
 	die "$PLUGINSDIR: cannot open, stopped";
 };
 while( my $e = readdir $d ){
-	next unless $e =~ m"^ncrtbuild(?:(measure)|(agenttype)|(contact))_";
-	push @measure_plugins,  $e if $1;
-	push @agenttype_plugins, $e if $2;
-	push @contact_plugins,  $e if $3;
+	next unless $e =~ m"^ncrtbuild_(?:(agent)|(agentless)|(indirect)|(agenttype)|(contact))_";
+	push @agent_plugins,     $e if $1;
+	push @agentless_plugins, $e if $2;
+	push @indirect_plugins,  $e if $3;
+	push @agenttype_plugins, $e if $4;
+	push @contact_plugins,   $e if $5;
 }
 closedir $d;
 
@@ -547,7 +560,19 @@ if( $plan{step3} ){
 
 if( $plan{step4} ){
 	#### run measurement plugins
-	foreach my $e ( sort @measure_plugins ){
+	foreach my $e ( sort @agent_plugins ){
+		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
+		my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
+		print "r=", $r, "\n";
+		die unless $r == 0;
+	}
+	foreach my $e ( sort @agentless_plugins ){
+		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
+		my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
+		print "r=", $r, "\n";
+		die unless $r == 0;
+	}
+	foreach my $e ( sort @indirect_plugins ){
 		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
 		my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
 		print "r=", $r, "\n";
@@ -781,79 +806,89 @@ sub generate_shortnamelist ($) {
 }
 
 #### generate confs for which service type is agent
+sub generate_agentconf_for_agent ($$$) {
+	my ($conf, $measure, $host2agenttype) = @_;
+	my @rules;
+	my $f = "$CONFDIR/$conf";
+	open my $h, '<', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		m"^(\S+)\s+(.*)" or
+			die "$f:$.: illegal format, stopped";
+		push @rules, [qr"$1", $2];
+	}
+	close $h;
+
+	while( my ($host, $agenttype) = each %$host2agenttype ){
+		my $f = "$WORKDIR/ncrtagent/$host/$conf.$measure.$host";
+		open my $h, '>', $f or do {
+			die "$f: cannot open, stopped";
+		};
+		foreach my $rule ( @rules ){
+			next unless $host =~ $rule->[0];
+			print $h $rule->[1], "\n";
+		}
+		close $h;
+		system "cp $f $WORKDIR/ncrtagent/$host/$conf";
+	}
+}
+
 while( my ($measure, $measuretype) = each %measure2measuretype ){
 	last unless $plan{step7};
 	next unless $measuretype eq 'agent';
 	my @confs = @{$measure2conf{$measure} // []};
 
 	foreach my $conf ( @confs ){
-		my @rules;
-		my $f = "$CONFDIR/$conf";
-		open my $h, '<', $f or do {
-			die "$f: cannot open, stopped";
-		};
-		while( <$h> ){
-			chomp;
-			next if m"^\s*(#|$)";
-			m"^(\S+)\s+(.*)" or
-				die "$f:$.: illegal format, stopped";
-			push @rules, [qr"$1", $2];
-		}
-		close $h;
+		generate_agentconf_for_agent $conf, $measure, \%host2agenttype;
+	}
+}
 
-		while( my ($host, $agenttype) = each %host2agenttype ){
-			my $f = "$WORKDIR/ncrtagent/$host/$conf";
+#### generate confs for which service type is agentless
+sub generate_masterconf_for_agentless ($$@) {
+	my ($measure, $conf, @ncrtmasters) = @_;
+	my %vhost2rules;
+	my $vhost;
+	my $f = "$CONFDIR/$conf";
+	open my $h, '<', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		if( m"^===\s+(\S+)\s+===$" ){
+			$vhost = $1;
+		}elsif( m"^(\S+)" ){
+			push @{$vhost2rules{$vhost}}, $_;
+		}else{
+			die "$f:$.: illegal format, stopped";
+		}
+	}
+	close $h;
+
+	foreach my $master ( @ncrtmasters ){
+		while( my ($vhost, $rules) = each %vhost2rules ){
+			my $f = "$WORKDIR/ncrtmaster/$master/$conf.$measure.$vhost";
 			open my $h, '>', $f or do {
 				die "$f: cannot open, stopped";
 			};
-			foreach my $rule ( @rules ){
-				next unless $host =~ $rule->[0];
-				print $h $rule->[1], "\n";
+			foreach my $rule ( @$rules ){
+				print $h $rule, "\n";
 			}
 			close $h;
 		}
 	}
 }
 
-#### generate confs for which service type is agentless
-my %vhosts;
-while( my ($measure, $measuretype) = each %measure2measuretype ){
-	last unless $plan{step7};
-	next unless $measuretype eq 'agentless';
-	my @confs = @{$measure2conf{$measure}};
+if( $plan{step7} ){
+	while( my ($measure, $measuretype) = each %measure2measuretype ){
+		next unless $measuretype eq 'agentless';
+		my @confs = @{$measure2conf{$measure}};
 
-	foreach my $conf ( @confs ){
-		my %vhost2rules;
-		my $vhost;
-		my $f = "$CONFDIR/$conf";
-		open my $h, '<', $f or do {
-			die "$f: cannot open, stopped";
-		};
-		while( <$h> ){
-			chomp;
-			next if m"^\s*(#|$)";
-			if( m"^===\s+(\S+)\s+===$" ){
-				$vhost = $1;
-				$vhosts{$vhost} = 1;
-			}elsif( m"^(\S+)" ){
-				push @{$vhost2rules{$vhost}}, $_;
-			}else{
-				die "$f:$.: illegal format, stopped";
-			}
-		}
-		close $h;
-
-		foreach my $master ( @ncrtmasters ){
-			while( my ($vhost, $rules) = each %vhost2rules ){
-				my $f = "$WORKDIR/ncrtmaster/$master/$conf.$vhost";
-				open my $h, '>', $f or do {
-					die "$f: cannot open, stopped";
-				};
-				foreach my $rule ( @$rules ){
-					print $h $rule, "\n";
-				}
-				close $h;
-			}
+		foreach my $conf ( @confs ){
+			generate_masterconf_for_agentless $measure, $conf, @ncrtmasters;
 		}
 	}
 }
@@ -874,68 +909,67 @@ sub diff (\%\%) {
 	return %d;
 }
 
-while( my ($measure, $measuretype) = each %measure2measuretype ){
-	last unless $plan{step7};
-	next unless $measuretype eq 'indirect';
-	my @confs = @{$measure2conf{$measure}};
-
-	my %vhostvservice2proxyhosts;
-	foreach my $conf ( @confs ){
-		my $vhostvservice;
-		my %vhostvservice2rules;
-		my %option;
-		my $f = "$CONFDIR/$conf";
-		open my $h, '<', $f or do {
-			die "$f: cannot open, stopped";
-		};
-		while( <$h> ){
-			chomp;
-			next if m"^\s*(#|$)";
-			if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
-				$vhostvservice = "$1 $2";
-				%option = ();
-			}elsif( m"^(\w+)=(\S*)$" ){
-				$option{$1} = $2;
-			}elsif( m"^(\S+)\s+(\S.*)$" ){
-				push @{$vhostvservice2rules{$vhostvservice}}, [qr"$1", $2, {%option}];
-			}else{
-				die "$f:$.: illegal format, stopped";
-			}
-		}
-		close $h;
-
-		while( my ($proxyhost, $agenttype) = each %host2agenttype ){
-			foreach my $vhostvservice ( sort keys %vhostvservice2rules ){
-				my ($vhost, $vservice) = split m"\s+", $vhostvservice;
-				my $rules = $vhostvservice2rules{$vhostvservice};
-				my %option;
-				my @settings;
-				foreach my $rule ( @$rules ){
-					my ($proxyhost_re, $setting, $option) = @$rule;
-					next unless $proxyhost =~ $proxyhost_re;
-					my %d = diff %option, %$option;
-					while( my ($k, $v) = each %d ){
-						push @settings, "$k=$v";
-						$option{$k} = $v;
-					}
-					push @settings, $setting;
-				}
-				next unless @settings;
-				my $f = "$WORKDIR/ncrtagent/$proxyhost/$conf.$vhost.$vservice";
-				open my $h, '>', $f or do {
-					die "$f: cannot open, stopped";
-				};
-				foreach( @settings ){ print $h $_, "\n"; }
-				close $h;
-				$vhostvservice2proxyhosts{$vhostvservice}->{$proxyhost} = 1;
-			}
+sub generate_agentconf_for_indirect ($$$) {
+	my ($conf, $host2agenttype, $vhostvservice2proxyhosts) = @_;
+	my $vhostvservice;
+	my %vhostvservice2rules;
+	my %option;
+	my $f = "$CONFDIR/$conf";
+	open my $h, '<', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+			$vhostvservice = "$1 $2";
+			%option = ();
+		}elsif( m"^(\w+)=(\S*)$" ){
+			$option{$1} = $2;
+		}elsif( m"^(\S+)\s+(\S.*)$" ){
+			push @{$vhostvservice2rules{$vhostvservice}},
+				[qr"$1", $2, {%option}];
+		}else{
+			die "$f:$.: illegal format, stopped";
 		}
 	}
-	foreach my $master ( @ncrtmasters ){
-		foreach my $vhostvservice ( sort keys %vhostvservice2proxyhosts ){
-			my $proxyhosts = $vhostvservice2proxyhosts{$vhostvservice};
+	close $h;
+
+	while( my ($proxyhost, $agenttype) = each %$host2agenttype ){
+		foreach my $vhostvservice ( sort keys %vhostvservice2rules ){
 			my ($vhost, $vservice) = split m"\s+", $vhostvservice;
-			my $f = "$WORKDIR/ncrtmaster/$master/indirect/$measure.proxyhosts.$vhost.$vservice";
+			my $rules = $vhostvservice2rules{$vhostvservice};
+			my %option;
+			my @settings;
+			foreach my $rule ( @$rules ){
+				my ($proxyhost_re, $setting, $option) = @$rule;
+				next unless $proxyhost =~ $proxyhost_re;
+				my %d = diff %option, %$option;
+				while( my ($k, $v) = each %d ){
+					push @settings, "$k=$v";
+					$option{$k} = $v;
+				}
+				push @settings, $setting;
+			}
+			next unless @settings;
+			my $f = "$WORKDIR/ncrtagent/$proxyhost/$conf.$vhost.$vservice";
+			open my $h, '>', $f or do {
+				die "$f: cannot open, stopped";
+			};
+			foreach( @settings ){ print $h $_, "\n"; }
+			close $h;
+			$$vhostvservice2proxyhosts{$vhostvservice}->{$proxyhost} = 1;
+		}
+	}
+}
+
+sub generate_masterconf_for_indirect ($$@) {
+	my ($measure, $vhostvservice2proxyhosts, @ncrtmasters) = @_;
+	foreach my $master ( @ncrtmasters ){
+		foreach my $vhostvservice ( sort keys %$vhostvservice2proxyhosts ){
+			my $proxyhosts = $$vhostvservice2proxyhosts{$vhostvservice};
+			my ($vhost, $vservice) = split m"\s+", $vhostvservice;
+			my $f = "$WORKDIR/ncrtmaster/$master/indirect/proxyhosts.$measure.$vhost.$vservice";
 			open my $h, '>', $f or do {
 				die "$f: cannot open, stopped";
 			};
@@ -944,6 +978,19 @@ while( my ($measure, $measuretype) = each %measure2measuretype ){
 			}
 			close $h;
 		}
+	}
+}
+
+if( $plan{step7} ){
+	while( my ($measure, $measuretype) = each %measure2measuretype ){
+		next unless $measuretype eq 'indirect';
+		my @confs = @{$measure2conf{$measure}};
+
+		my %vhostvservice2proxyhosts;
+		foreach my $conf ( @confs ){
+			generate_agentconf_for_indirect $conf, \%host2agenttype, \%vhostvservice2proxyhosts;
+		}
+		generate_masterconf_for_indirect $measure, \%vhostvservice2proxyhosts, @ncrtmasters;
 	}
 }
 
@@ -1002,22 +1049,77 @@ sub generate_filter_settings ($\%\@) {
 			}
 			close $h;
 			unlink $f unless -s $f;
-		}elsif( $measuretype eq 'agentless' || $measuretype eq 'indirect' || $measuretype eq 'metricmerge' ){
-			foreach my $master ( @ncrtmasters ){
-				my $f = "$WORKDIR/ncrtmaster/$master/$filtertype/$filtertype.$host.$service";
-				open my $h, '>', $f or do {
-					die "$f: cannot open, stopped";
-				};
-				foreach my $rule ( @rules ){
-					next unless $host =~ $rule->[0];
-					next unless $service =~ $rule->[1];
-					print $h $rule->[2], "\n";
-				}
-				close $h;
-				unlink $f unless -s $f;
+		}
+
+		foreach my $master ( @ncrtmasters ){
+			my $f = "$WORKDIR/ncrtmaster/$master/$filtertype/$filtertype.$host.$service";
+			open my $h, '>', $f or do {
+				die "$f: cannot open, stopped";
+			};
+			foreach my $rule ( @rules ){
+				next unless $host =~ $rule->[0];
+				next unless $service =~ $rule->[1];
+				print $h $rule->[2], "\n";
 			}
-		}else{
-			die "$measuretype, stopped";
+			close $h;
+			unlink $f unless -s $f;
+		}
+	}
+}
+
+sub generate_masterconf_for_filter ($$$@) {
+	my ($filtertype, $measure2measuretype, $host_service_measure_opts, @masters) = @_;
+
+	##
+	my $d = "$CONFDIR/$filtertype";
+	opendir my $h, $d or do {
+		die "$d: cannot open, stopped";
+	};
+	my @rules;
+	foreach my $e ( sort readdir $h ){
+		next unless $e =~ m"^\w.*\.filterrules$";
+		my $f = "$d/$e";
+		open my $i, "<", $f or do {
+			die "$f: cannot open, stopped";
+		};
+		my $vhost_re;
+		my $vservice_re;
+		while( <$i> ){
+			chomp;
+			next if m"^\s*(#|$)";
+			if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+				$vhost_re = qr"$1";
+				$vservice_re = qr"$2";
+			}elsif( m"^filter\s+(\S+)" ){
+				my $filter = $1;
+
+				# TODO: check filter path
+
+				push @rules, [$vhost_re, $vservice_re, $filter];
+			}else{
+				die "$f:$.: illegal format, stopped";
+			}
+		}
+		close $i;
+	}
+	closedir $h;
+
+	foreach my $i ( @$host_service_measure_opts ){
+		my ($host, $service, $measure, $opts) = @$i;
+		my $measuretype = $$measure2measuretype{$measure};
+
+		foreach my $master ( @ncrtmasters ){
+			my $f = "$WORKDIR/ncrtmaster/$master/$filtertype/$filtertype.$measure.$host.$service";
+			open my $h, '>', $f or do {
+				die "$f: cannot open, stopped";
+			};
+			foreach my $rule ( @rules ){
+				next unless $host =~ $rule->[0];
+				next unless $service =~ $rule->[1];
+				print $h $rule->[2], "\n";
+			}
+			close $h;
+			unlink $f unless -s $f;
 		}
 	}
 }
@@ -1033,11 +1135,74 @@ if( $plan{step7} ){
 		"thresholdfilter",
 		%measure2measuretype,
 		@host_service_measure_opts;
+
+	generate_masterconf_for_filter 
+		"metricfilter",
+		\%measure2measuretype,
+		\@host_service_measure_opts;
+
+	generate_masterconf_for_filter 
+		"thresholdfilter",
+		\%measure2measuretype,
+		\@host_service_measure_opts;
 }
 
 #### generate thresholds settings
+sub generate_masterconf_for_threshold ($$@) {
+	my ($measure2measuretype, $host_service_measure_opts, @masters) = @_;
+	my $f = "$CONFDIR/threshold";
+	opendir my $h, $f or do {
+		die "$f: cannot open, stopped";
+	};
+	my @rules;
+	foreach my $e ( sort readdir $h ){
+		next unless $e =~ m"^\w.*\.thresholds$";
+		my $vhost_re;
+		my $vservice_re;
+		my $g = "$f/$e";
+		open my $i, "<", $g or do {
+			die "$f: cannot open, stopped";
+		};
+		while( <$i> ){
+			chomp;
+			next if m"^\s*(#|$)";
+			if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+				$vhost_re = qr"$1";
+				$vservice_re = qr"$2";
+			}elsif( m"^\S+" ){
+				push @rules, [$vhost_re, $vservice_re, $_];
+			}else{
+				die "$g:$.: illegal format, stopped";
+			}
+		}
+		close $i;
+	}
+	closedir $h;
+
+	foreach my $i ( @$host_service_measure_opts ){
+		my ($host, $service, $measure, $opts) = @$i;
+		my $measuretype = $$measure2measuretype{$measure};
+
+		my $f;
+		foreach my $master ( @ncrtmasters ){
+			my $f = "$WORKDIR/ncrtmaster/$master/threshold/thresholds.$measure.$host.$service";
+			open my $h, '>', $f or do {
+				die "$f: cannot open, stopped";
+			};
+			foreach my $rule ( @rules ){
+				next unless $host =~ $rule->[0];
+				next unless $service =~ $rule->[1];
+				print $h $rule->[2], "\n";
+			}
+			close $h;
+		}
+	}
+}
+
 my %host2service2metricfilters;
 if( $plan{step7} ){
+	generate_masterconf_for_threshold \%measure2measuretype, \@host_service_measure_opts, @ncrtmasters;
+
 	##
 	my $f = "$CONFDIR/threshold";
 	opendir my $h, $f or do {
@@ -1104,8 +1269,40 @@ if( $plan{step7} ){
 	}
 }
 
+#### agent conf
+if( $plan{step7} ){
+	my $f = "$WORKDIR/hosts";
+	open my $h, "<", $f or do {
+		die "$f: cannot open, stopped";
+	};
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		my ($host, $agenttype, @param) = split m"\s+";
+		my $g = "$WORKDIR/ncrtagent/$host/ncrtagent_$agenttype.conf";
+		open my $i, ">", $g or do {
+			die "$g: cannot open, stopped";
+		};
+		foreach my $p ( @param ){
+			print $i "$p\n";
+		}
+		close $i;
+	}
+	close $h;
+}
+
+#### hosts conf
+if( $plan{step7} ){
+	my $f = "$WORKDIR/hosts";
+	foreach my $master ( @ncrtmasters ){
+		my $g = "$WORKDIR/ncrtmaster/$master/hosts";
+		system "cp $f $g";
+	}
+}
+
 #exit 0;
 
+####
 if( $plan{step7} ){
 
 	#### write template settings
@@ -1142,42 +1339,42 @@ if( $plan{step7} ){
 		if( $measuretype eq 'agent' ){
 			print $h
 			"define service {\n",
-			"	name			ncrtagent-$measure\n",
-			"	check_command		ncrtagent_detect\n",
-			"	_measure		$measure\n",
-			"	use			ncrt-generic-service\n",
+			"	name		ncrtdetector-$measure\n",
+			"	check_command	ncrtmaster_detect_by_targetagent\n",
+			"	_measure	$measure\n",
+			"	use		ncrt-generic-service\n",
 			@settings,
-			"	register		0\n",
+			"	register	0\n",
 			"}\n";
 		}elsif( $measuretype eq 'agentless' ){
 			print $h
 			"define service {\n",
-			"	name			ncrtagentless-$measure\n",
-			"	check_command		ncrtmaster_detect\n",
-			"	_measure		$measure\n",
-			"	use			ncrt-generic-service\n",
+			"	name		ncrtdetector-$measure\n",
+			"	check_command	ncrtmaster_detect\n",
+			"	_measure	$measure\n",
+			"	use		ncrt-generic-service\n",
 			@settings,
-			"	register		0\n",
+			"	register	0\n",
 			"}\n";
 		}elsif( $measuretype eq 'indirect' ){
 			print $h
 			"define service {\n",
-			"	name			ncrtindirect-$measure\n",
-			"	check_command		ncrtmaster_detectindirect\n",
-			"	_measure		$measure\n",
-			"	use			ncrt-generic-service\n",
+			"	name		ncrtdetector-$measure\n",
+			"	check_command	ncrtmaster_detect_by_proxyagents\n",
+			"	_measure	$measure\n",
+			"	use		ncrt-generic-service\n",
 			@settings,
-			"	register		0\n",
+			"	register	0\n",
 			"}\n";
 		}elsif( $measuretype eq 'metricmerge' ){
 			print $h
 			"define service {\n",
-			"	name			ncrtmetricmerge-$measure\n",
-			"	check_command		ncrtmaster_detectmetricmerge\n",
-			"	_measure		$measure\n",
-			"	use			ncrt-generic-service\n",
+			"	name		ncrtdetector-$measure\n",
+			"	check_command	ncrtmaster_detectmetricmerge\n",
+			"	_measure	$measure\n",
+			"	use		ncrt-generic-service\n",
 			@settings,
-			"	register		0\n",
+			"	register	0\n",
 			"}\n";
 		}else{
 			die;
@@ -1218,7 +1415,7 @@ if( $plan{step7} ){
 	};
 	foreach my $host_service_measure_opts ( @host_service_measure_opts ){
 		my ($host, $service, $measure, $hs_opts) = @$host_service_measure_opts;
-		my $agenttype = $host2agenttype{$host} // 'virtual';
+		my $agenttype = $host2agenttype{$host};
 		my $measuretype = $measure2measuretype{$measure};
 		my $s_opt = $measure2opts{$measure};
 		my %p = ( 'hostname' => $host, 'agenttype' => $agenttype );
@@ -1229,6 +1426,11 @@ if( $plan{step7} ){
 		my $contacts = generate_shortnamelist $host2service2contact{$host}->{$service};
 		my $_urlencoded = uri_escape_utf8($service);
 		$contacts = "nobody" if $contacts eq "";
+		if    ( $measuretype eq "master" ){
+			$agenttype = 'virtual';
+		}elsif( $measuretype eq "indirect" ){
+			$agenttype = 'virtual';
+		}
 		####
 		if( $measuretype eq 'metricmerge' ){
 			my $importmacro = expand_importspec @{$vhost2vservice2importspecs{$host}->{$service}};
@@ -1237,7 +1439,7 @@ if( $plan{step7} ){
 			"define service {\n",
 			"	host_name		$host\n",
 			"	service_description	$service\n",
-			"	use			ncrt$measuretype-$measure\n",
+			"	use			ncrtdetector-$measure\n",
 			"	contacts		$contacts\n",
 			"	_urlencoded		$_urlencoded\n",
 			"	check_command		ncrtmaster_detectmetricmerge!$importmacro\n",
@@ -1248,7 +1450,7 @@ if( $plan{step7} ){
 			"define service {\n",
 			"	host_name		$host\n",
 			"	service_description	$service\n",
-			"	use			ncrt$measuretype-$measure\n",
+			"	use			ncrtdetector-$measure\n",
 			"	contacts		$contacts\n",
 			"	_urlencoded		$_urlencoded\n",
 			@settings,
@@ -1397,8 +1599,9 @@ close $h;
 my $tags = 'common';
 unless( $quick ){
 	$tags .= ',commoninstall';
-	if   ( lc($AGENTPACKAGE) eq 'nrpe' )   { $tags .= ',nrpe'; }
-	elsif( lc($AGENTPACKAGE) eq 'nrpe-ng' ){ $tags .= ',nrpe-ng'; }
+	if   ( lc($AGENTPACKAGE) eq 'nrpe' )     { $tags .= ',nrpe'; }
+	elsif( lc($AGENTPACKAGE) eq 'nrpe-ng' )  { $tags .= ',nrpe-ng'; }
+	elsif( lc($AGENTPACKAGE) eq 'ncrtagent' ){}
 	else{ die "AGENTPACKAGE: invalid package, stopped"; }
 	if   ( lc($NRPETLS) eq 'yes' ){ $tags .= ',nrpetls'; }
 	elsif( lc($NRPETLS) eq 'no' ) {}

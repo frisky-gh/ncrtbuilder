@@ -1,0 +1,98 @@
+#!/usr/bin/perl
+
+use strict;
+use Socket;
+
+if( @ARGV < 5 ){
+        print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
+        exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $MEASURE = $ARGV[2];
+our $VHOST = $ARGV[3];
+our $VSERVICE = $ARGV[4];
+
+####
+sub ns ($) {
+	return sprintf "%.2fs", $_[0];
+}
+
+sub nB ($) {
+	return sprintf "%dB", $_[0];
+}
+
+#### load service conf.
+my %vservice2info;
+my $f = "$CONFDIR/agentless/livestatus.conf.$MEASURE.$VHOST";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*($|#)";
+	die "$f:$.: illegal format, stopped" unless m"^
+		(\S+)
+		\s+
+		(\S+)
+		(\s+ ([-\w]+),([-\w]+))+
+		\S*
+	$"x;
+	my ($vservice, $socket, @host_desc) = split m"\s+";
+	push @{$vservice2info{$vservice}}, [$socket, @host_desc];
+}
+close $h;
+
+####
+my $info = $vservice2info{$VSERVICE};
+unless( defined $info ){
+	print "livestatus[$VSERVICE]-error=3\n";
+	exit 1;
+}
+
+my %metrics;
+foreach my $i ( @$info ){
+	my ($socket, @host_desc) = @$i;
+	unless( -S $socket ){
+		print "livestatus[$VSERVICE]-error=2\n";
+		next;
+	}
+
+	foreach my $host_desc ( @host_desc ){
+		my ($host, $desc) = split m",", $host_desc;
+
+		socket my $h, PF_UNIX, SOCK_STREAM, 0 or die "socket: $!, stopped";
+		connect $h, sockaddr_un($socket)      or die "connect: $!, stopped";
+		$h->autoflush(1);
+		print $h "GET services\n";
+		print $h "Columns: perf_data\n";
+		print $h "Filter: host_name = $host\n";
+		print $h "Filter: description = $desc\n";
+		print $h "\n";
+		shutdown $h, 1;
+
+		while( <$h> ){
+			chomp;
+			foreach my $p ( split m"\s+" ){
+				next unless $p =~ m"^([^=]+)=(\d[^;]+)";
+				my $k = $1;
+				my $v = $2;
+				$metrics{$k} = $v;
+			}
+		}
+		close $h;
+	}
+}
+
+foreach my $k ( sort keys %metrics ){
+	my $v = $metrics{$k};
+	print "$k=$v\n";
+}
+
+exit 0;
+
+#echo -e "GET services\nColumns: host_name description plugin_output perf_data\nFilter: host_name = mppfstmg01oc" | unixcat /var/cache/naemon/live
+
+exit 0;
+

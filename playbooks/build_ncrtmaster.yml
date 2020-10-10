@@ -7,9 +7,11 @@
       Ubuntu: "deb http://labs.consol.de/repo/stable/ubuntu {{ansible_distribution_release}} main"
 
   tasks:
-    - include_vars: "{{WORKDIR}}/vars.yml"
+    - name: include variables
+      include_vars: "{{WORKDIR}}/vars.yml"
       tags: [ common ]
-    - include: "{{TOOLHOME}}/conf/ncrtmasters_playbook.yml"
+    - name: include customize tasks
+      include: "{{TOOLHOME}}/conf/ncrtmasters_playbook.yml"
       tags: [ common ]
 
     #### for Debian / Ubuntu

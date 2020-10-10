@@ -214,6 +214,7 @@ sub evaluate_values ($$$%) {
 
 	foreach my $k ( sort keys %values ){
 		my $v = $values{$k};
+		next if $v =~ m"^\s*$";
 		next if $v =~ m"^([-+]?\d+(?:\.\d+)?)([%a-zA-Z]*)$";
 
 		# timeseries initialize

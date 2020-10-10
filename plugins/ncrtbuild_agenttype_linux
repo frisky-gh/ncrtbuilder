@@ -26,6 +26,10 @@ close $h;
 
 #### load linux conf.
 my %targets;
+my %default = (
+	listen_address => "0.0.0.0",
+	listen_port => 46848,
+);
 my $f = "$CONFDIR/agenttype_linux.hosts";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
@@ -33,8 +37,19 @@ open my $h, '<', $f or do {
 while( <$h> ){
 	chomp;
 	next if m"^\s*(#|$)";
-	die unless m"^([-.\w]+)$";
-	$targets{$1} = 1;
+	die unless m"^(\*|[-.\w]+)((\s+\w+=\S*)*)$";
+	my $host = $1;
+	my %param;
+	foreach my $kv ( split m"\s+", $2 ){
+		next unless $kv =~ m"^(\w+)=(.*)$";
+		$param{$1} = $2;
+	}
+
+	if( $host eq "*" ){
+		%default = %param;
+	}else{
+		$targets{$host} = { %default, %param };
+	}
 }
 close $h;
 
@@ -44,7 +59,11 @@ open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 while( my ($k, $v) = each %targets ){
-	print $h "$k	linux\n";
+	my @param;
+	while( my ($k, $v) = each %$v ){
+		push @param, "$k=$v";
+	}
+	print $h "$k	linux	", join("\t", @param), "\n";
 }
 close $h;
 
@@ -56,4 +75,5 @@ open my $h, '>>', $f or do {
 print $h "linux	display_name=Linux:%hostname% address=%hostname%\n";
 close $h;
 
+#### generate ncrtagent.conf
 

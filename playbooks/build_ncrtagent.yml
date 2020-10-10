@@ -1,6 +1,8 @@
 ---
 
 - hosts: all
+  become: yes
+  remote_user: opc
   vars:
     nrpeconfdir:
       Debian: /etc/nagios/nrpe.d
@@ -10,9 +12,11 @@
       RedHat: nrpe
 
   tasks:
-    - include_vars: "{{WORKDIR}}/vars.yml"
+    - name: include variables
+      include_vars: "{{WORKDIR}}/vars.yml"
       tags: [ common ]
-    - include: "{{TOOLHOME}}/conf/ncrtagents_playbook.yml"
+    - name: include customize tasks
+      include_tasks: "{{TOOLHOME}}/conf/ncrtagents_playbook.yml"
       tags: [ common ]
 
     #### for Debian / Ubuntu
@@ -43,6 +47,9 @@
       yum:
         name:
           - epel-release
+          - perl-HTTP-Daemon
+          - perl-LWP-Protocol-https
+          - perl-Template-Toolkit
       when: "ansible_os_family == 'RedHat'"
       tags: [ commoninstall ]
 
@@ -147,6 +154,24 @@
       notify: "restart {{AGENTPACKAGE}}"
       tags: [ common ]
 
+    - name: setup ncrtagent_linux
+      file:
+        src:  "{{NCRTAGENTHOME}}/bin/ncrtagent_linux_rc"
+        path: "/etc/init.d/ncrtagent_linux_rc"
+        state: link
+        owner: root
+        group: root
+      when: "ansible_os_family in ['Debian', 'RedHat']"
+      tags: [ commoninstall ]
+
+    - name: enable ncrtagent_linux
+      service:
+        name: ncrtagent_linux_rc
+        enabled: yes
+        state: started
+      when: "ansible_os_family in ['Debian', 'RedHat']"
+      tags: [ commoninstall ]
+
   handlers:
     - name: update ssl certs
       shell: "update-ca-certificates -f"
@@ -161,5 +186,17 @@
       service:
         name:  nrpe-ng
         state: restarted
+
+    - name: reload systemd settings
+      shell: "systemctl daemon-reload"
+      when: "ansible_os_family in ['Debian', 'RedHat']"
+      listen: restart ncrtagent
+
+    - name: restart ncrtagent service
+      service:
+        name:  ncrtagent_linux
+        state: restarted
+      when: "ansible_os_family in ['Debian', 'RedHat']"
+      listen: restart ncrtagent
 
 

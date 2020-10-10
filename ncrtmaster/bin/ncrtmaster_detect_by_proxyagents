@@ -2,13 +2,11 @@
 
 use strict;
 
-our ($TOOLHOME, $PLUGINSDIR, $CONFDIR);
+our $TOOLHOME;
 BEGIN {
 	$0 =~ m"^(.*)/";
 	$TOOLHOME = "$1/..";
 	while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
-	$PLUGINSDIR = "$TOOLHOME/plugins";
-	$CONFDIR = "$TOOLHOME/conf";
 }
 use lib "$TOOLHOME/lib/perl5";
 use NCRTCommon;
@@ -20,13 +18,14 @@ our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $FILTERSDIR = "$TOOLHOME/filters";
 our $CONFDIR = "$TOOLHOME/conf";
 
-if( @ARGV < 2 ){
+if( @ARGV < 3 ){
 	print "usage: % $0 MEASURE HOST SERVICE\n";
 	exit 3;
 }
-my $measure = $ARGV[0];
-my $host = $ARGV[1];
-my $service = $ARGV[2] // $measure;
+
+my $measure   = $ARGV[0];
+my $host      = $ARGV[1];
+my $service   = $ARGV[2];
 
 # setup work directory
 our $WORKDIR;
@@ -48,8 +47,11 @@ our $PLUGIN_HAS_FAILED;
 #### 6. thresholds are evaluated if contain expressions.
 #### 7. warnings / criticals are detected from metrics and thresholds.
 
+my $hosts = load_hosts;
+my $proxyhosts = load_proxyhosts $measure, $host, $service;
+
 # 1. measure plugin generates metrics.
-my %m1 = generate_metrics_from_localplugin $measure, $host, $service;
+my %m1 = generate_metrics_from_proxyagents $measure, $host, $service, $hosts, $proxyhosts;
 
 # 2. metrics pass through some filters if required.
 my %m2 = pass_through_filters $measure, $host, $service, "metricfilter", %m1;

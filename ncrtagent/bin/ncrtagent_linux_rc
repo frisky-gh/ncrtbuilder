@@ -1,0 +1,140 @@
+#!/bin/bash
+#
+# ncrtagent_linux_rc      Startup script for ncrtagent_linux
+#
+# chkconfig: - 90 10
+# description: start and stop ncrtagent_linux
+# processname: ncrtagent_linux
+# pidfile: /var/run/nrpe/.ncrt/ncrtagent_linux.pid
+
+### BEGIN INIT INFO
+# Provides: ncrtagent_linux
+# Required-Start: $network $local_fs $remote_fs
+# Required-Stop: $network $local_fs $remote_fs
+# Should-Start: $syslog $named
+# Should-Stop: $syslog $named
+# Default-Start: 2 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: start and stop ncrtagent_linux
+# Description:  start and stop ncrtagent_linux
+### END INIT INFO
+
+set -e
+
+NAME=ncrtagent_linux
+DESC="start and stop ncrtagent_linux"
+DAEMON=/opt/ncrtagent/bin/ncrtagent_linux
+PIDFILE=~nrpe/.ncrt/ncrtagent_linux.pid
+
+export SYSTEMCTL_SKIP_REDIRECT=1
+if [ -f /etc/init.d/functions ]; then
+	set +e
+	. /etc/init.d/functions
+	set -e
+fi
+if [ -f /lib/lsb/init-functions ]; then
+	. /lib/lsb/init-functions
+fi
+if [ -f /etc/defaults/ncrtagent_linux ] ; then
+	. /etc/defaults/ncrtagent_linux
+fi
+
+if type log_daemon_msg > /dev/null 2>&1 ; then
+	:
+else
+	function log_daemon_msg {
+		echo -n "$@"
+	}
+	function log_end_msg {
+		if [ "$1" -eq 0 ] ; then
+			echo_success
+		else
+			echo_failure
+		fi
+		echo
+	}
+fi
+
+function do_start {
+	if type start-stop-daemon > /dev/null 2>&1 ; then
+		start-stop-daemon --start --quiet --oknodo --pidfile $PIDFILE --exec $DAEMON -- daemon || return $?
+		start-stop-daemon --status --quiet --oknodo --pidfile $PIDFILE || return $?
+	else
+		$DAEMON daemon
+		status -p $PIDFILE $NAME > /dev/null
+	fi
+}
+
+function do_status {
+	if type start-stop-daemon > /dev/null 2>&1 ; then
+		start-stop-daemon --status --quiet --oknodo --pidfile $PIDFILE || return $?
+	else
+		status -p $PIDFILE $NAME > /dev/null
+	fi
+}
+
+function do_stop {
+	if type start-stop-daemon > /dev/null 2>&1 ; then
+		start-stop-daemon --stop --retry 10 --quiet --oknodo --pidfile $PIDFILE || return $?
+	else
+		killproc -p $PIDFILE -d 10 $NAME
+	fi
+}
+
+function do_reload {
+	if type start-stop-daemon > /dev/null 2>&1 ; then
+		start-stop-daemon --stop --signal HUP --quiet --oknodo --pidfile $PIDFILE || return $?
+	else
+		kill -HUP `pidofproc -p $PIDFILE $NAME`
+	fi
+}
+
+case "$1" in
+  start)
+	log_daemon_msg "Starting $NAME" || true
+	if do_status ; then
+		log_end_msg 0 || true
+	elif do_start ; then
+		log_end_msg 0 || true
+	else
+		log_end_msg 1
+	fi
+	;;
+  stop)
+	log_daemon_msg "Stopping $NAME" || true
+	if do_stop ; then
+		log_end_msg 0 || true
+	else
+		log_end_msg 1
+	fi
+	;;
+  status)
+	log_daemon_msg "Status $NAME" || true
+	if do_status ; then
+		log_end_msg 0 || true
+	else
+		log_end_msg 1
+	fi
+	;;
+  restart|force-reload)
+	log_daemon_msg "Restarting $NAME" || true
+	do_stop
+	sleep 1
+	if do_start ; then
+		log_end_msg 0 || true
+	else
+		log_end_msg 1
+	fi
+	;;
+  reload)
+	log_daemon_msg "Reloading $NAME" $NAME || true
+	if do_reload ; then
+		log_end_msg 0 || true
+	else
+		log_end_msg 1
+	fi
+	;;
+  *)
+	echo $"Usage: $0 {start|stop|status|restart|reload|force-reload}"
+	exit 2
+esac
