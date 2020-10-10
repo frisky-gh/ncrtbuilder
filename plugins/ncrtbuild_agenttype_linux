@@ -29,6 +29,10 @@ my %targets;
 my %default = (
 	listen_address => "0.0.0.0",
 	listen_port => 46848,
+	daemon_user => "ncrtagent",
+	timeout => 60,
+	agent_address => undef,
+	agent_port => 46848,
 );
 my $f = "$CONFDIR/agenttype_linux.hosts";
 open my $h, '<', $f or do {

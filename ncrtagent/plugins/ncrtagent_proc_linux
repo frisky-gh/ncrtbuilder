@@ -2,13 +2,16 @@
 
 use strict;
 
-if( @ARGV < 2 ){
-        print "usage: % $0 CONFDIR WORKDIR\n";
+if( @ARGV < 5 ){
+        print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
         exit 1;
 }
 
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
+our $MEASURE = $ARGV[2];
+our $HOST = $ARGV[3];
+our $SERVICE = $ARGV[4];
 
 ####
 sub n ($) {
@@ -21,7 +24,7 @@ sub nc ($) {
 
 ####
 my @category_rules;
-my $f = "$CONFDIR/agent/proc.categories";
+my $f = "$CONFDIR/agent/proc.categories.$MEASURE.$HOST";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -37,7 +40,7 @@ while( <$h> ){
 close $h;
 
 my @elapsed_rules;
-my $f = "$CONFDIR/agent/proc_elapsed.rules";
+my $f = "$CONFDIR/agent/proc_elapsed.rules.$MEASURE.$HOST";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -51,7 +54,7 @@ while( <$h> ){
 close $h;
 
 my @count_rules;
-my $f = "$CONFDIR/agent/proc_count.rules";
+my $f = "$CONFDIR/agent/proc_count.rules.$MEASURE.$HOST";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };

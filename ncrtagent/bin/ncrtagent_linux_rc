@@ -5,7 +5,7 @@
 # chkconfig: - 90 10
 # description: start and stop ncrtagent_linux
 # processname: ncrtagent_linux
-# pidfile: /var/run/nrpe/.ncrt/ncrtagent_linux.pid
+# pidfile: /home/ncrtagent/.ncrt/ncrtagent_linux.pid
 
 ### BEGIN INIT INFO
 # Provides: ncrtagent_linux
@@ -24,7 +24,7 @@ set -e
 NAME=ncrtagent_linux
 DESC="start and stop ncrtagent_linux"
 DAEMON=/opt/ncrtagent/bin/ncrtagent_linux
-PIDFILE=~nrpe/.ncrt/ncrtagent_linux.pid
+PIDFILE=~ncrtagent/.ncrt/ncrtagent_linux.pid
 
 export SYSTEMCTL_SKIP_REDIRECT=1
 if [ -f /etc/init.d/functions ]; then

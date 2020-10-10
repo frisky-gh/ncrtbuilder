@@ -4,13 +4,16 @@ use strict;
 
 our $LONGTERM_H = 2;
 
-if( @ARGV < 2 ){
-	print "usage: % $0 CONFDIR WORKDIR\n";
+if( @ARGV < 5 ){
+	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
 	exit 1;
 }
 
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
+our $MEASURE = $ARGV[2];
+our $HOST = $ARGV[3];
+our $SERVICE = $ARGV[4];
 
 ####
 sub n ($) {
@@ -115,7 +118,7 @@ sub calc_delta ($$\%) {
 ####
 
 my @category_rules;
-my $f = "$CONFDIR/agent/networktraffic.conf";
+my $f = "$CONFDIR/agent/networktraffic.conf.$MEASURE.$HOST";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
@@ -128,7 +131,7 @@ if( open my $h, '<', $f ){
 
 #### load detector conf. for agents
 my @ignore_rules;
-my $f = "$CONFDIR/agent/networktraffic.ignores";
+my $f = "$CONFDIR/agent/networktraffic.ignores.$MEASURE.$HOST";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;

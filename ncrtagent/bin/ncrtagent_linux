@@ -128,15 +128,19 @@ sub read_command ($) {
 
 	waitpid $pid, 0;
 	my $plugin_rc = $? >> 8;
-	return undef, undef if $plugin_rc > 0;
-	return \%metrics, \@messages;
+	my $ok = 1;
+	if( $plugin_rc > 0 ){
+		push @messages, "plugin_rc:$plugin_rc";
+		$ok = undef;
+	}
+	return $ok, \%metrics, \@messages;
 }
 
 ####
 sub action_measure ($$$$$) {
 	my ($conf, $conn, $measure, $host, $service) = @_;
-	my $cmd = "$PLUGINSDIR/ncrtagent_${measure}_linux $CONFDIR $WORKDIR $host $service";
-	my ($metrics, $messages) = read_command $cmd;
+	my $cmd = "$PLUGINSDIR/ncrtagent_${measure}_linux $CONFDIR $WORKDIR $measure $host $service";
+	my ($ok, $metrics, $messages) = read_command $cmd;
 
 	my $content;
 	foreach my $k ( sort keys %$metrics ){
@@ -148,7 +152,8 @@ sub action_measure ($$$$$) {
 	}
 
 	my $res = HTTP::Response->new;
-	$res->code(200);
+	if( $ok ){ $res->code(200); }
+	else     { $res->code(500); }
 	$res->header('Content-Type' => 'text/plain');
 	$res->content($content);
 	$conn->send_response($res);
@@ -163,11 +168,14 @@ sub cmd_cron ($) {
 sub cmd_daemon ($) {
 	my ($conf) = @_;
 
-	if( open $LOGFH, '>>', $LOGFILE ){ $LOGFH->autoflush; }
-
-	if( $$conf{daemon_user} ne '' ){
+	my $daemon_user = $$conf{daemon_user};
+	if( $daemon_user ne '' ){
 		my ($name, $pw, $uid, $gid, $quota, $comment, $gcos,
-		    $home, $shell) = getpwnam $$conf{daemon_user};
+		    $home, $shell) = getpwnam $daemon_user;
+		unless( defined $uid and defined $gid ){
+			die "setuid: $daemon_user: not found, stopped";
+		}
+		
 		$( = $gid unless $( == $gid;
 		$) = $gid unless $) == $gid;
 		$< = $uid unless $< == $uid;
@@ -175,7 +183,8 @@ sub cmd_daemon ($) {
 		$ENV{HOME} = $home;
 	}
 	setup_workdir;
-
+	$LOGFILE  = "$WORKDIR/ncrtagent_linux.log";
+	if( open $LOGFH, '>>', $LOGFILE ){ $LOGFH->autoflush; }
 
 	my $pid = fork;
 	if( $pid != 0 ){

@@ -2,15 +2,16 @@
 
 use strict;
 
-if( @ARGV < 4 ){
-	print "usage: % $0 CONFDIR WORKDIR VHOST VSERVICE_INDEX\n";
+if( @ARGV < 5 ){
+	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
 	exit 1;
 }
 
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
-our $vhost = $ARGV[2];
-our $vservice_index = $ARGV[3];
+our $MEASURE = $ARGV[2];
+our $VHOST = $ARGV[3];
+our $VSERVICE = $ARGV[4];
 
 ####
 sub ltsv2var ($) {
@@ -40,7 +41,7 @@ sub nMB ($) {
 #### load service conf.
 my %option;
 my %file2rules;
-my $f = "$CONFDIR/indirect/ltsv.conf.$vhost.$vservice_index";
+my $f = "$CONFDIR/indirect/ltsv.conf.$MEASURE.$VHOST";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };

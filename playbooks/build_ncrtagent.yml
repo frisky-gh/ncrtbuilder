@@ -68,6 +68,12 @@
       tags: [ nrpe ]
 
     #### for All Distros
+    - user:
+        system: yes
+        name: ncrtagent
+        comment: NCRT Agent User
+      tags: [ commoninstall ]
+
     - file:
         path: "{{NCRTAGENTHOME}}"
         state: directory

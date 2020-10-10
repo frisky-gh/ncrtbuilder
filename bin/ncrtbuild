@@ -314,42 +314,6 @@ while( <$h> ){
 close $h;
 $NRPEALLOWEDHOSTS = join ",", @ncrtmasteraddrs if $NRPEALLOWEDHOSTS eq '';
 
-#### load metricsmerge settings
-my $d = "$CONFDIR/metricmerge";
-opendir my $h, $d or do {
-	die "$d: cannot open, stopped";
-};
-my %vhost2vservice2importspecs;
-foreach my $e ( sort readdir $h ){
-	next unless $e =~ m"^\w.*\.mergerules$";
-	my $vhost;
-	my $vservice;
-
-	my $f = "$d/$e";
-	open my $i, "<", $f or do {
-		die "$f: cannot open, stopped";
-	};
-	while( <$i> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
-			$vhost = $1;
-			$vservice = $2;
-		}elsif( m"^import\s+(\S+)\s+(\S+)" ){
-			my $importhost = $1;
-			my $importservice = $2;
-
-			# TODO: check for the existance of importhost, importservice
-
-			push @{$vhost2vservice2importspecs{$vhost}->{$vservice}}, [$importhost, $importservice];
-		}else{
-			die "$f:$.: illegal format, stopped";
-		}
-	}
-	close $i;
-}
-close $h;
-
 #### find all build plugins
 my @agenttype_plugins;
 my @agent_plugins;
@@ -452,19 +416,6 @@ if( $plan{step2} ){
 
 	# email address list
 	create_or_die "$WORKDIR/addresses";
-
-	# add metricmerge virtual-services
-	my $f = "$WORKDIR/host2service2measure";
-	open my $h, '>>', $f or do {
-		die "$f: cannot open, stopped";
-	};
-	foreach my $host ( sort keys %vhost2vservice2importspecs ){
-		my $vservice2importspecs = $vhost2vservice2importspecs{$host};
-		foreach my $service ( sort keys %$vservice2importspecs ){
-			print $h "$host	$service	metricmerge\n";
-		}
-	}
-	close $h;
 
 	#### write templates
 	my $action_url = "${HELPERURL}/redirect.html?hostname=\$_HOSTURLENCODED\$&servicedesc=\$_SERVICEURLENCODED\$";
@@ -627,7 +578,6 @@ foreach my $h ( @ncrtmasters ){
 	mkdir_or_die "$WORKDIR/ncrtmaster/$h/agentless";
 	mkdir_or_die "$WORKDIR/ncrtmaster/$h/indirect";
 	mkdir_or_die "$WORKDIR/ncrtmaster/$h/threshold";
-	mkdir_or_die "$WORKDIR/ncrtmaster/$h/metricmerge";
 	mkdir_or_die "$WORKDIR/ncrtmaster/$h/metricfilter";
 	mkdir_or_die "$WORKDIR/ncrtmaster/$h/thresholdfilter";
 	my $r = system "rsync -aSvx $MASTERCONFDIR/ $WORKDIR/ncrtmaster/$h/";
@@ -664,7 +614,7 @@ while( <$h> ){
 }
 close $h;
 
-my %measure2measuretype = ( 'metricmerge' => 'metricmerge' );
+my %measure2measuretype;
 my %measure2opts;
 my %measure2templateopts;
 my $f = "$WORKDIR/measures";
@@ -909,8 +859,8 @@ sub diff (\%\%) {
 	return %d;
 }
 
-sub generate_agentconf_for_indirect ($$$) {
-	my ($conf, $host2agenttype, $vhostvservice2proxyhosts) = @_;
+sub generate_agentconf_for_indirect ($$$$) {
+	my ($measure, $conf, $host2agenttype, $vhostvservice2proxyhosts) = @_;
 	my $vhostvservice;
 	my %vhostvservice2rules;
 	my %option;
@@ -952,7 +902,7 @@ sub generate_agentconf_for_indirect ($$$) {
 				push @settings, $setting;
 			}
 			next unless @settings;
-			my $f = "$WORKDIR/ncrtagent/$proxyhost/$conf.$vhost.$vservice";
+			my $f = "$WORKDIR/ncrtagent/$proxyhost/$conf.$measure.$vhost";
 			open my $h, '>', $f or do {
 				die "$f: cannot open, stopped";
 			};
@@ -988,7 +938,7 @@ if( $plan{step7} ){
 
 		my %vhostvservice2proxyhosts;
 		foreach my $conf ( @confs ){
-			generate_agentconf_for_indirect $conf, \%host2agenttype, \%vhostvservice2proxyhosts;
+			generate_agentconf_for_indirect $measure, $conf, \%host2agenttype, \%vhostvservice2proxyhosts;
 		}
 		generate_masterconf_for_indirect $measure, \%vhostvservice2proxyhosts, @ncrtmasters;
 	}
@@ -1249,7 +1199,7 @@ if( $plan{step7} ){
 				print $h $rule->[2], "\n";
 			}
 			close $h;
-		}elsif( $measuretype eq 'agentless' || $measuretype eq 'indirect' || $measuretype eq 'metricmerge' ){
+		}elsif( $measuretype eq 'agentless' || $measuretype eq 'indirect' ){
 	
 			foreach my $master ( @ncrtmasters ){
 				my $f = "$WORKDIR/ncrtmaster/$master/threshold/thresholds.$host.$service";
@@ -1366,16 +1316,6 @@ if( $plan{step7} ){
 			@settings,
 			"	register	0\n",
 			"}\n";
-		}elsif( $measuretype eq 'metricmerge' ){
-			print $h
-			"define service {\n",
-			"	name		ncrtdetector-$measure\n",
-			"	check_command	ncrtmaster_detectmetricmerge\n",
-			"	_measure	$measure\n",
-			"	use		ncrt-generic-service\n",
-			@settings,
-			"	register	0\n",
-			"}\n";
 		}else{
 			die;
 		}
@@ -1432,30 +1372,15 @@ if( $plan{step7} ){
 			$agenttype = 'virtual';
 		}
 		####
-		if( $measuretype eq 'metricmerge' ){
-			my $importmacro = expand_importspec @{$vhost2vservice2importspecs{$host}->{$service}};
-
-			print $h
-			"define service {\n",
-			"	host_name		$host\n",
-			"	service_description	$service\n",
-			"	use			ncrtdetector-$measure\n",
-			"	contacts		$contacts\n",
-			"	_urlencoded		$_urlencoded\n",
-			"	check_command		ncrtmaster_detectmetricmerge!$importmacro\n",
-			@settings,
-			"}\n";
-		}else{
-			print $h
-			"define service {\n",
-			"	host_name		$host\n",
-			"	service_description	$service\n",
-			"	use			ncrtdetector-$measure\n",
-			"	contacts		$contacts\n",
-			"	_urlencoded		$_urlencoded\n",
-			@settings,
-			"}\n";
-		}
+		print $h
+		"define service {\n",
+		"	host_name		$host\n",
+		"	service_description	$service\n",
+		"	use			ncrtdetector-$measure\n",
+		"	contacts		$contacts\n",
+		"	_urlencoded		$_urlencoded\n",
+		@settings,
+		"}\n";
 	}
 	close $h;
 
