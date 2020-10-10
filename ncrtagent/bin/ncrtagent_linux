@@ -12,6 +12,7 @@ BEGIN {
 use lib "$TOOLHOME/lib/perl5";
 
 use English;
+use Socket;
 use IO::Handle;
 use URI::Escape;
 use HTTP::Daemon;
@@ -70,6 +71,39 @@ sub ltsv2var ( $ ){
 }
 
 ####
+sub compile_allow ($) {
+	my ($allow) = @_;
+	my @allow;
+	foreach my $subnet ( split m",", $allow ){
+		if( $subnet =~ m"^(\d+\.\d+\.\d+\.\d+)/(\d+)$" ){
+			my $addr = $1;
+			my $netbit = $2;
+			my $bin_netmask = inet_aton '255.255.255.255';
+			for( my $i = $netbit; $i < 32; ++$i ){ 
+				vec($bin_netmask, $i, 1) = 0;
+			}
+			my $bin_addr = inet_aton $addr;
+			my $bin_subnet = $bin_addr & $bin_netmask;
+			push @allow, [$bin_subnet, $bin_netmask];
+		}elsif( $subnet =~ m"^(\d+\.\d+\.\d+\.\d+)$" ){
+			my $bin_netmask = inet_aton '255.255.255.255';
+			my $bin_addr = inet_aton $subnet;
+			push @allow, [$bin_addr, $bin_netmask];
+		}
+	}
+	return @allow;
+}
+
+sub check_allow ($@) {
+	my ($bin_addr, @allow) = @_;
+	foreach my $subnet_netmask ( @allow ){
+		if( $$subnet_netmask[0] eq ($bin_addr & $$subnet_netmask[1]) ){
+			return 1;
+		}
+	}
+	return undef;
+}
+
 sub setup_workdir () {
 	if( $ENV{'HOME'} ){ $WORKDIR = $ENV{'HOME'} . "/.ncrt"; }
 	else{
@@ -86,6 +120,7 @@ sub read_conf () {
 	my %conf = (
 		'listen_address' => '0.0.0.0',
 		'listen_port' => 46848,
+		'daemon_user' => undef,
 		'DEBUG' => 0,
 	);
 
@@ -186,6 +221,8 @@ sub cmd_daemon ($) {
 	$LOGFILE  = "$WORKDIR/ncrtagent_linux.log";
 	if( open $LOGFH, '>>', $LOGFILE ){ $LOGFH->autoflush; }
 
+	my @allow = compile_allow( $$conf{allow} // "0.0.0.0/0" );
+
 	my $pid = fork;
 	if( $pid != 0 ){
 		my $f = "$WORKDIR/ncrtagent_linux.pid";
@@ -215,12 +252,24 @@ sub cmd_daemon ($) {
 	};
 	$SIG{'CHLD'} = 'IGNORE';
 
-	while (my $conn = $d->accept) {
+	while (my ($conn, $peer_addr) = $d->accept) {
 		my $req = $conn->get_request;
 		next unless $req;
 		my $method = $req->method;
 		my $path = uri_unescape $req->uri->path;
-		accesslog 'req: method=%s path=%s', $method, $path;
+		my ($port, $bin_addr) = unpack_sockaddr_in $peer_addr;
+		my $addr = inet_ntoa $bin_addr;
+		accesslog 'req: client=%s:%d method=%s path=%s',
+			$addr, $port, $method, $path;
+
+		unless( check_allow $bin_addr, @allow ){
+			accesslog 'error: denied.';
+			$conn->send_error(RC_FORBIDDEN);
+			$conn->close;
+			undef $conn;
+			next;
+		}
+
 		if( $path =~ m"/measure/([-\w]+)/([-\w]+)/([-\w]+)" ){
 			my $measure = $1;
 			my $host = $2;
