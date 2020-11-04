@@ -367,7 +367,7 @@ sub generate_thresholds ($$$%) {
 	my @crit_rules;
 
 	# load threshold rules
-	my $f = "$main::CONFDIR/threshold/thresholds.$host.$service";
+	my $f = "$main::CONFDIR/threshold/thresholds.$measure.$host.$service";
 	if( open my $h, '<', $f ){
 		while( <$h> ){
 			chomp;

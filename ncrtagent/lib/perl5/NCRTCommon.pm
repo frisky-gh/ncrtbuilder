@@ -4,11 +4,18 @@ package NCRTCommon;
 use strict;
 use Exporter 'import';
 use IPC::Open2;
+use LWP;
+use LWP::UserAgent;
 use NCRTStackMachine;
 use NCRTTimeSeries;
 
 our @EXPORT = (
-	'generate_metrics_from_mastermeasure',
+	'load_hosts',
+	'load_proxyhosts',
+	'generate_metrics_from_agent',
+	'generate_metrics_from_targetagent',
+	'generate_metrics_from_proxyagents',
+	'generate_metrics_from_localplugin',
 	'generate_metrics_from_accessor',
 	'generate_metrics_from_agentmeasure',
 	'generate_metrics_from_commandline_args',
@@ -18,25 +25,132 @@ our @EXPORT = (
 	'generate_detection_results',
 );
 
-sub generate_metrics_from_mastermeasure ($$$) {
+sub load_hosts () {
+	my $f = "$main::CONFDIR/hosts";
+	open my $h, '<', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	my %host2param;
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		my ($host, @param) = split m"\s+";
+		my %param;
+		foreach my $kv ( @param ){
+			next unless $kv =~ m"^(\w+)=(.*)$";
+			my $k = $1;
+			my $v = $2 eq '' ? undef : $2;
+			$param{$k} = $v;
+		}
+		$host2param{$host} = \%param;
+	}
+	close $h;
+	return \%host2param;
+}
+
+sub load_proxyhosts ($$$) {
 	my ($measure, $host, $service) = @_;
 
-	my $f = "$main::PLUGINSDIR/ncrtmastermeasure_$measure";
+	#### load service conf.
+	my $f = "$main::CONFDIR/indirect/proxyhosts.$measure.$host.$service";
+	open my $h, '<', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	my %proxyhost2param;
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		if( m"^(\S+)"x ){
+			my ($proxyhost, @param) = split m"\s+";
+			$proxyhost2param{$proxyhost} = \@param;
+		}else{
+			die "$f:$.: illegal format, stopped";
+		}
+	}
+	close $h;
+	return \%proxyhost2param;
+}
+
+sub generate_metrics_from_agent ($$$$$) {
+	my ($proxyhost, $measure, $host, $service, $param) = @_;
+
+	my $rc = 0;
+	my %metrics;
+
+	####
+	my $timeout = $$param{timeout} // 60;
+	my $address = $$param{agent_address} // $proxyhost;
+	my $port    = $$param{agent_port} // "46848";
+
+	####
+	my $ua = LWP::UserAgent->new;
+	$ua->agent("NCRTRemoteDetect/1.0");
+	$ua->timeout($timeout);
+	my $url = "http://$address:$port/measure/$measure/$host/$service";
+	my $req = HTTP::Request->new(GET => $url);
+	my $res = $ua->request($req);
+
+	my %metrics;
+	unless($res->is_success) {
+		$metrics{"ncrtagent[$proxyhost]-error"} = 1;
+		return %metrics;
+	}
+
+	foreach my $i ( split m"\n+", $res->content ){
+		next unless $i =~ m"^([^\s=]+)=(.*)$";
+		my $k = $1;
+		my $v = $2;
+		$metrics{$k} = $v;
+	}
+
+	$metrics{"ncrtagent[$proxyhost]-error"} = 0;
+	return %metrics;
+}
+
+sub generate_metrics_from_targetagent ($$$$) {
+	my ($measure, $host, $service, $host2param) = @_;
+	my $param = $$host2param{$host};
+	return generate_metrics_from_agent
+		$host, $measure, $host, $service, $param;
+}
+
+sub generate_metrics_from_proxyagents ($$$$$) {
+	my ($measure, $host, $service, $host2param, $proxyhost2param) = @_;
+
+	my $rc = 0;
+	my %metrics;
+
+	while( my ($proxyhost, $proxyhostparam) = each %$proxyhost2param ){
+		my $hostparam = $$host2param{$host};
+		my %m = generate_metrics_from_agent
+			$proxyhost, $measure, $host, $service, $hostparam;
+		while( my ($k, $v) = each %m ){
+			$metrics{$k} = $v;
+		}
+	}
+
+	return %metrics;
+}
+
+sub generate_metrics_from_localplugin ($$$) {
+	my ($measure, $host, $service) = @_;
+
+	my $f = "$main::PLUGINSDIR/ncrtmaster_$measure";
 	open my $h, '-|', "$f $main::CONFDIR $main::WORKDIR $measure $host $service" or do {
 		print "UNKNOWN $f: not found.\n";
 		exit 3;
 	};
 
 	my %metrics;
-	my @output;
+	my @message;
 	while( <$h> ){
 		chomp;
 		next if m"^\s*(#|$)";
 		die "$_, stopped" unless m"^([-\w/\[\].:@\$%#\*]+)=(.*)$";
 		my $k = $1;
 		my $v = $2;
-		if( $k eq 'output' ){ push @output, $v; }
-		else                { $metrics{$k} = $v; }
+		if( $k eq 'message' ){ push @message, $v; }
+		else                 { $metrics{$k} = $v; }
 	}
 	close $h;
 
@@ -253,7 +367,7 @@ sub generate_thresholds ($$$%) {
 	my @crit_rules;
 
 	# load threshold rules
-	my $f = "$main::CONFDIR/threshold/thresholds.$host.$service";
+	my $f = "$main::CONFDIR/threshold/thresholds.$measure.$host.$service";
 	if( open my $h, '<', $f ){
 		while( <$h> ){
 			chomp;

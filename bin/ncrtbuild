@@ -324,7 +324,7 @@ opendir my $d, $PLUGINSDIR or do {
 	die "$PLUGINSDIR: cannot open, stopped";
 };
 while( my $e = readdir $d ){
-	next unless $e =~ m"^ncrtbuild_(?:(agent)|(agentless)|(indirect)|(agenttype)|(contact))_";
+	next unless $e =~ m"^ncrtbuild_(?:(agent)|(agentless)|(indirect)|(agenttype)|(contact))_[-\w]+$";
 	push @agent_plugins,     $e if $1;
 	push @agentless_plugins, $e if $2;
 	push @indirect_plugins,  $e if $3;
@@ -1220,6 +1220,7 @@ if( $plan{step7} ){
 }
 
 #### agent conf
+my %host2params;
 if( $plan{step7} ){
 	my $f = "$WORKDIR/hosts";
 	open my $h, "<", $f or do {
@@ -1235,6 +1236,10 @@ if( $plan{step7} ){
 		};
 		foreach my $p ( @param ){
 			print $i "$p\n";
+			die unless $p =~ m"^(\w+)=(.*)$";
+			my $k = $1;
+			my $v = $2;
+			$host2params{$host}->{$k} = $v;
 		}
 		close $i;
 	}
@@ -1545,11 +1550,30 @@ if( $plan{step8} ){
 ######## Step 9. ########
 
 #### run ansible for nrpe agent
-my $hosts = join( ',', @ncrtagents, '' );
-my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -i %s -t \"%s\"",
-	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $hosts, $tags;
+my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -t \"%s\"",
+	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $tags;
+my $hosts_yml = "$WORKDIR/hosts.yml";
+open my $h, '>', $hosts_yml or do {
+	die "$hosts_yml: cannot open, stopped";
+};
+print $h
+	"all:\n",
+	"  children:\n",
+	"    AllHosts:\n",
+	"      hosts:\n";
+foreach my $host ( @ncrtagents ){
+	my $params = $host2params{$host};
+	my @params;
+	foreach my $k ( sort keys %$params ){
+		my $v = $$params{$k};
+		push @params, "\"$k\":\"$v\"";
+	}
+	print $h "        $host: {", join(", ", @params), "}\n";
+}
+close $h;
+
 if( $plan{step9} ){
-	my $r = system "ansible-playbook -v $options $PLAYBOOKSDIR/build_ncrtagent.yml";
+	my $r = system "ansible-playbook -v -i $hosts_yml $options $PLAYBOOKSDIR/build_ncrtagent.yml";
 	die unless $r == 0;
 }
 
