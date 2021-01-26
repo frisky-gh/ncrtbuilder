@@ -14,6 +14,7 @@ use strict;
 use Getopt::Long;
 use URI::Escape;
 use Socket;
+use Template;
 
 our $TMPDIR = "/tmp";
 our $WORKDIR = "$TMPDIR/ncrt_work.$$";
@@ -902,7 +903,7 @@ sub generate_agentconf_for_indirect ($$$$) {
 				push @settings, $setting;
 			}
 			next unless @settings;
-			my $f = "$WORKDIR/ncrtagent/$proxyhost/$conf.$measure.$vhost";
+			my $f = "$WORKDIR/ncrtagent/$proxyhost/$conf.$measure.$vhost.$vservice";
 			open my $h, '>', $f or do {
 				die "$f: cannot open, stopped";
 			};
@@ -1572,8 +1573,29 @@ foreach my $host ( @ncrtagents ){
 }
 close $h;
 
+my $tt = Template->new({
+	INCLUDE_PATH => $PLAYBOOKSDIR,
+	OUTPUT_PATH  => $WORKDIR,
+}) or do {
+	die "build_ncrtagent.yml.tt: cannot read, stopped";
+};
+
+my @agenttype_playbooks;
+foreach my $agenttype ( @agenttype_plugins ){
+	next unless -f "$PLUGINSDIR/$agenttype.yml";
+	push @agenttype_playbooks, "$PLUGINSDIR/$agenttype.yml";
+}
+
+my $output;
+my %vars = (
+	'AGENTTYPE_PLAYBOOKS' => [@agenttype_playbooks],
+);
+$tt->process( 'build_ncrtagent.yml.tt', \%vars, 'build_ncrtagent.yml' ) or do {
+        die "build_ncrtagent.yml: " . $tt->error() . ", stopped";
+};
+
 if( $plan{step9} ){
-	my $r = system "ansible-playbook -v -i $hosts_yml $options $PLAYBOOKSDIR/build_ncrtagent.yml";
+	my $r = system "ansible-playbook -v -i $hosts_yml $options $WORKDIR/build_ncrtagent.yml";
 	die unless $r == 0;
 }
 
