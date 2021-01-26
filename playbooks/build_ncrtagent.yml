@@ -6,14 +6,15 @@
       include_vars: "{{WORKDIR}}/vars.yml"
       tags: [ common ]
 
-    - name: import playbook
-      import_playbook: "{{TOOLHOME}}/plugins/ncrtbuild_agenttype_{{item}}.yml"
-      when: "ansible_os_family in ['RedHat', 'Debian']"
+    - name: import agenttype tasks
+      include_tasks: "{{TOOLHOME}}/plugins/ncrtbuild_agenttype_{{item}}_tasks.yml"
       with_items:
         - linux
+      tags: [ common ]
 
     - name: include customize tasks
       import_tasks: "{{TOOLHOME}}/conf/ncrtagents_playbook.yml"
       tags: [ common ]
 
+  handlers:
 
