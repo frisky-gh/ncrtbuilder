@@ -22,7 +22,7 @@ port\[.*\]-conns					warn	[0,10]
 port\[.*\]-conns					crit	[0,100]
 port\[25/tcp\]-conns					crit	[0,20]
 port\[14022/tcp\]-conns					crit	[0,20]
-port\[5667/tcp\]-conns					crit	[0,20]
+port\[46848/tcp\]-conns					crit	[0,20]
 
 === .* networktraffic ===
 link\[.*\]-rx-throughput-mbps				warn	[0,100]
