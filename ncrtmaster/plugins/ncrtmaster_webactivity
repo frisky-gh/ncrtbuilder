@@ -94,7 +94,7 @@ $r =~ m"^
 	HTTP\ (
 	    (?:
 		(OK|WARNING|CRITICAL):
-		\ HTTP/\S+\ (\d+)\ (.*)\ -\ (.*)
+		\ HTTP/\S+\ (\d+)\ (?:(.*)\ )?-\ (.*)
 		\|time=(\d+\.\d+)s\;.*\ size=(\d+)B\;.*
 	    ) |
 	    CRITICAL\ -\ (.*)
