@@ -1,0 +1,18 @@
+---
+
+- hosts: all
+  tasks:
+    - name: include variables
+      include_vars: "{{WORKDIR}}/vars.yml"
+      tags: [ common ]
+
+    - name: include customize tasks
+      import_tasks: "{{TOOLHOME}}/conf/ncrtagents_playbook.yml"
+      tags: [ common ]
+
+[% FOREACH agenttype_playbook IN AGENTTYPE_PLAYBOOKS -%]
+- name: import agenttype [%agenttype_task%] playbook
+  import_playbook: "[%agenttype_playbook%]"
+  tags: [ common ]
+[% END %]
+
