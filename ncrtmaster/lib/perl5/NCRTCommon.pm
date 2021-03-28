@@ -78,7 +78,7 @@ sub generate_metrics_from_agent ($$$$$) {
 	my %metrics;
 
 	####
-	my $timeout = $$param{timeout} // 60;
+	my $timeout = $$param{timeout} // 50;
 	my $address = $$param{agent_address} // $proxyhost;
 	my $port    = $$param{agent_port} // "46848";
 
