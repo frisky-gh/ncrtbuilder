@@ -242,7 +242,7 @@ close $h;
 our $ANSIBLEOPTIONS      = $ncrtconf{'ANSIBLEOPTIONS'};
 
 our $NCRTAGENTHOME       = $ncrtconf{'NCRTAGENTHOME'};
-our $AGENTPACKAGE	 = $ncrtconf{'AGENTPACKAGE'} || 'nrpe';
+our $AGENTPACKAGE	 = $ncrtconf{'AGENTPACKAGE'} || 'ncrtagent';
 our $NRPEPORT	         = $ncrtconf{'NRPEPORT'} // '5666';
 our $NRPETLS	         = $ncrtconf{'NRPETLS'} // 'yes';
 our $NRPEALLOWEDHOSTS	 = $ncrtconf{'NRPEALLOWEDHOSTS'};
