@@ -100,7 +100,9 @@ sub calc_delta ($$\%) {
 		my $deltat = $now - $shortterm_origin->{timestamp};
 		while( my ($k, $v) = each %$curr ){
 			my $v2 = $shortterm_origin->{$k} // next;
-			$shortterm_delta{$k} = ($v - $v2) / $deltat;
+			my $deltav = $v - $v2;
+			next if $deltav < 0;
+			$shortterm_delta{$k} = $deltav / $deltat;
 		}
 	}
 	my %longterm_delta;
@@ -108,7 +110,9 @@ sub calc_delta ($$\%) {
 		my $deltat = $now - $longterm_origin->{timestamp};
 		while( my ($k, $v) = each %$curr ){
 			my $v2 = $longterm_origin->{$k} // next;
-			$longterm_delta{$k} = ($v - $v2) / $deltat;
+			my $deltav = $v - $v2;
+			next if $deltav < 0;
+			$longterm_delta{$k} = $deltav / $deltat;
 		}
 	}
 

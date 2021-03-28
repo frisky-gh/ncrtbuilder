@@ -2,10 +2,12 @@
 
 use strict;
 use Socket;
+use LWP::UserAgent;
+use JSON::XS;
 
 if( @ARGV < 5 ){
-        print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
-        exit 1;
+	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
+	exit 1;
 }
 
 our $CONFDIR = $ARGV[0];
@@ -22,6 +24,85 @@ sub ns ($) {
 sub nB ($) {
 	return sprintf "%dB", $_[0];
 }
+
+####
+sub req_unix ($$$) {
+	my ($url, $host, $desc) = @_;
+
+	socket my $h, PF_UNIX, SOCK_STREAM, 0 or return 3, 0;
+	connect $h, sockaddr_un($url)         or return 2, 0;
+	$h->autoflush(1);
+	print $h "GET services\n";
+	print $h "Columns: state perf_data\n";
+	print $h "Filter: host_name = $host\n";
+	print $h "Filter: description = $desc\n";
+	print $h "\n";
+	shutdown $h, 1;
+
+	my %r;
+	my $s = 0;
+	while( <$h> ){
+		chomp;
+		my ($state, $perf_data) = m"^(\d+);(.*)$" or return 1, 0;
+		foreach my $p ( split m"\s+", $perf_data ){
+			next unless $p =~ m"^([^=]+)=(\d[^;]+)";
+			my $k = $1;
+			my $v = $2;
+			$r{$k} = $v;
+		}
+		$s = $state if $state > $s;
+		$r{"livestatus-service[$host][$desc]-state"} = $state;
+	}
+	close $h;
+	return 0, $s, %r;
+}
+
+sub req_httpapi ($$$) {
+	my ($url, $host, $desc) = @_;
+
+	my $ua = LWP::UserAgent->new;
+	$ua->agent("NCRTLiveStatusPlugin/1.0");
+	$ua->timeout(60);
+	my $u = $url;
+	$u .= "/" unless $u =~ m"/$";
+	$u .= "services?Filter[]=host_name %3d $host&Filter[]=description %3d $desc";
+	my $req = HTTP::Request->new(GET => $u);
+	my $res = $ua->request($req);
+	return 4, 0 unless $res->is_success;
+
+	my $obj;
+	eval {
+		$obj = JSON::XS->new->decode( $res->content );
+	};
+	return 3, 0 unless defined $obj;
+	return 2, 0 if $$obj{success} eq "true";
+
+	my %r;
+	my $s = 0;
+	foreach my $c ( @{$$obj{content}} ){
+		my $perf_data = $$c{perf_data};
+		foreach my $p ( split m"\s+", $perf_data ){
+			next unless $p =~ m"^([^=]+)=(\d[^;]+)";
+			my $k = $1;
+			my $v = $2;
+			$r{$k} = $v;
+		}
+		$s = $$obj{state} if $$obj{state} > $s;
+		$r{"livestatus-service[$host][$desc]-state"} = $$obj{state};
+	}
+	return 0, $s, %r;
+}
+
+sub req ($$$) {
+	my ($url, $host, $desc) = @_;
+	if    ( $url =~ m"^https?://" ){
+		return req_httpapi $url, $host, $desc;
+	}elsif( $url =~ m"^/" ){
+		return req_unix $url, $host, $desc;
+	}
+	die;
+}
+
 
 #### load service conf.
 my %vservice2info;
@@ -47,52 +128,37 @@ close $h;
 ####
 my $info = $vservice2info{$VSERVICE};
 unless( defined $info ){
-	print "livestatus[$VSERVICE]-error=3\n";
+	print "livestatus[$VSERVICE]-error=5\n";
 	exit 1;
 }
 
 my %metrics;
+my $error = 0;
+my $state = 0;
 foreach my $i ( @$info ){
 	my ($socket, @host_desc) = @$i;
-	unless( -S $socket ){
-		print "livestatus[$VSERVICE]-error=2\n";
-		next;
-	}
-
 	foreach my $host_desc ( @host_desc ){
 		my ($host, $desc) = split m",", $host_desc;
 
-		socket my $h, PF_UNIX, SOCK_STREAM, 0 or die "socket: $!, stopped";
-		connect $h, sockaddr_un($socket)      or die "connect: $!, stopped";
-		$h->autoflush(1);
-		print $h "GET services\n";
-		print $h "Columns: perf_data\n";
-		print $h "Filter: host_name = $host\n";
-		print $h "Filter: description = $desc\n";
-		print $h "\n";
-		shutdown $h, 1;
-
-		while( <$h> ){
-			chomp;
-			foreach my $p ( split m"\s+" ){
-				next unless $p =~ m"^([^=]+)=(\d[^;]+)";
-				my $k = $1;
-				my $v = $2;
-				$metrics{$k} = $v;
-			}
+		my ($e, $s, %r) = req $socket, $host, $desc;
+		if( $e ){
+			$error = $e if $e > $error;
+			next;
 		}
-		close $h;
+		$state = $s if $s > $state;
+
+		while( my ($k, $v) = each %r ){
+			$metrics{$k} = $v;
+		}
 	}
 }
+$metrics{"livestatus[$VSERVICE]-error"} = $error;
+$metrics{"livestatus[$VSERVICE]-state"} = $state;
 
 foreach my $k ( sort keys %metrics ){
 	my $v = $metrics{$k};
 	print "$k=$v\n";
 }
-
-exit 0;
-
-#echo -e "GET services\nColumns: host_name description plugin_output perf_data\nFilter: host_name = mppfstmg01oc" | unixcat /var/cache/naemon/live
 
 exit 0;
 
