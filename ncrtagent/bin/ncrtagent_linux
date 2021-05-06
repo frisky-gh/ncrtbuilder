@@ -171,6 +171,23 @@ sub read_command ($) {
 	return $ok, \%metrics, \@messages;
 }
 
+sub write_pidfile ($) {
+	my ($pid) = @_;
+	my $f = "$WORKDIR/ncrtagent_linux.pid";
+	open my $h, '>', $f or die;
+	print $h "$pid\n";
+	close $h;
+}
+
+sub read_pidfile () {
+	my $f = "$WORKDIR/ncrtagent_linux.pid";
+	open my $h, '<', $f or return undef;
+	my $pid = <$h>;
+	close $h;
+	return undef unless kill 0, $pid;
+	return $pid;
+}
+
 ####
 sub action_measure ($$$$$) {
 	my ($conf, $conn, $measure, $host, $service) = @_;
@@ -225,10 +242,7 @@ sub cmd_daemon ($) {
 
 	my $pid = fork;
 	if( $pid != 0 ){
-		my $f = "$WORKDIR/ncrtagent_linux.pid";
-		open my $h, '>', $f or die;
-		print $h "$pid\n";
-		close $h;
+		write_pidfile $pid;
 		return;
 	}
 
@@ -290,6 +304,32 @@ sub cmd_daemon ($) {
 	}
 }
 
+sub cmd_alive ($) {
+	my ($conf) = @_;
+	my $pid = read_pidfile;
+	exit 1 unless defined $pid;
+}
+
+sub cmd_kill ($) {
+	my ($conf) = @_;
+	my $pid = read_pidfile;
+	exit 1 unless defined $pid;
+	kill 'TERM', $pid;
+	for( my $i = 0; $i < 8; ++$i ){
+		sleep (1 << $i) * 0.05;
+		kill 0, $pid or exit 0;
+	}
+	exit 1;
+}
+
+sub cmd_hup ($) {
+	my ($conf) = @_;
+	my $pid = read_pidfile;
+	exit 1 unless defined $pid;
+	kill 'HUP', $pid;
+}
+
+
 ####
 my $conf = read_conf;
 $DEBUG = $conf->{DEBUG};
@@ -298,6 +338,15 @@ $DEBUG = $conf->{DEBUG};
 ####
 if    ( $ARGV[0] eq "daemon" ){
 	cmd_daemon $conf;
+	exit 0;
+}elsif( $ARGV[0] eq "alive" ){
+	cmd_alive $conf;
+	exit 0;
+}elsif( $ARGV[0] eq "kill" ){
+	cmd_kill $conf;
+	exit 0;
+}elsif( $ARGV[0] eq "hup" ){
+	cmd_hup $conf;
 	exit 0;
 }elsif( $ARGV[0] eq "cron" ){
 	setup_workdir;

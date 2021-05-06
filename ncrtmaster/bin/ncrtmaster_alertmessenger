@@ -167,8 +167,13 @@ sub sendmail ($$$) {
 		$_ = shift @mail;
 		last if $_ eq '';
 
-		my $text = encode_mimewords $_;
-		print $h encode_utf8($text), "\n";
+		my $text;
+		while( m"\G(?:(\s+)|([-:<>.\@_a-zA-Z0-9\x7F-\xFF]+)|(\S+))"g ){
+			if   ( $1 ne '' ){ $text .= $1; }
+			elsif( $2 ne '' ){ $text .= $2; }
+			else{ $text .= encode_mimeword $3, 'B', 'UTF-8'; }
+		}
+		print $h $text, "\n";
 	}
 	print $h "MIME-Version: 1.0\n";
 	print $h "Content-Transfer-Encoding: 8bit\n";

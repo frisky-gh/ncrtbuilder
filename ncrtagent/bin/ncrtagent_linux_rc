@@ -56,37 +56,26 @@ else
 fi
 
 function do_start {
-	if type start-stop-daemon > /dev/null 2>&1 ; then
-		start-stop-daemon --start --quiet --oknodo --pidfile $PIDFILE --exec $DAEMON -- daemon || return $?
-		start-stop-daemon --status --quiet --oknodo --pidfile $PIDFILE || return $?
-	else
-		$DAEMON daemon
-		status -p $PIDFILE $NAME > /dev/null
-	fi
+	$DAEMON alive && return 0
+	$DAEMON daemon || return $?
+	return 0
 }
 
 function do_status {
-	if type start-stop-daemon > /dev/null 2>&1 ; then
-		start-stop-daemon --status --quiet --oknodo --pidfile $PIDFILE || return $?
-	else
-		status -p $PIDFILE $NAME > /dev/null
-	fi
+	$DAEMON alive || return $?
+	return 0
 }
 
 function do_stop {
-	if type start-stop-daemon > /dev/null 2>&1 ; then
-		start-stop-daemon --stop --retry 10 --quiet --oknodo --pidfile $PIDFILE || return $?
-	else
-		killproc -p $PIDFILE -d 10 $NAME
-	fi
+	$DAEMON alive || return 0
+	$DAEMON kill && return 0
+	return 1
 }
 
 function do_reload {
-	if type start-stop-daemon > /dev/null 2>&1 ; then
-		start-stop-daemon --stop --signal HUP --quiet --oknodo --pidfile $PIDFILE || return $?
-	else
-		kill -HUP `pidofproc -p $PIDFILE $NAME`
-	fi
+	$DAEMON alive || return 0
+	$DAEMON hup && return 0
+	return 1
 }
 
 case "$1" in
