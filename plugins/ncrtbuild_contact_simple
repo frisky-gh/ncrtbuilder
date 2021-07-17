@@ -32,7 +32,7 @@ open my $h, '<', $f or do {
 };
 while( <$h> ){
 	chomp;
-	m"^(\S+)\s+(\w+)\s+(\w+)$" or die "$f:$.: illegal format, stopped";
+	m"^(\S+)\s+(\w+)\s+(\w+)(\s|$)" or die "$f:$.: illegal format, stopped";
 	my $host = $1;
 	my $service = $2;
 	my $measure = $3;

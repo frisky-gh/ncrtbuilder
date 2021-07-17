@@ -740,7 +740,19 @@ close $h;
 
 ######## Step 7. ########
 
-sub generate_settings (\%\%) {
+sub generate_options ($$$;%) {
+	my ($rules, $host, $service, %orig_options) = @_;
+	my %options = %orig_options;
+	foreach my $rule ( @$rules ){
+		my ($host_re, $service_re, %add_options) = @$rule;
+		next unless $host =~ m"$host_re";
+		next unless $service =~ m"$service_re";
+		while( my ($k, $v) = each %add_options ){ $options{$k} = $v; }
+	}
+	return %options;
+}
+
+sub generate_naemoncfgline (\%\%) {
 	my ($opts, $params) = @_;
 	my @settings;
 	foreach my $k ( sort keys %{$opts} ){
@@ -755,6 +767,49 @@ sub generate_shortnamelist ($) {
 	return '' unless defined $_[0];
 	return join ',', @{$_[0]};
 }
+
+#### generate rules for option parameters of naemon setting
+sub read_rules4option () {
+	##
+	my $d = "$CONFDIR/option";
+	opendir my $h, $d or do {
+		die "$d: cannot open, stopped";
+	};
+	my @files = sort readdir $h;
+	closedir $h;
+
+	my @rules;
+	foreach my $e ( @files ){
+		next unless $e =~ m"^\w.*\.optionrules$";
+		my $f = "$d/$e";
+		open my $h, "<", $f or do {
+			die "$f: cannot open, stopped";
+		};
+		my $vhost_re;
+		my $vservice_re;
+		while( <$h> ){
+			chomp;
+			next if m"^\s*(#|$)";
+			if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+				$vhost_re = qr"$1";
+				$vservice_re = qr"$2";
+			}elsif( m"^option\s+(\S+(\s+\S+)*)" ){
+				my $options = $1;
+				my %options;
+				foreach my $option ( split m"\s+", $1 ){
+					die unless $option =~ m"^(\w+)=(.*)$";
+					$options{$1} = $2;
+				}
+				push @rules, [$vhost_re, $vservice_re, %options];
+			}else{
+				die "$f:$.: illegal format, stopped";
+			}
+		}
+		close $h;
+	}
+	return \@rules;
+}
+my $rules4option = read_rules4option;
 
 #### generate confs for which service type is agent
 sub generate_agentconf_for_agent ($$$) {
@@ -894,7 +949,7 @@ sub generate_agentconf_for_indirect ($$$$) {
 			my @settings;
 			foreach my $rule ( @$rules ){
 				my ($proxyhost_re, $setting, $option) = @$rule;
-				next unless $proxyhost =~ $proxyhost_re;
+				next unless $proxyhost =~ m"$proxyhost_re";
 				my %d = diff %option, %$option;
 				while( my ($k, $v) = each %d ){
 					push @settings, "$k=$v";
@@ -1269,7 +1324,7 @@ if( $plan{step7} ){
 	foreach my $agenttype ( sort keys %agenttype2templateopts ){
 		my %param = ( 'agenttype' => $agenttype );
 		my $ht_topt = $agenttype2templateopts{$agenttype};
-		my @settings = generate_settings %$ht_topt, %param;
+		my @settings = generate_naemoncfgline %$ht_topt, %param;
 		####
 		print $h
 		"define host {\n",
@@ -1290,7 +1345,7 @@ if( $plan{step7} ){
 		my %p = ( 'measure' => $measure );
 		my $measuretype = $measure2measuretype{$measure};
 		my $s_topt = $measure2templateopts{$measure};
-		my @settings = generate_settings %$s_topt, %p;
+		my @settings = generate_naemoncfgline %$s_topt, %p;
 		####
 		if( $measuretype eq 'agent' ){
 			print $h
@@ -1336,9 +1391,10 @@ if( $plan{step7} ){
 	};
 	foreach my $host ( sort keys %host2service2measure ){
 		my $agenttype = $host2agenttype{$host} // 'virtual';
-		my %p = ( 'hostname' => $host, 'agenttype' => $agenttype );
-		my $ht_opt = $agenttype2opts{$agenttype};
-		my @settings = generate_settings %$ht_opt, %p;
+		my %var = ( 'hostname' => $host, 'agenttype' => $agenttype );
+		my %options = generate_options $rules4option,
+			$host, "-", %{$agenttype2opts{$agenttype}};
+		my @settings = generate_naemoncfgline %options, %var;
 		my $contacts = generate_shortnamelist $host2contact{$host};
 		my $_urlencoded = uri_escape_utf8($host);
 		$contacts = "nobody" if $contacts eq "";
@@ -1363,12 +1419,11 @@ if( $plan{step7} ){
 		my ($host, $service, $measure, $hs_opts) = @$host_service_measure_opts;
 		my $agenttype = $host2agenttype{$host};
 		my $measuretype = $measure2measuretype{$measure};
-		my $s_opt = $measure2opts{$measure};
-		my %p = ( 'hostname' => $host, 'agenttype' => $agenttype );
-		my @settings = (
-			generate_settings(%$s_opt, %p),
-			generate_settings(%$hs_opts, %p)
-		);
+		my %options = generate_options $rules4option,
+			$host, $service,
+			%{$measure2opts{$measure}}, %{$hs_opts};
+		my %var = ( 'hostname' => $host, 'agenttype' => $agenttype );
+		my @settings = generate_naemoncfgline %options, %var;
 		my $contacts = generate_shortnamelist $host2service2contact{$host}->{$service};
 		my $_urlencoded = uri_escape_utf8($service);
 		$contacts = "nobody" if $contacts eq "";

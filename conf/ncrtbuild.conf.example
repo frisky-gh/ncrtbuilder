@@ -10,6 +10,7 @@ NRPETLS=yes
 #### NCRTMaster settings
 NCRTMASTERHOME=/opt/ncrtmaster
 SESSIONDIR=/var/www/pub/ncrtmaster
+SESSIONURLBASE=http://example.com/ncrtmaster/
 
 #### naemon2influx-grafana-helper settings
 HELPERURL=http://example.com/naemon2influx-grafana-helper/
