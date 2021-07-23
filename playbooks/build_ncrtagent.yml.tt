@@ -11,7 +11,7 @@
       tags: [ common ]
 
 [% FOREACH agenttype_playbook IN AGENTTYPE_PLAYBOOKS -%]
-- name: import agenttype [%agenttype_task%] playbook
+- name: import playbook [%agenttype_playbook%]
   import_playbook: "[%agenttype_playbook%]"
   tags: [ common ]
 [% END %]

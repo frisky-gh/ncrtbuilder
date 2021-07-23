@@ -71,11 +71,8 @@ sub load_proxyhosts ($$$) {
 	return \%proxyhost2param;
 }
 
-sub generate_metrics_from_agent ($$$$$) {
+sub generate_metrics_by_ncrtprotocol ($$$$$) {
 	my ($proxyhost, $measure, $host, $service, $param) = @_;
-
-	my $rc = 0;
-	my %metrics;
 
 	####
 	my $timeout = $$param{timeout} // 50;
@@ -105,6 +102,55 @@ sub generate_metrics_from_agent ($$$$$) {
 
 	$metrics{"ncrtagent[$proxyhost]-error"} = 0;
 	return %metrics;
+}
+
+sub generate_metrics_by_nrpeprotocol ($$$$$) {
+	my ($proxyhost, $measure, $host, $service, $param) = @_;
+
+	my %metrics;
+
+	####
+	my $timeout = $$param{timeout} // 50;
+	my $address = $$param{agent_address} // $proxyhost;
+	my $port    = $$param{agent_port} // "5666";
+	my $client  = $$param{agent_client} // "/usr/lib/nagios/plugins/check_nrpe";;
+
+	####
+	open my $h, '-|', "$client -H $address -p $port -c check_$service" or do {
+		$metrics{"nrpe[$proxyhost]-error"} = 3;
+		return %metrics;
+	};
+	my $r = <$h>;
+	close $h;
+
+	chomp $r;
+	$r =~ m"^ (.*) \|\s* (\S.*) $"x or do {
+		$metrics{"nrpe[$proxyhost]-error"} = 2;
+		return %metrics;
+	};
+	my $output = $1;
+	my $perfdata = $2;
+	foreach my $field ( split m"\s+", $perfdata ){
+		next unless $field =~ m"^('([^=']+)'|([^=']+))=([-+]?(\d+|\d+\.\d+|\.\d+))(;.*)?$";
+		my $key = $2 . $3;
+		my $value = $4;
+		$metrics{$key} = $value;
+	}
+	$metrics{"nrpe[$proxyhost]-error"} = 0;
+	return %metrics;
+}
+
+sub generate_metrics_from_agent ($$$$$) {
+	my ($proxyhost, $measure, $host, $service, $param) = @_;
+
+	my $protocol = $$param{agent_protocol} // "ncrtagent";
+	if( $protocol eq 'nrpe' ){
+		return generate_metrics_by_nrpeprotocol
+			$proxyhost, $measure, $host, $service, $param;
+	}else{
+		return generate_metrics_by_ncrtprotocol
+			$proxyhost, $measure, $host, $service, $param;
+	}
 }
 
 sub generate_metrics_from_targetagent ($$$$) {
@@ -478,11 +524,4 @@ sub generate_detection_results ($$$%) {
 }
 
 1;
-
-
-
-
-
-
-
 

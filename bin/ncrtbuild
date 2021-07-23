@@ -498,6 +498,7 @@ EOF
 
 ######## Step 3. ########
 
+my @agenttype_playbooks;
 if( $plan{step3} ){
 	#### run agenttype plugins
 	foreach my $e ( sort @agenttype_plugins ){
@@ -505,6 +506,10 @@ if( $plan{step3} ){
 		my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
 		print "r=", $r, "\n";
 		die unless $r == 0;
+
+		if( -f "$PLUGINSDIR/$e.yml" ){
+			push @agenttype_playbooks, "$PLUGINSDIR/$e.yml";
+		}
 	}
 }
 
@@ -550,6 +555,7 @@ exit 0 unless $plan{step6};
 
 #### initialize variable work dirs.
 my %host2agenttype;
+my %agenttype2hosts;
 my $agenttype_has_collision;
 my $f = "$WORKDIR/hosts";
 open my $h, '<', $f or do {
@@ -560,6 +566,7 @@ while( <$h> ){
 	my ($host, $agenttype) = split m"\s+";
 	if( not defined $host2agenttype{$host} ){
 		$host2agenttype{$host} = $agenttype;
+		push @{$agenttype2hosts{$agenttype}}, $host;
 	}elsif( $host2agenttype{$host} ne $agenttype ){
 		print "ERROR: host $host has multiple agenttypes.\n";
 		$agenttype_has_collision = 1;
@@ -571,7 +578,7 @@ die "Some agenttype have collisions, stopped" if $agenttype_has_collision;
 
 my @ncrtagents;
 while( my ($h, $t) = each %host2agenttype ){
-	push @ncrtagents, $h if $t =~ m"(linux)";
+	push @ncrtagents, $h;
 }
 
 foreach my $h ( @ncrtmasters ){
@@ -1605,6 +1612,16 @@ if( $plan{step8} ){
 
 ######## Step 9. ########
 
+sub generate_yaml_hash ($) {
+	my ($params) = @_;
+	my @params;
+	foreach my $k ( sort keys %$params ){
+		my $v = $$params{$k};
+		push @params, "\"$k\":\"$v\"";
+	}
+	return "{" . join(", ", @params) . "}";
+}
+
 #### run ansible for nrpe agent
 my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -t \"%s\"",
 	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $tags;
@@ -1616,15 +1633,19 @@ print $h
 	"all:\n",
 	"  children:\n",
 	"    AllHosts:\n",
-	"      hosts:\n";
-foreach my $host ( @ncrtagents ){
-	my $params = $host2params{$host};
-	my @params;
-	foreach my $k ( sort keys %$params ){
-		my $v = $$params{$k};
-		push @params, "\"$k\":\"$v\"";
+	"      children:\n";
+foreach my $agenttype ( sort keys %agenttype2hosts ){
+	print $h "        $agenttype.__AGENTTYPE__:\n";
+}
+foreach my $agenttype ( sort keys %agenttype2hosts ){
+	my $hosts = $agenttype2hosts{$agenttype};
+	print $h
+		"    $agenttype.__AGENTTYPE__:\n",
+		"      hosts:\n";
+	foreach my $host ( sort @$hosts ){
+		my $yaml_hash = generate_yaml_hash $host2params{$host};
+		print $h "        $host: $yaml_hash\n";
 	}
-	print $h "        $host: {", join(", ", @params), "}\n";
 }
 close $h;
 
@@ -1635,11 +1656,6 @@ my $tt = Template->new({
 	die "build_ncrtagent.yml.tt: cannot read, stopped";
 };
 
-my @agenttype_playbooks;
-foreach my $agenttype ( @agenttype_plugins ){
-	next unless -f "$PLUGINSDIR/$agenttype.yml";
-	push @agenttype_playbooks, "$PLUGINSDIR/$agenttype.yml";
-}
 
 my $output;
 my %vars = (

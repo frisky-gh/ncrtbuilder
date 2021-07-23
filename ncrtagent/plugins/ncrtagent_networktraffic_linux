@@ -140,7 +140,7 @@ if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
 		next if m"^\s*(#|$)";
-		die "$f:$.:$_: illegal format, stopped" unless m"^!(\S+)$";
+		die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)$";
 		push @ignore_rules, qr"^$2$";
 	}
 	close $h;

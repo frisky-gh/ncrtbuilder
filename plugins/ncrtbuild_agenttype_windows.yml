@@ -1,0 +1,7 @@
+---
+
+- hosts: windows.__AGENTTYPE__
+  tasks:
+    - name: ncrtbuild_agenttype_windows.yml DEBUG
+      debug:
+        msg: ncrtbuild_agenttype_windows.yml...

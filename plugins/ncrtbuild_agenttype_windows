@@ -24,18 +24,20 @@ while( <$h> ){
 }
 close $h;
 
-#### load linux conf.
+#### load windows conf.
 my %targets;
 my %default = (
 	listen_address => "0.0.0.0",
-	listen_port => 46848,
+	listen_port => 5666,
 	daemon_user => "ncrtagent",
 	timeout => 60,
-	agent_protocol => 'ncrtagent',
+	agent_protocol => 'nrpe',
 	agent_address => undef,
-	agent_port => 46848,
+	agent_port => 5666,
+	ansible_connection => 'winrm',
+	ansible_winrm_server_cert_validation => 'ignore'
 );
-my $f = "$CONFDIR/agenttype_linux.hosts";
+my $f = "$CONFDIR/agenttype_windows.hosts";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -68,7 +70,7 @@ while( my ($k, $v) = each %targets ){
 	while( my ($k, $v) = each %$v ){
 		push @param, "$k=$v";
 	}
-	print $h "$k	linux	", join("\t", @param), "\n";
+	print $h "$k	windows	", join("\t", @param), "\n";
 }
 close $h;
 
@@ -77,8 +79,20 @@ my $f = "$WORKDIR/agenttypes";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "linux	display_name=Linux:%hostname% address=%hostname%\n";
+print $h "windows	display_name=Linux:%hostname% address=%hostname%\n";
 close $h;
 
 #### generate ncrtagent.conf
+
+#### generate cert file.
+my $conf = "$CONFDIR/agenttype_windows.openssl.conf";
+my $cert = "$CONFDIR/agenttype_windows.cert.pem";
+my $key  = "$CONFDIR/agenttype_windows.key.pem";
+if( -f $conf && ! -f $cert && ! -f $key ){
+	system "openssl req -x509 -nodes -days 3650 -newkey rsa:2048"
+		. " -config $conf"
+		. " -subj '/CN=ncrtagent_windows'"
+		. " -outform PEM -out $cert -keyout $key";
+}
+
 
