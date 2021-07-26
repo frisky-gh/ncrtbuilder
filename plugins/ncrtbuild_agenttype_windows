@@ -53,7 +53,7 @@ while( <$h> ){
 	}
 
 	if( $host eq "*" ){
-		%default = %param;
+		%default = (%default, %param);
 	}else{
 		$targets{$host} = { %default, %param };
 	}

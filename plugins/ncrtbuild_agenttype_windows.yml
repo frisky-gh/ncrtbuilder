@@ -5,3 +5,129 @@
     - name: ncrtbuild_agenttype_windows.yml DEBUG
       debug:
         msg: ncrtbuild_agenttype_windows.yml...
+
+#    - win_chocolatey_config:
+#        name: proxy
+#        value: "{{chocolatey_proxy}}"
+#      when: chocolatey_proxy is defined
+
+    - name: install NsClient++
+      win_chocolatey:
+        name: nscp
+        state: present
+        proxy_url: "{{chocolatey_proxy}}"
+
+
+    #### nsclient.ini setup
+
+    ## /settings/default
+    - name: setup default section
+      win_lineinfile:
+        path:  "C:\\Program Files\\NSClient++\\nsclient.ini"
+        regex: '^\[/settings/default\]'
+        line:  "[/settings/default]"
+        insertafter: EOF
+      notify: restart nsclient
+
+    - win_lineinfile:
+        path:  "C:\\Program Files\\NSClient++\\nsclient.ini"
+        regex: "^password *= *(.*)"
+        line:  ';password = $1'
+        backrefs: yes
+      notify: restart nsclient
+
+    - win_lineinfile:
+        path:  "C:\\Program Files\\NSClient++\\nsclient.ini"
+        regex: "^allowed hosts *= *.*"
+        line:  'allowed hosts = {{nsclient_allowed_hosts}}'
+        insertafter: '^\[/settings/default\]'
+      notify: restart nsclient
+
+    ## /settings/NRPE/server
+    - name: setup server section
+      win_lineinfile:
+        path:  "C:\\Program Files\\NSClient++\\nsclient.ini"
+        regex: '^\[/settings/NRPE/server\]'
+        line:  "[/settings/NRPE/server]"
+        insertafter: EOF
+      notify: restart nsclient
+
+    - win_lineinfile:
+        path:  "C:\\Program Files\\NSClient++\\nsclient.ini"
+        regex: '{{item.regex}}'
+        line:  '{{item.line}}'
+        insertafter: '^\[/settings/NRPE/server\]'
+      with_items:
+        - { regex: "^insecure *= *.*",    line: 'insecure = true' }
+        - { regex: "^use ssl *= *.*",     line: 'use ssl = true' }
+        - { regex: "^verify mode *= *.*", line: 'verify mode = none' }
+        - { regex: "^timeout *= *.*",     line: 'timeout = 50' }
+      notify: restart nsclient
+
+    ## /modules
+    - name: setup modules section
+      win_lineinfile:
+        path:  "C:\\Program Files\\NSClient++\\nsclient.ini"
+        regex: '^\[/modules\]'
+        line:  "[/modules]"
+        insertafter: EOF
+      notify: restart nsclient
+
+    - win_lineinfile:
+        path:  "C:\\Program Files\\NSClient++\\nsclient.ini"
+        regex: "^CheckExternalScripts *= *.*"
+        line:  'CheckExternalScripts = enabled'
+        insertafter: '^\[/modules\]'
+      notify: restart nsclient
+
+    ## /settings/external scripts/wrappings
+    - name: setup wrappings section
+      win_lineinfile:
+        path:  "C:\\Program Files\\NSClient++\\nsclient.ini"
+        regex: '^\[/settings/external scripts/wrappings\]'
+        line:  "[/settings/external scripts/wrappings]"
+        insertafter: EOF
+      notify: restart nsclient
+
+    - win_lineinfile:
+        path:  "C:\\Program Files\\NSClient++\\nsclient.ini"
+        regex: "^ps1 *= *.*"
+        line:  'ps1 = cmd /c echo If (-Not (Test-Path "%SCRIPT%") ) { Write-Host "UNKNOWN: Script `"%SCRIPT%`" not found."; exit(3) }; %SCRIPT% $ARGS$; exit($lastexitcode) | powershell.exe /noprofile -command -'
+        insertafter: '^\[/settings/external scripts/wrappings\]'
+      notify: restart nsclient
+
+    ## /settings/external scripts/wrapped scripts
+    - name: setup wrapped scripts section
+      win_lineinfile:
+        path:  "C:\\Program Files\\NSClient++\\nsclient.ini"
+        regex: '^\[/settings/external scripts/wrapped scripts\]'
+        line:  "[/settings/external scripts/wrapped scripts]"
+        insertafter: EOF
+      notify: restart nsclient
+
+    - win_lineinfile:
+        path:  "C:\\Program Files\\NSClient++\\nsclient.ini"
+        regex: "^check_osperf *= *.*"
+        line:  'check_osperf = C:\opt\ncrtagent\plugins\ncrtagent_osperf_windows.ps1'
+        insertafter: '^\[/settings/external scripts/wrapped scripts\]'
+      notify: restart nsclient
+
+    ####
+    - win_file:
+        path: 'C:\opt'
+        state: directory
+
+    - win_file:
+        path: 'C:\opt\ncrtagent'
+        state: directory
+
+    - win_copy:
+        src:  "{{TOOLHOME}}/ncrtagent/"
+        dest: 'C:\opt\ncrtagent'
+
+  handlers:
+    - name: restart nsclient
+      win_service:
+        name:  nscp
+        state: restarted
+
