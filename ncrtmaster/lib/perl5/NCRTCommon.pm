@@ -116,7 +116,7 @@ sub generate_metrics_by_nrpeprotocol ($$$$$) {
 	my $client  = $$param{agent_client} // "/usr/lib/nagios/plugins/check_nrpe";;
 
 	####
-	open my $h, '-|', "$client -H $address -p $port -c check_$service" or do {
+	open my $h, '-|', "$client -H $address -p $port -t $timeout -c check_$service" or do {
 		$metrics{"nrpe[$proxyhost]-error"} = 3;
 		return %metrics;
 	};
