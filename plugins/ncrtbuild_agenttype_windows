@@ -95,4 +95,9 @@ if( -f $conf && ! -f $cert && ! -f $key ){
 		. " -outform PEM -out $cert -keyout $key";
 }
 
+#### generate dhparam file.
+my $dhparam = "$CONFDIR/agenttype_windows.dh2048.pem";
+if( ! -f $dhparam ){
+	system "openssl dhparam -out $dhparam -outform PEM 2048";
+}
 

@@ -51,11 +51,10 @@ inc/
 /conf/agent/*.conf
 /conf/agentless/*.conf
 /conf/indirect/*.conf
-/conf/composite/*.conf
+# option parameters
+/conf/option/*.optionrules
 # threshold settings
 /conf/threshold/*.thresholds
-# settings for metric merge
-/conf/metricmerge/*.mergerules
 # settings for filters
 /conf/metricfilter/*.filterrules
 /conf/thresholdfilter/*.filterrules
