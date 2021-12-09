@@ -1,0 +1,20 @@
+<html>
+<head>
+  <title>This Page Has Been Expired.</title>
+  <style>
+    table, td, th {
+      border-collapse: collapse;
+      border:1px solid #333;
+      padding: 4px;
+    }
+    th { font-size: 14px; font-color: #aaaaaa; }
+    td { font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h3>This page has been expired.</h3>
+  <a href="../sess_[% next_alertsession %]/">next</a>
+</body>
+</html>
+
+

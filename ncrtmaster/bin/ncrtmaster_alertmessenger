@@ -56,6 +56,18 @@ while( <$h> ){
 }
 close $h;
 
+my $f = "$CONFDIR/reporters";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+my @reporters;
+while( <$h> ){
+	chomp;
+	push @reporters, $_;
+}
+close $h;
+
+
 # for debug
 our $DEBUG = $conf{DEBUG} // 0;
 
@@ -1465,6 +1477,14 @@ sub set_graphs_timestamp ($) {
 
 
 ####
+
+debuglog "execute reporter plugins...";
+
+foreach my $e ( sort @reporters ){
+	#system "$PLUGINSDIR/ncrtmaster_$e $CONFDIR $WORKDIR";
+	my $r = `$PLUGINSDIR/ncrtmaster_$e $CONFDIR $WORKDIR`;
+	debuglog "$PLUGINSDIR/ncrtmaster_$e: $r";
+}
 
 debuglog "updating all service groups...";
 

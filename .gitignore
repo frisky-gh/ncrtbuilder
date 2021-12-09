@@ -58,6 +58,9 @@ inc/
 # settings for filters
 /conf/metricfilter/*.filterrules
 /conf/thresholdfilter/*.filterrules
+/conf/reporter/*.conf
+/conf/reporter/*.rules
+/conf/reporter/*.tt
 # filters
 /filters/*.filter
 #

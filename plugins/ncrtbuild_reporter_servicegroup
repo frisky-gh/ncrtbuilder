@@ -1,0 +1,38 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+#### load global conf.
+my %ncrtconf;
+my $f = "$CONFDIR/ncrtbuild.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\w+)=(.*)$";
+	$ncrtconf{$1} = $2;
+}
+close $h;
+
+#### append conf info.
+my $f = "$WORKDIR/masterconfs";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "reporter/servicegroup.conf\n";
+print $h "reporter/servicegroup.rules\n";
+print $h "reporter/servicegroup_activesession.tt\n";
+print $h "reporter/servicegroup_mail.tt\n";
+close $h;
+
+exit 0;

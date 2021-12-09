@@ -1,0 +1,92 @@
+From: "Naemon ServiceGroup Reporter" <[%MAILFROM%]>
+To: "You" <[%MAILTO%]>
+[% IF    reason == "CHANGE" -%]
+Subject: [ALERT] "[%SERVICEGROUP%]" Status has Changed
+[% ELSIF reason == "KEEP" -%]
+Subject: [ALERT] "[%SERVICEGROUP%]" Has been NG
+[% ELSE -%]
+Subject: [ALERT] "[%SERVICEGROUP%]"
+[% END -%]
+
+[% IF ngservicelist.size > 0 -%]
+[% localtime(NOW) %]
+=== Current Service NG Status ===
+
+host                 service              state
+-------------------- -------------------- ------
+[%     FOREACH ng IN ngservicelist -%]
+[%         IF    ng.hard_state == "0" %][% state = "OK" -%]
+[%         ELSIF ng.hard_state == "1" %][% state = "WARN" -%]
+[%         ELSIF ng.hard_state == "2" %][% state = "CRIT" -%]
+[%         ELSE %][% state = "UNKNOWN" %][% END -%]
+[%         safesprintf("%-20s %-20s %s", ng.host, ng.service, state) %]
+[%     END -%]
+
+[% ELSE -%]
+=== All Services Have OK Status ===
+
+[% END -%]
+[% IF servicestate_history.size > 0 -%]
+=== Recent Service NG Status Changes ===
+
+timestamp           host                 service              state change
+------------------- -------------------- -------------------- -------------
+[%     FOREACH change IN servicestate_history -%]
+[%         IF    change.old == "0" %][% old_state = "OK" -%]
+[%         ELSIF change.old == "1" %][% old_state = "WARN" -%]
+[%         ELSIF change.old == "2" %][% old_state = "CRIT" -%]
+[%         ELSE %][% old_state = "UNKNOWN" %][% END -%]
+[%         IF    change.new == "0" %][% new_state = "OK" -%]
+[%         ELSIF change.new == "1" %][% new_state = "WARN" -%]
+[%         ELSIF change.new == "2" %][% new_state = "CRIT" -%]
+[%         ELSE %][% new_state = "UNKNOWN" %][% END -%]
+[%         safesprintf("%-19s %-20s %-20s %s->%s", localtime(change.timestamp), change.host, change.service, old_state, new_state) %]
+[%     END -%]
+
+[% END -%]
+[% IF perfstate_history.size > 0 -%]
+=== Recent Performance NG Status Changes ===
+
+timestamp           host                 performance          state change
+------------------- -------------------- -------------------- -------------
+[%     FOREACH change IN perfstate_history -%]
+[%         IF    change.old == "0" %][% old_state = "OK" -%]
+[%         ELSIF change.old == "1" %][% old_state = "WARN" -%]
+[%         ELSIF change.old == "2" %][% old_state = "CRIT" -%]
+[%         ELSE %][% old_state = "UNKNOWN" %][% END -%]
+[%         IF    change.new == "0" %][% new_state = "OK" -%]
+[%         ELSIF change.new == "1" %][% new_state = "WARN" -%]
+[%         ELSIF change.new == "2" %][% new_state = "CRIT" -%]
+[%         ELSE %][% new_state = "UNKNOWN" %][% END -%]
+[%         safesprintf("%-19s %-20s %-20s %s->%s", localtime(change.timestamp), change.host, change.perf, old_state, new_state) %]
+[%     END -%]
+
+[% END -%]
+[% IF ngperflist.size > 0 -%]
+=== Current Performance NG Status Detail ===
+
+host            item                             p value    threshold
+--------------- -------------------------------- - -------- ---------
+[%     FOREACH ng IN ngperflist -%]
+[%         IF    ng.statetext == "under_crit" %][%op="<"%][%pr="C"%][%th=ng.crit-%]
+[%         ELSIF ng.statetext == "over_crit"  %][%op=">"%][%pr="C"%][%th=ng.crit-%]
+[%         ELSIF ng.statetext == "under_warn" %][%op="<"%][%pr="W"%][%th=ng.warn-%]
+[%         ELSIF ng.statetext == "over_warn"  %][%op=">"%][%pr="W"%][%th=ng.warn-%]
+[%         END -%]
+[%         safesprintf("%-15s %-32s %1s %8s%1s%-8s", ng.host, ng.name, pr, ng.value, op, th) %]
+[%     END -%]
+
+[% END -%]
+[% IF servicestate_events.size > 0 -%]
+=== Current Events ===
+
+host                 message
+-------------------- ---------------------------------------------------
+[%     FOREACH ev IN servicestate_events -%]
+[%         safesprintf("%-20s service %s has been %s", ev.host, ev.service, ev.event) %]
+[%     END -%]
+
+[% END -%]
+----
+You get lastest NG status at following:
+[% SESSIONURL %]

@@ -1,0 +1,85 @@
+<html>
+<head>
+  <title>Service Group "[% SERVICEGROUP %]"</title>
+  <style>
+    table, td, th {
+      border-collapse: collapse;
+      border:1px solid #333;
+      padding: 4px;
+    }
+    th { font-size: 14px; font-color: #aaaaaa; }
+    td { font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h3>Service Group "[% SERVICEGROUP %]" Current Service Status</h3>
+  <table>
+    <tr>
+      <th>host</th>
+      <th>service</th>
+      <th>status</th>
+      <th>links</th>
+    </tr>
+    [% FOREACH service IN servicelist %]
+    [%     IF    service.state == "0" %][% st = "OK" -%]
+    [%     ELSIF service.state == "1" %][% st = "WARN" -%]
+    [%     ELSIF service.state == "2" %][% st = "CRIT" -%]
+    [%     ELSE %][% st = "UNKNOWN" %][% END -%]
+    <tr>
+      <td>[% service.host %]</td>
+      <td>[% service.service %]</td>
+      <td>[% st %]</td>
+      <td>
+        <a href="/pub/thruk/cgi-bin/extinfo.cgi?type=2&host=[% service.host %]&service=[% service.service %]">Thruk</a>
+        <a href="/pub/naemon2influx-grafana-helper/redirect.html?hostname=[% service.host %]&servicedesc=[% service.service %]">Grafana</a>
+      </td>
+    </tr>
+    [% END %]
+  </table>
+
+  <h3>Current Performance Status</h3>
+  <table>
+    <tr>
+      <th rowspan="2">host</th>
+      <th rowspan="2">service</th>
+      <th rowspan="2">performance name</th>
+      <th rowspan="2">state</th>
+      <th rowspan="2">value</th>
+      <th colspan="2">threshold</th>
+      <th rowspan="2">links</th>
+    </tr>
+    <tr>
+      <th>warning</th>
+      <th>critical</th>
+    </tr>
+    [% FOREACH perf IN perflist %]
+    <tr>
+      <td>[% perf.host %]</td>
+      <td>[% perf.service %]</td>
+      <td>[% perf.name %]</td>
+      <td>[% perf.statetext %]</td>
+      <td>[% perf.value %]</td>
+      <td>[% perf.warn %]</td>
+      <td>[% perf.crit %]</td>
+      <td>
+        [% n = perf.fullname %]
+	[% FOREACH graph IN perf2graphs.$n %]
+	<a href="#[% graph.name %]">[% graph.title %]</a><br>
+	[% END %]
+      </td>
+    </tr>
+    [% END %]
+  </table>
+
+  <h3>Graphs</h3>
+  <ul>
+    [% FOREACH graph IN graphlist %]
+    <li id="[% graph.name %]">[% graph.title %]<br><img src="[% urlencode(graph.name) %].png"></li>
+    [% END %]
+  </ul>
+
+  [% localtime(NOW) %] last updated.
+</body>
+</html>
+
+

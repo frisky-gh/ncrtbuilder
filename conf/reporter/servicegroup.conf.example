@@ -1,0 +1,12 @@
+
+DEBUG=1
+
+SESSIONDIR=/var/www/html/pub/ncrtmaster
+SESSIONURLBASE=https://comope.fccl-homecomputing.com/pub/ncrtmaster
+
+GRAFANAURL=https://comope.fccl-homecomputing.com/pub/grafana
+GRAFANAAPIKEY=eyJrIjoiYjcxZkNuQzJLWGJadVNuSG03NVc0RnFaNVBWNnI0cHAiLCJuIjoibmFlbW9uMmluZmx1eC1ncmFmYW5hLWhlbHBlciIsImlkIjozfQ==
+GRAFANAORGID=3
+
+HELPERURL=https://comope.fccl-homecomputing.com/pub/naemon2influx-grafana-helper
+

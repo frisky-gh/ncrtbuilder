@@ -107,6 +107,22 @@ sub create_or_die ($) {
 	close $h;
 }
 
+sub system_or_die ($) {
+	my ($cmd) = @_;
+	my $r = system $cmd;
+	if   ($? == -1){
+		die sprintf "%s: failed to execute: %d, stopped",
+			$cmd, $!;
+	}elsif($? & 127){
+		die sprintf
+			"%s: child died with signal %d, %s coredump, stopped",
+			$cmd, ($? & 127), ($? & 128) ? 'with' : 'without';
+	}elsif( ($?>>8) != 0){
+		 die sprintf "%s: child exited with value %d, stopped",
+			$cmd, $? >> 8;
+	}
+}
+
 sub _parse_option ($) {
 	( $_ ) = @_;
 	my %opt;
@@ -321,16 +337,18 @@ my @agent_plugins;
 my @agentless_plugins;
 my @indirect_plugins;
 my @contact_plugins;
+my @reporter_plugins;
 opendir my $d, $PLUGINSDIR or do {
 	die "$PLUGINSDIR: cannot open, stopped";
 };
 while( my $e = readdir $d ){
-	next unless $e =~ m"^ncrtbuild_(?:(agent)|(agentless)|(indirect)|(agenttype)|(contact))_[-\w]+$";
+	next unless $e =~ m"^ncrtbuild_(?:(agent)|(agentless)|(indirect)|(agenttype)|(contact)|(reporter))_[-\w]+$";
 	push @agent_plugins,     $e if $1;
 	push @agentless_plugins, $e if $2;
 	push @indirect_plugins,  $e if $3;
 	push @agenttype_plugins, $e if $4;
 	push @contact_plugins,   $e if $5;
+	push @reporter_plugins,  $e if $6;
 }
 closedir $d;
 
@@ -341,37 +359,30 @@ if( $plan{step1} ){
 	#### build naemon2influx package
 	if( not defined $NAEMON2INFLUX_DEB ){
 		unless( -d "$SRCDIR/naemon2influx" ){
-			my $r = system "git clone --depth=1 https://github.com/hakong/naemon2influx.git $SRCDIR/naemon2influx";
-			die unless $r == 0;
+			system_or_die "git clone --depth=1 https://github.com/hakong/naemon2influx.git $SRCDIR/naemon2influx";
 		}
-		my $r = system "make deb -C $SRCDIR/naemon2influx";
-		die unless $r == 0;
+		system_or_die "make deb -C $SRCDIR/naemon2influx";
 		$NAEMON2INFLUX_DEB = get_naemon2influx_deb "$SRCDIR/naemon2influx";
 		defined $NAEMON2INFLUX_DEB or
 			die "naemon2influx: cannot build package, stopped";
-		my $r = system "cp $SRCDIR/naemon2influx/$NAEMON2INFLUX_DEB $CONFDIR/$NAEMON2INFLUX_DEB";
-		die unless $r == 0;
+		system_or_die "cp $SRCDIR/naemon2influx/$NAEMON2INFLUX_DEB $CONFDIR/$NAEMON2INFLUX_DEB";
 	}
 
 	#### build naemon2influx-grafana-helper package
 	if( not defined $NAEMON2INFLUX_GRAFANA_HELPER_DEB ){
 		unless( -d "$SRCDIR/naemon2influx-grafana-helper" ){
-			my $r = system "git clone --depth=1 https://github.com/frisky-gh/naemon2influx-grafana-helper.git $SRCDIR/naemon2influx-grafana-helper";
-			die unless $r == 0;
+			system_or_die "git clone --depth=1 https://github.com/frisky-gh/naemon2influx-grafana-helper.git $SRCDIR/naemon2influx-grafana-helper";
 		}
-		my $r = system "cd $SRCDIR/naemon2influx-grafana-helper && dpkg-buildpackage -us -uc";
-		die unless $r == 0;
+		system_or_die "cd $SRCDIR/naemon2influx-grafana-helper && dpkg-buildpackage -us -uc";
 		$NAEMON2INFLUX_GRAFANA_HELPER_DEB = get_naemon2influx_grafana_helper_deb $SRCDIR;
 		defined $NAEMON2INFLUX_GRAFANA_HELPER_DEB or
 			die "naemon2influx-grafana-helper: cannot build package, stopped";
-		my $r = system "cp $SRCDIR/$NAEMON2INFLUX_GRAFANA_HELPER_DEB $CONFDIR/$NAEMON2INFLUX_GRAFANA_HELPER_DEB";
-		die unless $r == 0;
+		system_or_die "cp $SRCDIR/$NAEMON2INFLUX_GRAFANA_HELPER_DEB $CONFDIR/$NAEMON2INFLUX_GRAFANA_HELPER_DEB";
 	}
 
 	#### create server cert. if not exists
 	if( ! -f "$CONFDIR/ncrt_key.pem" ){
-		my $r = system "openssl req -verbose -subj '/C=JP/ST=Kanagawa-ken/O=Watao Family/CN=*' -x509 -newkey rsa:2048 -nodes -keyout $CONFDIR/ncrt_key.pem -out $CONFDIR/ncrt_cert.pem -days 36525";
-		die unless $r == 0;
+		system_or_die "openssl req -verbose -subj '/C=JP/ST=Kanagawa-ken/O=Watao Family/CN=*' -x509 -newkey rsa:2048 -nodes -keyout $CONFDIR/ncrt_key.pem -out $CONFDIR/ncrt_cert.pem -days 36525";
 	}
 }
 
@@ -417,6 +428,9 @@ if( $plan{step2} ){
 
 	# email address list
 	create_or_die "$WORKDIR/addresses";
+
+	# conf file list for ncrtmasters
+	create_or_die "$WORKDIR/masterconfs";
 
 	#### write templates
 	my $action_url = "${HELPERURL}/redirect.html?hostname=\$_HOSTURLENCODED\$&servicedesc=\$_SERVICEURLENCODED\$";
@@ -503,9 +517,7 @@ if( $plan{step3} ){
 	#### run agenttype plugins
 	foreach my $e ( sort @agenttype_plugins ){
 		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
-		my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-		print "r=", $r, "\n";
-		die unless $r == 0;
+		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
 
 		if( -f "$PLUGINSDIR/$e.yml" ){
 			push @agenttype_playbooks, "$PLUGINSDIR/$e.yml";
@@ -519,33 +531,28 @@ if( $plan{step4} ){
 	#### run measurement plugins
 	foreach my $e ( sort @agent_plugins ){
 		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
-		my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-		print "r=", $r, "\n";
-		die unless $r == 0;
+		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
 	}
 	foreach my $e ( sort @agentless_plugins ){
 		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
-		my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-		print "r=", $r, "\n";
-		die unless $r == 0;
+		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
 	}
 	foreach my $e ( sort @indirect_plugins ){
 		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
-		my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-		print "r=", $r, "\n";
-		die unless $r == 0;
+		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
 	}
 }
 
 ######## Step 5. ########
 
 if( $plan{step5} ){
-	#### run contact plugins
 	foreach my $e ( sort @contact_plugins ){
 		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
-		my $r = system "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-		print "r=", $r, "\n";
-		die unless $r == 0;
+		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
+	}
+	foreach my $e ( sort @reporter_plugins ){
+		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
+		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
 	}
 }
 
@@ -585,11 +592,11 @@ foreach my $h ( @ncrtmasters ){
 	mkdir_or_die "$WORKDIR/ncrtmaster/$h";
 	mkdir_or_die "$WORKDIR/ncrtmaster/$h/agentless";
 	mkdir_or_die "$WORKDIR/ncrtmaster/$h/indirect";
+	mkdir_or_die "$WORKDIR/ncrtmaster/$h/reporter";
 	mkdir_or_die "$WORKDIR/ncrtmaster/$h/threshold";
 	mkdir_or_die "$WORKDIR/ncrtmaster/$h/metricfilter";
 	mkdir_or_die "$WORKDIR/ncrtmaster/$h/thresholdfilter";
-	my $r = system "rsync -aSvx $MASTERCONFDIR/ $WORKDIR/ncrtmaster/$h/";
-	die unless $r == 0;
+	system_or_die "rsync -aSvx $MASTERCONFDIR/ $WORKDIR/ncrtmaster/$h/";
 }
 foreach my $h ( @ncrtagents ){
 	mkdir_or_die "$WORKDIR/ncrtagent/$h";
@@ -598,8 +605,7 @@ foreach my $h ( @ncrtagents ){
 	mkdir_or_die "$WORKDIR/ncrtagent/$h/threshold";
 	mkdir_or_die "$WORKDIR/ncrtagent/$h/metricfilter";
 	mkdir_or_die "$WORKDIR/ncrtagent/$h/thresholdfilter";
-	my $r = system "rsync -aSvx $AGENTCONFDIR/ $WORKDIR/ncrtagent/$h/";
-	die unless $r == 0;
+	system_or_die "rsync -aSvx $AGENTCONFDIR/ $WORKDIR/ncrtagent/$h/";
 }
 
 #### read settings generated by plugins
@@ -845,7 +851,7 @@ sub generate_agentconf_for_agent ($$$) {
 			print $h $rule->[1], "\n";
 		}
 		close $h;
-		system "cp $f $WORKDIR/ncrtagent/$host/$conf";
+		system_or_die "cp $f $WORKDIR/ncrtagent/$host/$conf";
 	}
 }
 
@@ -1314,7 +1320,7 @@ if( $plan{step7} ){
 	my $f = "$WORKDIR/hosts";
 	foreach my $master ( @ncrtmasters ){
 		my $g = "$WORKDIR/ncrtmaster/$master/hosts";
-		system "cp $f $g";
+		system_or_die "cp $f $g";
 	}
 }
 
@@ -1532,21 +1538,40 @@ if( $plan{step7} ){
 
 ######## Step 8. ########
 
+my @masterconfs;
+my $f = "$WORKDIR/masterconfs";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	die unless -f "$CONFDIR/$_";
+	push @masterconfs, $_;
+}
+close $h;
+
+my $f = "$WORKDIR/reporters";
+open my $h, '>', $f or do {
+	die "$f: cannot open, stopped";
+};
+foreach my $i ( @reporter_plugins ){
+	die unless $i =~ m"^ncrtbuild_reporter_(.*)$";
+	print $h "$1\n";
+}
+close $h;
+
 ####
 foreach my $master ( @ncrtmasters ){
+	foreach my $f ( "reporters" ){
+		system_or_die "cp $WORKDIR/$f $WORKDIR/ncrtmaster/$master/$f";
+	}
+	
 	foreach my $f ( "ncrtbuild.conf", "messenger.rules", "messenger_webpage.tt", "messenger_expiredwebpage.tt", "messenger_mail.tt" ){
-		my $p = "$CONFDIR/$f";
-		open my $h, '<', $p or do {
-			die "$p: cannot open, stopped";
-		};
-		my @r = <$h>;
-		close $h;
-		my $p = "$WORKDIR/ncrtmaster/$master/$f";
-		open my $h, '>', $p or do {
-			die "$p: cannot open, stopped";
-		};
-		print $h @r;
-		close $h;
+		system_or_die "cp $CONFDIR/$f $WORKDIR/ncrtmaster/$master/$f";
+	}
+	
+	foreach my $f ( @masterconfs ){
+		system_or_die "cp $CONFDIR/$f $WORKDIR/ncrtmaster/$master/$f";
 	}
 }
 
@@ -1606,8 +1631,7 @@ my $hosts = join( ',', @ncrtmasters, '' );
 my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -i %s -t \"%s\"",
 	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $hosts, $tags;
 if( $plan{step8} ){
-	my $r = system "ansible-playbook -v $options $PLAYBOOKSDIR/build_ncrtmaster.yml";
-	die unless $r == 0;
+	system_or_die "ansible-playbook -v $options $PLAYBOOKSDIR/build_ncrtmaster.yml";
 }
 
 ######## Step 9. ########
@@ -1666,9 +1690,7 @@ $tt->process( 'build_ncrtagent.yml.tt', \%vars, 'build_ncrtagent.yml' ) or do {
 };
 
 if( $plan{step9} ){
-	my $r = system "ansible-playbook -v -i $hosts_yml $options $WORKDIR/build_ncrtagent.yml";
-	die unless $r == 0;
+	system_or_die "ansible-playbook -v -i $hosts_yml $options $WORKDIR/build_ncrtagent.yml";
 }
-
 
 
