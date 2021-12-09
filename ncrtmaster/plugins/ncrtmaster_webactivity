@@ -100,7 +100,12 @@ $r =~ m"^
 	    CRITICAL\ -\ (.*)
 	)
 $"x or do {
+	print "web[$vservicename]-size=-1\n";
+	print "web[$vservicename]-elapsed=-1\n";
 	print "web[$vservicename]-status=2\n";
+	open my $h, '>>', "$WORKDIR/webactivity.log";
+	print $h time, " ERROR: url=$url response=$r\n";
+	close $h;
 	exit 0;
 };
 my $result = $2;
