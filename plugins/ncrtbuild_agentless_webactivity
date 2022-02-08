@@ -24,19 +24,6 @@ while( <$h> ){
 }
 close $h;
 
-#### load ncrt masters conf.
-my @ncrtmasters;
-my $f = "$CONFDIR/master.hosts";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	push @ncrtmasters, $_;
-}
-close $h;
-
 #### load detector conf.
 my $f = "$CONFDIR/agentless/webactivity.conf";
 open my $h, '<', $f or do {

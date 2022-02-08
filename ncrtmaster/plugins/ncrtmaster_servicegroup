@@ -1061,7 +1061,7 @@ sub eval_history_score ($$$$$$) {
 		else{ die; }
 	}
 
-debuglog "EVAL_HISTORY_SCORE: $score";
+debuglog "DEBUG: EVAL_HISTORY_SCORE: $score";
 	return 1 if $score > 10000;
 	return undef;
 }
@@ -1390,7 +1390,7 @@ foreach my $sg ( sort keys %$sgname2servicenames ){
 	){
 		$sgstate_has_been_updated = 1;
 		$ngchangetime = time;
-debuglog "STORE_SGSTATE $sg: num of ng changed: $last_num_of_service_ng->$num_of_service_ng,  $last_num_of_perf_ng->$num_of_perf_ng\n";
+debuglog "DEBUG: STORE_SGSTATE $sg: num of ng changed: $last_num_of_service_ng->$num_of_service_ng,  $last_num_of_perf_ng->$num_of_perf_ng\n";
 	}
 	set_num_of_ng_into_sgstate $sgstate,
 		 $num_of_service_ng, $num_of_perf_ng, $ngchangetime;
@@ -1448,7 +1448,7 @@ debuglog "STORE_SGSTATE $sg: num of ng changed: $last_num_of_service_ng->$num_of
 		$highlighted_services = generate_highlighted $servicedetails,
 			$last_highlighted_services, $servicestate_changes;
 		$sgstate_has_been_updated = 1;
-debuglog "STORE_SGSTATE $sg: servicestate_changes\n";
+debuglog "DEBUG: STORE_SGSTATE $sg: servicestate_changes\n";
 	}elsif( $alertsession ne '' ){
 		$highlighted_services = generate_highlighted $servicedetails,
 			$last_highlighted_services, [];
@@ -1461,11 +1461,19 @@ debuglog "STORE_SGSTATE $sg: servicestate_changes\n";
 		$highlighted_perfs = generate_highlighted $perfdetails,
 			$last_highlighted_perfs, $perfstate_changes;
 		$sgstate_has_been_updated = 1;
-debuglog "STORE_SGSTATE $sg: perfstate_changes\n";
+debuglog "DEBUG: STORE_SGSTATE $sg: perfstate_changes\n";
 	}elsif( $alertsession ne '' ){
 		$perfstate_history = $last_perfstate_history;
 		$highlighted_perfs = generate_highlighted $perfdetails,
 			$last_highlighted_perfs, [];
+	# If there isn't NG while the timespan of session close, forget highlights and history.
+	}elsif( (int(%$highlighted_perfs) > 0 || @$perfstate_history > 0) &&
+		$num_of_service_ng == 0 && $num_of_perf_ng == 0 &&
+		$now - $last_ngchangetime > $close_timespan*60){
+		$perfstate_history = [];
+		$highlighted_perfs = {};
+		$sgstate_has_been_updated = 1;
+debuglog "DEBUG: $sg: forget highlights and history.";
 	}else{
 		$highlighted_perfs = {};
 	}
@@ -1489,18 +1497,19 @@ debuglog "DEBUG: highlighted_perfs = @t";
 		$report_target = 'DO'; $report_reason = 'CHANGE';
 	}elsif( $session_target eq 'CLOSE' ){
 my $json = encode_json $$sgstate{servicestate_history};
-debuglog "DEBUG2: CLOSE: servicestate_history = %s", $json;
+debuglog "DEBUG: CLOSE: servicestate_history = %s", $json;
 		my $score = history_exists $sgstate;
 		if( $score > 0 ){
 			$report_target = 'DO'; $report_reason = 'CHANGE';
 		}
 	}elsif( @$servicestate_events ){
 my $json = encode_json $servicestate_events;
-debuglog "DEBUG2: CHANGE: servicestate_events = %s", $json;
+debuglog "DEBUG: CHANGE: servicestate_events = %s", $json;
 		$report_target = 'DO'; $report_reason = 'CHANGE';
 	}elsif( $last_alertsession ne '' &&
 	        $now - $last_reporttime > $resend_timespan*60 ){
 		$report_target = 'DO'; $report_reason = 'KEEP';
+debuglog "DEBUG: KEEP: servicegroup = %s", $sg;
 	}elsif( $last_alertsession ne '' &&
 	        eval_history_score $sgstate,
 			$min_resend_timespan,
@@ -1515,7 +1524,7 @@ debuglog "DEBUG2: CHANGE: servicestate_events = %s", $json;
 	#### 5-a. report
 
 	if( $report_target eq 'DO' ){
-debuglog "STORE_SGSTATE $sg: DO\n";
+debuglog "DEBUG: STORE_SGSTATE $sg: DO\n";
 		$sgstate_has_been_updated = 1;
 		set_reporttime_into_sgstate $sgstate, $now;
 		set_servicestate_history $sgstate, [];
@@ -1539,7 +1548,7 @@ debuglog "STORE_SGSTATE $sg: DO\n";
 
 	#### 5-b. update alert session according to target.
 
-debuglog "ALERTSESSION %s: target:%s id:%s->%s", $sg, $session_target, $last_alertsession, $alertsession;
+debuglog "DEBUG: ALERTSESSION %s: target:%s id:%s->%s", $sg, $session_target, $last_alertsession, $alertsession;
 	if    ( $session_target eq 'OPEN' ){
 		mkdir_for_alertsession $alertsession;
 		set_sessioncreatetime_into_sgstate $sgstate, $now;
@@ -1555,7 +1564,7 @@ debuglog "ALERTSESSION %s: target:%s id:%s->%s", $sg, $session_target, $last_ale
 			$highlighted_services, $highlighted_perfs
 		];
 		$sgstate_has_been_updated = 1;
-debuglog "STORE_SGSTATE $sg: OPEN\n";
+debuglog "DEBUG: STORE_SGSTATE $sg: OPEN\n";
 
 	}elsif( $session_target eq 'CLOSE' ){
 		$trashbox_has_been_updated = 1;
@@ -1563,7 +1572,7 @@ debuglog "STORE_SGSTATE $sg: OPEN\n";
 			$last_alertsession, undef, $expire_timespan;
 		set_alertsession_into_sgstate $sgstate, undef;
 		$sgstate_has_been_updated = 1;
-debuglog "STORE_SGSTATE $sg: RENAME\n";
+debuglog "DEBUG: STORE_SGSTATE $sg: RENAME\n";
 
 	}elsif( $session_target eq 'UPDATE' ){
 		mkdir_for_alertsession $alertsession;
@@ -1580,7 +1589,7 @@ debuglog "STORE_SGSTATE $sg: RENAME\n";
 			$highlighted_services, $highlighted_perfs
 		];
 		$sgstate_has_been_updated = 1;
-debuglog "STORE_SGSTATE $sg: UPDATE\n";
+debuglog "DEBUG: STORE_SGSTATE $sg: UPDATE\n";
 
 	}elsif( $session_target eq 'RENAME' ){
 		$trashbox_has_been_updated = 1;
@@ -1600,7 +1609,7 @@ debuglog "STORE_SGSTATE $sg: UPDATE\n";
 			$highlighted_services, $highlighted_perfs
 		];
 		$sgstate_has_been_updated = 1;
-debuglog "STORE_SGSTATE $sg: RENAME\n";
+debuglog "DEBUG: STORE_SGSTATE $sg: RENAME\n";
 
 	}elsif( $session_target eq 'KEEP' ){
 		set_sessioncreatetime_into_sgstate $sgstate, $last_sessioncreatetime;
@@ -1612,7 +1621,7 @@ debuglog "STORE_SGSTATE $sg: RENAME\n";
 	#### 6. store servicegroup state
 	if( $sgstate_has_been_updated ){
 my $t = get_alertsession_from_sgstate $sgstate;
-debuglog "STORE_SGSTATE %s: target:%s id:%s", $sg, $session_target, $t;
+debuglog "DEBUG: STORE_SGSTATE %s: target:%s id:%s", $sg, $session_target, $t;
 		store_sgstate $sg, $sgstate;
 	}
 }

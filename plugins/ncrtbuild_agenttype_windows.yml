@@ -1,6 +1,6 @@
 ---
 
-- hosts: windows.__AGENTTYPE__
+- hosts: windows.__HOSTTYPE__
   tasks:
     - name: ncrtbuild_agenttype_windows.yml DEBUG
       debug:

@@ -1,6 +1,6 @@
 ---
 
-- hosts: linux.__AGENTTYPE__
+- hosts: linux.__HOSTTYPE__
   tasks:
     #### for Debian / Ubuntu
     - name: install packages for nrpe plugins

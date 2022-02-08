@@ -10,9 +10,14 @@
     - name: include variables
       include_vars: "{{WORKDIR}}/vars.yml"
       tags: [ common ]
+
+[% FOREACH hosttype IN HOSTTYPES -%]
+[%   IF file_exists(TOOLHOME _ "/conf/mastertype_" _ hosttype _ ".yml") -%]
     - name: include customize tasks
-      include: "{{TOOLHOME}}/conf/ncrtmasters_playbook.yml"
+      include_tasks: "[%=TOOLHOME _ "/conf/mastertype_" _ hosttype _ ".yml"%]"
       tags: [ common ]
+[%   END -%]
+[% END %]
 
     #### for Debian / Ubuntu
     - name: install packages for apt-key
@@ -170,7 +175,7 @@
 
     - name: setup static setting files (by NCRT) for Nagios / Naemon
       template:
-        src: "{{item}}"
+        src: "{{TOOLHOME}}/playbooks/{{item}}"
         dest: "/etc/naemon/conf.d/{{item}}"
       with_items:
         - ncrt_naemon2influx.cfg
@@ -246,7 +251,7 @@
     - name: setup gateway accessor
       template:
         mode: 0755
-        src: "ncrtmaster_passthrough"
+        src: "{{TOOLHOME}}/playbooks/ncrtmaster_passthrough"
         dest: "{{NCRTMASTERHOME}}/bin/ncrtmaster_passthrough"
       tags: [ common ]
 

@@ -24,19 +24,6 @@ while( <$h> ){
 }
 close $h;
 
-#### load ncrt masters conf.
-my @ncrtmasters;
-my $f = "$CONFDIR/master.hosts";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	push @ncrtmasters, $_;
-}
-close $h;
-
 #### load service conf.
 my $f = "$CONFDIR/indirect/ltsv.conf";
 open my $h, '<', $f or do {

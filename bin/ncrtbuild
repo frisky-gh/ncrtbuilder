@@ -314,7 +314,7 @@ our $NAEMON2INFLUX_GRAFANA_HELPER_DEB = get_naemon2influx_grafana_helper_deb $CO
 #### load ncrtmaster.conf
 my @ncrtmasters;
 my @ncrtmasteraddrs;
-my $f = "$CONFDIR/master.hosts";
+my $f = "$CONFDIR/mastertype_linux.hosts";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -512,16 +512,11 @@ EOF
 
 ######## Step 3. ########
 
-my @agenttype_playbooks;
 if( $plan{step3} ){
 	#### run agenttype plugins
 	foreach my $e ( sort @agenttype_plugins ){
 		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
 		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-
-		if( -f "$PLUGINSDIR/$e.yml" ){
-			push @agenttype_playbooks, "$PLUGINSDIR/$e.yml";
-		}
 	}
 }
 
@@ -1538,6 +1533,68 @@ if( $plan{step7} ){
 
 ######## Step 8. ########
 
+sub hash2yaml ($) {
+	my ($params) = @_;
+	my @params;
+	foreach my $k ( sort keys %$params ){
+		my $v = $$params{$k};
+		push @params, "\"$k\":\"$v\"";
+	}
+	return "{" . join(", ", @params) . "}";
+}
+
+sub generate_hosts_yml ($$$) {
+	my ($name, $hosttype2hosts, $host2params) = @_;
+
+	my $hosts_yml = "$WORKDIR/$name.yml";
+	open my $h, '>', $hosts_yml or do {
+		die "$hosts_yml: cannot open, stopped";
+	};
+	print $h
+		"all:\n",
+		"  children:\n",
+		"    AllHosts:\n",
+		"      children:\n";
+	foreach my $hosttype ( sort keys %$hosttype2hosts ){
+		print $h "        $hosttype.__HOSTTYPE__:\n";
+	}
+	foreach my $hosttype ( sort keys %$hosttype2hosts ){
+		my $hosts = $$hosttype2hosts{$hosttype};
+		print $h
+			"    $hosttype.__HOSTTYPE__:\n",
+			"      hosts:\n";
+		foreach my $host ( sort @$hosts ){
+			my $yaml_hash = hash2yaml $$host2params{$host};
+			print $h "        $host: $yaml_hash\n";
+		}
+	}
+	close $h;
+}
+
+sub generate_playbook ($$) {
+	my ($playbookname, $hosttypes) = @_;
+
+	my $tt = Template->new({
+		INCLUDE_PATH => $PLAYBOOKSDIR,
+		OUTPUT_PATH  => $WORKDIR,
+	}) or do {
+		die "$playbookname.yml.tt: cannot read, stopped";
+	};
+
+	my $output;
+	my %vars = (
+		TOOLHOME    => $TOOLHOME,
+		WORKDIR     => $WORKDIR,
+		HOSTTYPES   => $hosttypes,
+		file_exists => sub { return -f $_[0]; },
+	);
+	$tt->process( "$playbookname.yml.tt", \%vars, "$playbookname.yml" ) or do {
+        	die "$playbookname.yml: " . $tt->error() . ", stopped";
+	};
+}
+
+####
+
 my @masterconfs;
 my $f = "$WORKDIR/masterconfs";
 open my $h, '<', $f or do {
@@ -1627,70 +1684,34 @@ unless( $quick ){
 }
 
 #### run ansible for nagios master
-my $hosts = join( ',', @ncrtmasters, '' );
-my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -i %s -t \"%s\"",
-	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $hosts, $tags;
+generate_hosts_yml 'master_hosts', {'linux'=>[@ncrtmasters]}, {};
+generate_playbook 'build_ncrtmaster', ['linux'];
+
+my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -t \"%s\"",
+	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $tags;
 if( $plan{step8} ){
-	system_or_die "ansible-playbook -v $options $PLAYBOOKSDIR/build_ncrtmaster.yml";
+	system_or_die "ansible-playbook -v" .
+		" -i $WORKDIR/master_hosts.yml" .
+		" $options $WORKDIR/build_ncrtmaster.yml";
 }
 
 ######## Step 9. ########
 
-sub generate_yaml_hash ($) {
-	my ($params) = @_;
-	my @params;
-	foreach my $k ( sort keys %$params ){
-		my $v = $$params{$k};
-		push @params, "\"$k\":\"$v\"";
-	}
-	return "{" . join(", ", @params) . "}";
-}
-
 #### run ansible for nrpe agent
+my @agenttypes;
+foreach my $i ( @agenttype_plugins ){
+	push @agenttypes, $1 if $i =~ m"^ncrtbuild_agenttype_(\w+)$";
+}
+generate_hosts_yml 'agent_hosts', \%agenttype2hosts, \%host2params;
+generate_playbook 'build_ncrtagent', \@agenttypes;
+
 my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -t \"%s\"",
 	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $tags;
-my $hosts_yml = "$WORKDIR/hosts.yml";
-open my $h, '>', $hosts_yml or do {
-	die "$hosts_yml: cannot open, stopped";
-};
-print $h
-	"all:\n",
-	"  children:\n",
-	"    AllHosts:\n",
-	"      children:\n";
-foreach my $agenttype ( sort keys %agenttype2hosts ){
-	print $h "        $agenttype.__AGENTTYPE__:\n";
-}
-foreach my $agenttype ( sort keys %agenttype2hosts ){
-	my $hosts = $agenttype2hosts{$agenttype};
-	print $h
-		"    $agenttype.__AGENTTYPE__:\n",
-		"      hosts:\n";
-	foreach my $host ( sort @$hosts ){
-		my $yaml_hash = generate_yaml_hash $host2params{$host};
-		print $h "        $host: $yaml_hash\n";
-	}
-}
-close $h;
-
-my $tt = Template->new({
-	INCLUDE_PATH => $PLAYBOOKSDIR,
-	OUTPUT_PATH  => $WORKDIR,
-}) or do {
-	die "build_ncrtagent.yml.tt: cannot read, stopped";
-};
-
-
-my $output;
-my %vars = (
-	'AGENTTYPE_PLAYBOOKS' => [@agenttype_playbooks],
-);
-$tt->process( 'build_ncrtagent.yml.tt', \%vars, 'build_ncrtagent.yml' ) or do {
-        die "build_ncrtagent.yml: " . $tt->error() . ", stopped";
-};
 
 if( $plan{step9} ){
-	system_or_die "ansible-playbook -v -i $hosts_yml $options $WORKDIR/build_ncrtagent.yml";
+	system_or_die "ansible-playbook -v" .
+		" -i $WORKDIR/agent_hosts.yml" .
+		" $options $WORKDIR/build_ncrtagent.yml";
 }
 
 
