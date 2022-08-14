@@ -1,0 +1,330 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 4 ){
+	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $MEASURE = $ARGV[2];
+our $VHOST   = $ARGV[3];
+
+####
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
+	foreach my $k ( sort {$a cmp $b} keys %$var ){
+		next if $k eq 'timestamp';
+		push @ltsv, "$k:".$var->{$k};
+	}
+	return join "\t", @ltsv;
+}
+
+sub ltsv2var ($) {
+	my ($ltsv) = @_;
+	my %var;
+	foreach my $kv ( split m"\t", $ltsv ){
+		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
+			next;
+		};
+		my $k = $1;
+		my $v = $2;
+		$var{$k} = $v;
+	}
+	return %var;
+}
+
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+sub nP ($) {
+	return sprintf "%.2f%%", $_[0];
+}
+sub nMB ($) {
+	return sprintf "%.2fMB", $_[0];
+}
+
+####
+
+sub read_conf () {
+	my %pathconf;
+	my %termconf;
+	my $f = "$CONFDIR/agent/logfile_path.conf.$MEASURE.$VHOST";
+	open my $h, '<', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		if( m"^([-.\w]+)\s+(\S+)" ){
+			my $logname = $1;
+			my $logpath = $2;
+			push @{$pathconf{$logname}}, $logpath;
+		}else{
+			die "$f:$.:$_: illegal format, stopped";
+		}
+	}
+	close $h;
+
+	my $f = "$CONFDIR/agent/logfile_term.conf.$MEASURE.$VHOST";
+	open my $h, '<', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		if( m"^([-.\w]+)\s+(\d+)" ){
+			my $logname = $1;
+			my $term = $2;
+			$termconf{$logname} = $term;
+		}else{
+			die "$f:$.:$_: illegal format, stopped";
+		}
+	}
+	close $h;
+
+	return \%pathconf, \%termconf;
+}
+
+sub listup_target (@) {
+	my @target;
+	foreach my $i (@_) {
+		my @curr = ( "" );
+		my @next;
+		my (@regexp) = split m"/", $i;
+		foreach my $regexp ( @regexp ){
+			next if $regexp eq '';
+			if( $regexp =~ m"^[-\w]+$" ){
+				foreach my $c ( @curr ){
+					push @next, "$c/$regexp";
+				}
+			}else{
+				foreach my $c ( @curr ){
+					opendir my $h, "$c/" or next;
+					while( my $e = readdir $h ){
+						next if $e eq '.';
+						next if $e eq '..';
+						next unless $e =~ m"^$regexp$";
+						push @next, "$c/$e";
+					}
+					closedir $h;
+				}
+			}
+			@curr = @next;
+			@next = ();
+		}
+		foreach my $f ( @curr ){
+			next unless -f $f;
+			push @target, $f;
+		}
+	}
+	return @target;
+}
+
+sub get_targetstats ($) {
+	my ($target) = @_;
+	my %targetstat;
+	foreach my $f ( @$target ){
+		my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+		    $atime,$mtime,$ctime,$blksize,$blocks) = stat $f;
+		$targetstat{$f} = ["$dev:$ino", $size, $mtime];
+	}
+	return \%targetstat, time;
+}
+
+sub read_targetstats () {
+	my $f = "$WORKDIR/logfile.stats";
+	my %stats;
+	open my $h, '<', $f or return \%stats, time;
+	my $time = <$h>;
+	chomp $time;
+	while( <$h> ){
+		chomp;
+		my ($inode, $size, $mtime, $path) = split m"\t";
+		$stats{$path} = [$inode, $size, $mtime];
+	}
+	close $h;
+	return \%stats, $time;
+}
+
+sub write_targetstats ($$) {
+	my ($stats, $time) = @_;
+	my $f = "$WORKDIR/logfile.stats";
+	open my $h, '>', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	print $h "$time\n";
+	foreach my $path ( sort keys %$stats ){
+		my ($inode, $size, $mtime) = @{$$stats{$path}};
+		print $h "$inode\t$size\t$mtime\t$path\n";
+	}
+	close $h;
+}
+
+sub eval_changes ($$$) {
+	my ($groups, $curr_stats, $last_stats) = @_;
+
+	my %status;
+	my %curr_inode2file;
+	my %last_inode2file;
+	while( my ($f, $s) = each %$curr_stats ){
+		$status{$f} |= 1;
+		my ($curr_inode, $curr_size, $curr_mtime) = @$s;
+		$curr_inode2file{$curr_inode} = $f;
+	}
+	while( my ($f, $s) = each %$last_stats ){
+		$status{$f} |= 2;
+		my ($last_inode, $last_size, $last_mtime) = @$s;
+		$last_inode2file{$last_inode} = $f unless $last_inode eq 'renamed';
+	}
+	while( my ($f, $s) = each %status ){
+		next unless $s == 2;
+		my ($last_inode, $last_size, $last_mtime) = @{$$last_stats{$f}};
+		next unless defined $curr_inode2file{$last_inode};
+
+		$$curr_stats{$f} = ['renamed', 0, 0];
+	}
+
+	my %changes;
+	while( my ($group, $files) = each %$groups ){
+		my $changes = 0;
+		foreach my $file ( @$files ){
+			my $curr_stat = $$curr_stats{$file};
+			my ($curr_inode, $curr_size, $curr_mtime) = @$curr_stat;
+			my $last_stat = $$last_stats{$file};
+			my $orig_file = $last_inode2file{$curr_inode};
+
+			if    ( defined  $last_stat && defined  $orig_file ){
+				# holded or rotated file
+				my $orig_stat = $$last_stats{$orig_file};
+				my ($orig_inode, $orig_size, $orig_mtime) = @$orig_stat;
+				$changes += $curr_size - $orig_size;
+			}elsif( defined  $last_stat && !defined $orig_file ){
+				# replaced with new file or created new file
+				$changes += $curr_size;
+			}elsif( !defined $last_stat && defined  $orig_file ){
+				# renamed file
+				my $orig_stat = $$last_stats{$orig_file};
+				my ($orig_inode, $orig_size, $orig_mtime) = @$orig_stat;
+				$changes += $curr_size - $orig_size;
+			}elsif( !defined $last_stat && !defined $orig_file ){
+				# found new file
+				;
+			}else{ die; }
+		}
+		$changes{$group} = $changes;
+	}
+	return \%changes;
+}
+
+sub read_historyofchanges () {
+	my @historyofchanges;
+
+	my $f = "$WORKDIR/logfile.history";
+	open my $h, '<', $f or return \@historyofchanges;
+	while( <$h> ){
+		chomp;
+		next unless m"^(\d+)\t(\d+)\t(.*)$";
+		my $begin = $1;
+		my $end = $2;
+		my $changes = $3;
+		my %changes = ltsv2var $changes;
+		push @historyofchanges, [$begin, $end, \%changes];
+	}
+	close $h;
+
+	return \@historyofchanges;
+}
+
+sub write_historyofchanges ($) {
+	my ($historyofchanges) = @_;
+
+	my $f = "$WORKDIR/logfile.history";
+	open my $h, '>', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	foreach my $e ( @$historyofchanges ){
+		my ($begin, $end, $changes) = @$e;
+		my $changes_ltsv = var2ltsv %$changes;
+		print $h "$begin\t$end\t$changes_ltsv\n";
+	}
+	close $h;
+}
+
+sub search_all_targets ($) {
+	my ($pathconf) = @_;
+	my %target;
+	my %group2target;
+	while( my ($group, $pathregexp) = each %$pathconf ){
+		my @t = listup_target @$pathregexp;
+		$group2target{$group} = \@t;
+		foreach my $t ( @t ){ $target{$t} = 1; }
+	}
+	return \%group2target, [ sort keys %target ];
+}
+
+sub update_historyofchanges ($$$$$) {
+	my ($historyofchanges, $termconf, $last_time, $time, $changes) = @_;
+	push @$historyofchanges, [$last_time, $time, $changes];
+
+	my $longest_hours = 1;
+	while( my ($group, $hours) = each %$termconf ){
+		$longest_hours = $hours if $hours > $longest_hours;
+	}
+	
+	my $now = time;
+	while( @$historyofchanges > 1 ){
+		my $head = $$historyofchanges[0];
+		my ($head_begin, $head_end, $changes) = @$head;
+		last if $head_end > $now - $longest_hours*60*60;
+		shift @$historyofchanges;
+	}
+}
+
+sub eval_totals ($$) {
+	my ($historyofchanges, $termconf) = @_;
+	my %totals;
+	
+	my $now = time;
+	while( my ($group, $hours) = each %$termconf ){
+		my $total = 0;
+		foreach my $i ( @$historyofchanges ){
+			my ($begin, $end, $changes) = @$i;
+			next if $end < $now - $hours*60*60;
+			$total += $$changes{$group};
+		}
+		$totals{$group} = $total;
+	}
+	return \%totals;
+}
+
+
+####
+my $realhost = ` hostname `;
+chomp $realhost;
+
+my ($pathconf, $termconf) = read_conf;
+my ($last_targetstats, $last_time) = read_targetstats;
+my $historyofchanges = read_historyofchanges;
+
+my ($groups, $targets) = search_all_targets $pathconf;
+my ($targetstats, $time) = get_targetstats $targets;
+my $changes = eval_changes $groups, $targetstats, $last_targetstats;
+update_historyofchanges $historyofchanges, $termconf, $last_time, $time, $changes;
+
+my $totals = eval_totals $historyofchanges, $termconf;
+
+write_targetstats      $targetstats, $time;
+write_historyofchanges $historyofchanges;
+
+foreach my $group ( sort keys %$totals ){
+	my $total = $$totals{$group};
+	print "logfile[$group]-increased-by=$total\n";
+}
+
+exit 0;
+

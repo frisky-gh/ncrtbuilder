@@ -1,0 +1,11 @@
+
+.*		syslog		/var/log/syslog(\.\d+)?
+.*		syslog		/var/log/messages(\.\d+)?
+.*		syslog		/var/log/messages(-\d+)?
+.*		maillog		/var/log/mail\.log(\.\d+)?
+.*		maillog		/var/log/maillog(\.\d+)?
+.*		maillog		/var/log/maillog(-\d+)?
+.*		authlog		/var/log/auth\.log(\.\d+)?
+.*		authlog		/var/log/secure(\.\d+)?
+.*		authlog		/var/log/secure(-\d+)?
+

@@ -1,0 +1,70 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+#### load global conf.
+my %ncrtconf;
+my $f = "$CONFDIR/ncrtbuild.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\w+)=(.*)$";
+	$ncrtconf{$1} = $2;
+}
+close $h;
+
+#### load linuxhosts.
+my %targets;
+my $f = "$WORKDIR/hosts";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	my ($host, $agenttype) = split m"\s+";
+	next unless $agenttype =~ m"^(linux)$";
+	$targets{$host} = 1;
+}
+close $h;
+
+#### append measure info.
+my $f = "$WORKDIR/measures";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "logfile	agent	display_name=\"Log File\"	check_interval=60	retry_interval=60\n";
+close $h;
+
+#### append conf info.
+my $f = "$WORKDIR/measure2conf";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "logfile	agent/logfile_path.conf\n";
+print $h "logfile	agent/logfile_term.conf\n";
+close $h;
+
+#### append service mapping
+my $f = "$WORKDIR/host2service2measure";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+foreach my $i ( keys %targets ){
+	print $h "$i	logfile	logfile\n";
+}
+close $h;
+
+
+
+
