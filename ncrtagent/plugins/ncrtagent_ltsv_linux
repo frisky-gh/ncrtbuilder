@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
+use Time::Piece;
 
 if( @ARGV < 5 ){
 	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
@@ -18,7 +19,7 @@ sub ltsv2var ($) {
 	my ($ltsv) = @_;
 	my %var;
 	foreach my $kv ( split m"\t", $ltsv ){
-		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
+		$kv =~ m"^([^[:cntrl:]\s:;=]+)[:=](.*)$" or do {
 			next;
 		};
 		my $k = $1;
@@ -39,7 +40,12 @@ sub nMB ($) {
 }
 
 #### load service conf.
-my %option;
+my %global_option = (
+	'timeout'			=> 9999999,
+	'timestamp'			=> 'file',
+	'timestamp_record_key'		=> 'timestamp',
+	'timestamp_record_format'	=> '%Y-%m-%d',
+);
 my %file2rules;
 my $f = "$CONFDIR/indirect/ltsv.conf.$MEASURE.$VHOST.$VSERVICE";
 open my $h, '<', $f or do {
@@ -49,11 +55,11 @@ while( <$h> ){
 	chomp;
 	next if m"^\s*(#|$)";
 	if( m"^(\w+)=(\S*)$" ){
-		$option{$1} = $2;
+		$global_option{$1} = $2;
 	}elsif( m"^(\S+)\s+(\S+)$" ){
 		my $file = $1;
 		my $key_re = $2;
-		push @{$file2rules{$file}}, [qr"$key_re", {%option}];
+		push @{$file2rules{$file}}, [qr"$key_re", {%global_option}];
 	}else{
 		die "$f:$.:$_: illegal format, stopped";
 	}
@@ -75,21 +81,42 @@ while( my ($ltsvfile, $rules) = each %file2rules ){
 	chomp $ltsv;
 	die "$ltsvfile: cannot open, stopped" if $ltsv eq "";
 
-	my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
-	    $atime,$mtime,$ctime,$blksize,$blocks) = stat $ltsvfile;
 	my ($filename) = $ltsvfile =~ m"(?:^|/)([^/]+)$";
-	my $age = (time - $mtime) / 60;
-	printf "realhost[%s]-ltsvfile[%s]-age=%.2f\n", $realhost, $filename, $age;
-
 	my %var = ltsv2var $ltsv;
-	foreach my $rule ( @$rules ){
-		my ($key_re, $option) = @$rule;
-		if( ($option->{timeout} || 99999999 ) < (time - $mtime) / 60 ){
-			$rc = 1;
-			push @output, "$ltsvfile: expired.";
-			next;
-		}
 
+	my $age;
+	my $global_option_timestamp = $global_option{'timestamp'};
+	my $global_option_timeout   = $global_option{'timeout'};
+	if    ( $global_option_timestamp eq 'file' ){
+		my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+		    $atime,$mtime,$ctime,$blksize,$blocks) = stat $ltsvfile;
+		$age = int( (time - $mtime) / 60 );
+	}elsif( $global_option_timestamp eq 'record' ){
+		my $key    = $global_option{timestamp_record_key};
+		my $format = $global_option{timestamp_record_format};
+		my $t = 0;
+		eval {
+			$t = Time::Piece
+				->strptime($var{$key}, $format)
+				->strftime("%s");
+		};
+		if( $@ ){ push @output, "option: timestamp: parse error."; }
+		$age = int( (time - $t) / 60 );
+	}else{
+		$rc = 2;
+		push @output, "option: timestamp: unknown option '$global_option_timestamp'.";
+		next;
+	}
+	printf "realhost[%s]-ltsvfile[%s]-age=%d\n", $realhost, $filename, $age;
+
+	if( $global_option_timeout < $age ){
+		$rc = 1;
+		push @output, "$filename: expired.";
+		next;
+	}
+
+	foreach my $rule ( @$rules ){
+		my ($key_re, $local_option) = @$rule;
 		while( my ($k, $v) = each %var ){
 			next unless $k =~ $key_re;
 			print "$k=$v\n";

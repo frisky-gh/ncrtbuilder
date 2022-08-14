@@ -42,7 +42,7 @@
     ## Grafana (install)
     - name: add repository key for grafana
       apt_key:
-        data: "{{ lookup('file','grafana.asc') }}"
+        data: "{{ lookup('file', '[%=TOOLHOME _ "/playbooks/grafana.asc"%]') }}"
         keyring: /etc/apt/trusted.gpg.d/grafana.gpg
       when: "ansible_os_family == 'Debian'"
       no_log: True
@@ -57,7 +57,7 @@
     ## Naemon (install)
     - name: add repository key
       apt_key:
-        data: "{{ lookup('file','naemon.asc') }}"
+        data: "{{ lookup('file','[%=TOOLHOME _ "/playbooks/naemon.asc"%]') }}"
         keyring: /etc/apt/trusted.gpg.d/naemon.gpg
       when: "ansible_os_family == 'Debian'"
       no_log: True

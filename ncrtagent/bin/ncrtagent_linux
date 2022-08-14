@@ -60,7 +60,7 @@ sub ltsv2var ( $ ){
 	my ($ltsv) = @_;
 	my %var;
 	foreach my $kv ( split m"\t", $ltsv ){
-		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
+		$kv =~ m"^([^[:cntrl:]\s:;=]+)[:=](.*)$" or do {
 			next;
 		};
 		my $k = $1;
@@ -151,7 +151,7 @@ sub read_command ($) {
 	while( <$out> ){
 		chomp;
 		next if m"^\s*(#|$)";
-		die "$_, stopped" unless m"^([-\w/\[\].:@\$%#\*]+)=(.*)$";
+		die "$_, stopped" unless m"^([^[:cntrl:]\s:;=]+)=(.*)$";
 		my $k = $1;
 		my $v = $2;
 		if( $k eq 'message' ){ push @messages, $v; }

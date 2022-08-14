@@ -16,9 +16,6 @@ our @EXPORT = (
 	'generate_metrics_from_targetagent',
 	'generate_metrics_from_proxyagents',
 	'generate_metrics_from_localplugin',
-	'generate_metrics_from_accessor',
-	'generate_metrics_from_agentmeasure',
-	'generate_metrics_from_commandline_args',
 	'pass_through_filters',
 	'evaluate_values',
 	'generate_thresholds',
@@ -71,14 +68,11 @@ sub load_proxyhosts ($$$) {
 	return \%proxyhost2param;
 }
 
-sub generate_metrics_from_agent ($$$$$) {
+sub generate_metrics_by_ncrtprotocol ($$$$$) {
 	my ($proxyhost, $measure, $host, $service, $param) = @_;
 
-	my $rc = 0;
-	my %metrics;
-
 	####
-	my $timeout = $$param{timeout} // 60;
+	my $timeout = $$param{timeout} // 50;
 	my $address = $$param{agent_address} // $proxyhost;
 	my $port    = $$param{agent_port} // "46848";
 
@@ -105,6 +99,55 @@ sub generate_metrics_from_agent ($$$$$) {
 
 	$metrics{"ncrtagent[$proxyhost]-error"} = 0;
 	return %metrics;
+}
+
+sub generate_metrics_by_nrpeprotocol ($$$$$) {
+	my ($proxyhost, $measure, $host, $service, $param) = @_;
+
+	my %metrics;
+
+	####
+	my $timeout = $$param{timeout} // 50;
+	my $address = $$param{agent_address} // $proxyhost;
+	my $port    = $$param{agent_port} // "5666";
+	my $client  = $$param{agent_client} // "/usr/lib/nagios/plugins/check_nrpe";;
+
+	####
+	open my $h, '-|', "$client -H $address -p $port -t $timeout -c check_$service" or do {
+		$metrics{"nrpe[$proxyhost]-error"} = 3;
+		return %metrics;
+	};
+	my $r = <$h>;
+	close $h;
+
+	chomp $r;
+	$r =~ m"^ (.*) \|\s* (\S.*) $"x or do {
+		$metrics{"nrpe[$proxyhost]-error"} = 2;
+		return %metrics;
+	};
+	my $output = $1;
+	my $perfdata = $2;
+	foreach my $field ( split m"\s+", $perfdata ){
+		next unless $field =~ m"^('([^=']+)'|([^=']+))=([-+]?(\d+|\d+\.\d+|\.\d+))(;.*)?$";
+		my $key = $2 . $3;
+		my $value = $4;
+		$metrics{$key} = $value;
+	}
+	$metrics{"nrpe[$proxyhost]-error"} = 0;
+	return %metrics;
+}
+
+sub generate_metrics_from_agent ($$$$$) {
+	my ($proxyhost, $measure, $host, $service, $param) = @_;
+
+	my $protocol = $$param{agent_protocol} // "ncrtagent";
+	if( $protocol eq 'nrpe' ){
+		return generate_metrics_by_nrpeprotocol
+			$proxyhost, $measure, $host, $service, $param;
+	}else{
+		return generate_metrics_by_ncrtprotocol
+			$proxyhost, $measure, $host, $service, $param;
+	}
 }
 
 sub generate_metrics_from_targetagent ($$$$) {
@@ -146,7 +189,7 @@ sub generate_metrics_from_localplugin ($$$) {
 	while( <$h> ){
 		chomp;
 		next if m"^\s*(#|$)";
-		die "$_, stopped" unless m"^([-\w/\[\].:@\$%#\*]+)=(.*)$";
+		die "$_, stopped" unless m"^([^[:cntrl:]\s:;=]+)=(.*)$";
 		my $k = $1;
 		my $v = $2;
 		if( $k eq 'message' ){ push @message, $v; }
@@ -158,116 +201,6 @@ sub generate_metrics_from_localplugin ($$$) {
 	$main::PLUGIN_HAS_FAILED = 1 if $plugin_rc > 0;
 
 	return %metrics;
-}
-
-sub generate_metrics_from_accessor ($$$$) {
-	my ($measure, $host, $service, $accessor) = @_;
-
-	my $rc = 0;
-	my %metrics;
-
-	#### load service conf.
-	my $f = "$main::CONFDIR/indirect/$measure.proxyhosts.$host.$service";
-	open my $h, '<', $f or do {
-		die "$f: cannot open, stopped";
-	};
-	my %proxyhosts;
-	while( <$h> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		if( m"^(\S+)$"x ){
-			my $proxyhost = $1;
-			$proxyhosts{$proxyhost} = 1;
-		}else{
-			die "$f:$.: illegal format, stopped";
-		}
-	}
-	close $h;
-
-	####
-	foreach my $proxyhost ( keys %proxyhosts ){
-		open my $h, '-|', "$accessor $proxyhost $measure $host $service" or do {
-			die "$accessor: cannot execute, stopped";
-		};
-		my $r = <$h>;
-		close $h;
-
-		chomp $r;
-		$r =~ m"^
-			(.*)
-			\|\s*
-			(\S.*)
-		$"x or do {
-			$metrics{"gateway[$proxyhost]-status"} = 2;
-		};
-		my $output = $1;
-		my $perfdata = $2;
-		foreach my $i ( split m"\s+", $output ){
-			next if $i eq 'OK';
-			if( $i eq 'UNKNOWN' ){ $rc = 3; }
-			push @main::OUTPUTS, $i;
-		}
-		foreach my $field ( split m"\s+", $perfdata ){
-			next unless $field =~ m"^([^=]+)=([-+]?(\d+|\d+\.\d+|\.\d+))(;.*)$";
-			$metrics{$1} = $2;
-		}
-	}
-
-	return %metrics;
-}
-
-sub generate_metrics_from_agentmeasure ($$$$) {
-	my ($measure, $host, $service, $agenttype) = @_;
-
-	my $f = "$main::PLUGINSDIR/ncrtagentmeasure_${measure}_$agenttype";
-	open my $h, '-|', "$f $main::CONFDIR $main::WORKDIR $measure $host $service" or do {
-		print "UNKNOWN $f: not found.\n";
-		exit 3;
-	};
-
-	my %metrics;
-	my @output;
-	while( <$h> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		die "$_, stopped" unless m"^([-\w/\[\].:@\$%#\*]+)=(\S+)$";
-		my $k = $1;
-		my $v = $2;
-		if( $k eq 'output' ){ push @output, $v; }
-		else                { $metrics{$k} = $v; }
-	}
-	close $h;
-
-	my $plugin_rc = $? >> 8;
-	$main::PLUGIN_HAS_FAILED = 1 if $plugin_rc > 0;
-
-	return %metrics;
-}
-
-sub generate_metrics_from_commandline_args ($$$@) {
-	my ($measure, $host, $service, @args) = @_;
-
-	my $import_host;
-	my $import_service;
-	my $import_prefix;
-	my %m1;
-	foreach my $i ( @args ){
-		foreach my $j ( split m"\s+", $i ){
-			if    ( $j =~ m"^([^\s=:]+):([^\s=:]+):([^\s=:]*)$" ){
-				$import_host = $1;
-				$import_service = $2;
-				$import_prefix = $3;
-			}elsif( $j =~ m"^([^\s=]+)=([-+]?\d+(\.\d+)?)(\w{1,2}|%)?(;\S+)?$" ){
-				my $key = $1;
-				my $value = $2;
-				$m1{"$import_prefix$key"} = $value;
-			}else{
-				print "parse error: \"$j\", stopped\n";
-				exit 3;
-			}
-		}
-	}
-	return %m1;
 }
 
 sub pass_through_filters ($$$$%) {
@@ -304,7 +237,7 @@ sub pass_through_filters ($$$$%) {
 		while( <$out> ){
 			chomp;
 			next if m"^\s*(#|$)";
-			die "$_, stopped" unless m"^([-\w/\[\].:@\$%#\*]+)=(.*)$";
+			die "$_, stopped" unless m"^([^[:cntrl:]\s:;=]+)=(.*)$";
 			my $k = $1;
 			my $v = $2;
 			if( $k eq 'output' ){ push @output, $v; }
@@ -478,11 +411,5 @@ sub generate_detection_results ($$$%) {
 }
 
 1;
-
-
-
-
-
-
 
 
