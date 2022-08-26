@@ -1,0 +1,11 @@
+
+- hosts: linux.__HOSTTYPE__
+  tasks:
+    - name: open TCP port for NCRTAgent
+      firewalld:
+        port: 46848/tcp
+        permanent: yes
+        immediate: yes
+        state: enabled
+      tags: [ commoninstall ]
+

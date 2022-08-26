@@ -1,3 +1,5 @@
 #
-mppfclstwa01nc
+*		home_dir=/opt/ncrtagent	daemon_user=ncrtagent	listen_address=0.0.0.0	listen_port=46848	timeout=50	agent_address=	agent_port=46848	agent_protocol=ncrtagent	allow=127.0.0.0/8,10.5.3.0/24,172.18.65.0/24	ansible_become=yes	ansible_user=opc	ansible_become_user=root	ansible_become_method=sudo
+
+mppfclstwa01nc	agent_protocol=nrpe
 mppfclstwa02nc
