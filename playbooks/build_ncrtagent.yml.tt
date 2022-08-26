@@ -10,12 +10,10 @@
 [%   IF file_exists(TOOLHOME _ "/conf/agenttype_" _ hosttype _ ".yml") -%]
 - name: include customize tasks
   import_playbook: "[%=TOOLHOME _ "/conf/agenttype_" _ hosttype _ ".yml"%]"
-  tags: [ common ]
 [%   END -%]
 [%   IF file_exists(TOOLHOME _ "/plugins/ncrtbuild_agenttype_" _ hosttype _ ".yml") -%]
 - name: import playbook [%=hosttype_plugin%]
   import_playbook: "[%=TOOLHOME _ "/plugins/ncrtbuild_agenttype_" _ hosttype _ ".yml"%]"
-  tags: [ common ]
 [%   END -%]
 [% END -%]
 

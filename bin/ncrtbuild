@@ -1519,7 +1519,7 @@ if( $plan{step7} ){
 		"	contact_name			$address\n",
 		"	email				$address\n",
 		"	host_notification_commands	ncrtmaster_do_nothing\n",
-		"	service_notification_commands	ncrtmaster_alertspooler\n",
+		"	service_notification_commands	ncrtmaster_do_nothing\n",
 		"	host_notification_period	ncrt_anytime\n",
 		"	service_notification_period	ncrt_anytime\n",
 		"	host_notification_options	n\n",

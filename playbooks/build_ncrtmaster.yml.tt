@@ -15,7 +15,6 @@
 [%   IF file_exists(TOOLHOME _ "/conf/mastertype_" _ hosttype _ ".yml") -%]
     - name: include customize tasks
       include_tasks: "[%=TOOLHOME _ "/conf/mastertype_" _ hosttype _ ".yml"%]"
-      tags: [ common ]
 [%   END -%]
 [% END %]
 
@@ -25,12 +24,6 @@
         name: [ dirmngr, pynag ]
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
-
-    - name: install packages for nrpe-ng
-      apt:
-        name: [ nrpe-ng ]
-      when: "ansible_os_family == 'Debian'"
-      tags: [ nrpe-ng ]
 
     ## InfluxDB (install)
     - name: install packages for influxdb
@@ -246,13 +239,6 @@
         rsync_opts: [ "-OJ", "--chown=root:root" ]
         src: "{{WORKDIR}}/ncrtmaster/{{inventory_hostname}}/"
         dest: "{{NCRTMASTERHOME}}/conf/"
-      tags: [ common ]
-
-    - name: setup gateway accessor
-      template:
-        mode: 0755
-        src: "{{TOOLHOME}}/playbooks/ncrtmaster_passthrough"
-        dest: "{{NCRTMASTERHOME}}/bin/ncrtmaster_passthrough"
       tags: [ common ]
 
     - name: setup nrpe server cert/key
