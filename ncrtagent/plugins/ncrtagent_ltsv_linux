@@ -2,6 +2,7 @@
 
 use strict;
 use Time::Piece;
+use JSON::PP;
 
 if( @ARGV < 5 ){
 	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
@@ -41,6 +42,7 @@ sub nMB ($) {
 
 #### load service conf.
 my %global_option = (
+	'file_format'			=> 'ltsv',
 	'timeout'			=> 9999999,
 	'timestamp'			=> 'file',
 	'timestamp_record_key'		=> 'timestamp',
@@ -82,7 +84,17 @@ while( my ($ltsvfile, $rules) = each %file2rules ){
 	die "$ltsvfile: cannot open, stopped" if $ltsv eq "";
 
 	my ($filename) = $ltsvfile =~ m"(?:^|/)([^/]+)$";
-	my %var = ltsv2var $ltsv;
+	my %var;
+	my $global_option_file_format = $global_option{'file_format'};
+	if    ( $global_option_file_format eq 'ltsv' ){
+		%var = ltsv2var $ltsv;
+	}elsif( $global_option_file_format eq 'json' ){
+		%var = %{decode_json $ltsv};
+	}else{
+		$rc = 3;
+		push @output, "option: file_format: unknown option '$global_option_file_format'.";
+		next;
+	}
 
 	my $age;
 	my $global_option_timestamp = $global_option{'timestamp'};

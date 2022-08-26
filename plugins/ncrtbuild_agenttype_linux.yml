@@ -22,6 +22,7 @@
           - perl-LWP-Protocol-https
           - perl-Template-Toolkit
           - perl-Time-Piece
+          - perl-JSON-PP
           - nagios-plugins-nrpe
       when: "ansible_os_family == 'RedHat' and ansible_distribution == 'OracleLinux'"
       tags: [ commoninstall ]
@@ -35,6 +36,7 @@
           - perl-LWP-Protocol-https
           - perl-Template-Toolkit
           - perl-Time-Piece
+          - perl-JSON-PP
       when: "ansible_os_family == 'RedHat' and ansible_distribution != 'OracleLinux'"
       tags: [ commoninstall ]
 
