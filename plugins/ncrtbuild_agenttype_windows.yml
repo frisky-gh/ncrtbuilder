@@ -11,7 +11,7 @@
         name: nscp
         state: present
         proxy_url: "{{chocolatey_proxy}}"
-
+      tags: [ commoninstall ]
 
     #### nsclient.ini setup
 
@@ -23,6 +23,7 @@
         line:  "[/settings/default]"
         insertafter: EOF
       notify: restart nsclient
+      tags: [ commoninstall ]
 
     - name: comment out password setting
       win_lineinfile:
@@ -31,6 +32,7 @@
         regex: "^password *= *(.*)"
         line:  ';password = $1'
       notify: restart nsclient
+      tags: [ commoninstall ]
 
     - win_lineinfile:
         path:  "C:\\Program Files\\NSClient++\\nsclient.ini"
@@ -38,6 +40,7 @@
         line:  'allowed hosts = {{nsclient_allowed_hosts}}'
         insertafter: '^\[/settings/default\]'
       notify: restart nsclient
+      tags: [ commoninstall ]
 
     ## /settings/NRPE/server
     - name: setup server section
@@ -47,6 +50,7 @@
         line:  "[/settings/NRPE/server]"
         insertafter: EOF
       notify: restart nsclient
+      tags: [ commoninstall ]
 
     - win_lineinfile:
         path:  'C:\Program Files\NSClient++\nsclient.ini'
@@ -60,6 +64,7 @@
         - { regex: "^timeout *= *.*",     line: 'timeout = 50' }
         - { regex: "^dh *= *.*",          line: 'dh = ${certificate-path}/nrpe_dh_2048.pem' }
       notify: restart nsclient
+      tags: [ commoninstall ]
 
     ## /modules
     - name: setup modules section
@@ -69,6 +74,7 @@
         line:  "[/modules]"
         insertafter: EOF
       notify: restart nsclient
+      tags: [ commoninstall ]
 
     - win_lineinfile:
         path:  'C:\Program Files\NSClient++\nsclient.ini'
@@ -76,6 +82,7 @@
         line:  'CheckExternalScripts = enabled'
         insertafter: '^\[/modules\]'
       notify: restart nsclient
+      tags: [ commoninstall ]
 
     ## /settings/external scripts/wrappings
     - name: setup wrappings section
@@ -85,6 +92,7 @@
         line:  "[/settings/external scripts/wrappings]"
         insertafter: EOF
       notify: restart nsclient
+      tags: [ commoninstall ]
 
     - name: add ps1 script support
       win_lineinfile:
@@ -93,6 +101,7 @@
         line:  'ps1 = cmd /c echo If (-Not (Test-Path "%SCRIPT%") ) { Write-Host "UNKNOWN: Script `"%SCRIPT%`" not found."; exit(3) }; %SCRIPT% $ARGS$; exit($lastexitcode) | powershell.exe /noprofile -command -'
         insertafter: '^\[/settings/external scripts/wrappings\]'
       notify: restart nsclient
+      tags: [ commoninstall ]
 
     ## /settings/external scripts/wrapped scripts
     - name: setup wrapped scripts section
@@ -102,6 +111,7 @@
         line:  "[/settings/external scripts/wrapped scripts]"
         insertafter: EOF
       notify: restart nsclient
+      tags: [ commoninstall ]
 
     - name: add detector plugins
       win_lineinfile:
@@ -113,6 +123,7 @@
         - osperf
         - disk
       notify: restart nsclient
+      tags: [ commoninstall ]
 
     ####
     - name: setup directory
@@ -122,16 +133,19 @@
       with_items:
         - 'C:\opt'
         - 'C:\opt\ncrtagent'
+      tags: [ commoninstall ]
 
     - name: setup agent files
       win_copy:
         src:  "{{TOOLHOME}}/ncrtagent/"
         dest: 'C:\opt\ncrtagent'
+      tags: [ commoninstall ]
 
     - name: setup dhparam files
       win_copy:
         src:  "{{TOOLHOME}}/conf/agenttype_windows.dh2048.pem"
         dest: 'C:\Program Files\NSClient++\security\nrpe_dh_2048.pem'
+      tags: [ commoninstall ]
 
   handlers:
     - name: restart nsclient
