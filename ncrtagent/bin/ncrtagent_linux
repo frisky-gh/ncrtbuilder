@@ -4,7 +4,7 @@ our ($TOOLHOME, $PLUGINSDIR, $CONFDIR);
 BEGIN {
 	$0 =~ m"^(.*)/";
 	$TOOLHOME = "$1/..";
-	while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+	while( $TOOLHOME =~ s{(^|/)[^\./][^/]*/\.\.(/|$)}{} ){}
 	$TOOLHOME =~ s{/$}{};
 	$PLUGINSDIR = "$TOOLHOME/plugins";
 	$CONFDIR = "$TOOLHOME/conf";

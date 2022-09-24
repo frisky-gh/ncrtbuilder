@@ -14,11 +14,10 @@ use MIME::EncWords ':all';
 
 $0 =~ m"^(.*)/";
 our $TOOLHOME = "$1/..";
-while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+while( $TOOLHOME =~ s{(^|/)[^\./][^/]*/\.\.(/|$)}{} ){}
 our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $CONFDIR = "$TOOLHOME/conf";
 our $SENDMAILEXE = '/usr/lib/sendmail';
-
 
 ####
 sub mkdir_or_die ($) {
