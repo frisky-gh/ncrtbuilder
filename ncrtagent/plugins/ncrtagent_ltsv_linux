@@ -58,10 +58,19 @@ while( <$h> ){
 	next if m"^\s*(#|$)";
 	if( m"^(\w+)=(\S*)$" ){
 		$global_option{$1} = $2;
-	}elsif( m"^(\S+)\s+(\S+)$" ){
+	}elsif( m"^(\S+)\s+(\S+)(?:\s+(\S+=\S*(\s+\S+=\S*)*))?$" ){
 		my $file = $1;
 		my $key_re = $2;
-		push @{$file2rules{$file}}, [qr"$key_re", {%global_option}];
+		my $option = $3;
+		my %option;
+		foreach my $item ( split m"\s+", $option ){
+			next unless $item =~ m"^([^\s=]+)=(.*)$";
+			$option{$1} = $2;
+		}
+		push @{$file2rules{$file}}, [
+			qr"$key_re",
+			{%global_option, %option}
+		];
 	}else{
 		die "$f:$.:$_: illegal format, stopped";
 	}

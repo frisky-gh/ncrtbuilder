@@ -42,11 +42,13 @@ while( <$h> ){
 		#
 	}elsif( m"^
 		(\S+)\s+(/\S*)\s+(\S+)
+		(?: \s+((?:\S+=\S* \s+)* \S+=\S*) )?
 	$"x ){
 		my $host = $1;
 		my $path = $2;
 		my $fieldpattern = $3;
-		$vhost2vservice{$vhost}->{$vservice} = 1;
+		my $option = $4;
+		$vhost2vservice{$vhost}->{$vservice} = [split m"\s+", $option];
 	}else{
 		die "$f:$.: illegal format, stopped";
 	}
@@ -77,6 +79,7 @@ open my $h, '>>', $f or do {
 
 while( my ($vhost, $vservices) = each %vhost2vservice ){
 	foreach my $vservice ( sort keys %$vservices ){
+		my $options = $$vservices{$vservice};
 		print $h "$vhost	$vservice	ltsv\n";
 	}
 }
