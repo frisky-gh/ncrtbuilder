@@ -211,6 +211,15 @@ sub action_measure ($$$$$) {
 	$conn->send_response($res);
 }
 
+sub action_ping ($$) {
+	my ($conf, $conn) = @_;
+	my $res = HTTP::Response->new;
+	$res->code(200);
+	$res->header('Content-Type' => 'text/plain');
+	$res->content("OK\n");
+	$conn->send_response($res);
+}
+
 
 ####
 sub cmd_cron ($) {
@@ -284,7 +293,7 @@ sub cmd_daemon ($) {
 			next;
 		}
 
-		if( $path =~ m"/measure/([-\w]+)/([-\w]+)/([-\w]+)" ){
+		if( $path =~ m"^/measure/([-\w]+)/([-\w]+)/([-\w]+)" ){
 			my $measure = $1;
 			my $host = $2;
 			my $service = $3;
@@ -296,6 +305,8 @@ sub cmd_daemon ($) {
 					$measure, $host, $service;
 				exit 0;
 			}
+		}elsif( $path =~ m"^/ping" ){
+			action_ping $conf, $conn;
 		}else{
 			$conn->send_error(RC_FORBIDDEN);
 		}

@@ -1333,7 +1333,7 @@ if( $plan{step7} ){
 		"define host {\n",
 		"	name			ncrt-agenttype-$agenttype\n",
 		"	use			ncrt-generic-host\n",
-		"	check_command		ncrtmaster_hostcheck\n",
+		"	check_command		ncrtmaster_ping\n",
 		@settings,
 		"	register		0\n",
 		"}\n";
@@ -1406,6 +1406,7 @@ if( $plan{step7} ){
 		"define host {\n",
 		"	host_name		$host\n",
 		"	use			ncrt-agenttype-$agenttype\n",
+		"	check_command		ncrtmaster_ping\n",
 		"	contacts		$contacts\n",
 		"	_urlencoded		$_urlencoded\n",
 		"	_agenttype		$agenttype\n",

@@ -1,0 +1,48 @@
+#!/usr/bin/perl
+
+use strict;
+
+our $TOOLHOME;
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = "$1/..";
+	while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+}
+use lib "$TOOLHOME/lib/perl5";
+use NCRTCommon;
+use NCRTStackMachine;
+use NCRTTimeSeries;
+
+our $BINDIR = "$TOOLHOME/bin";
+our $PLUGINSDIR = "$TOOLHOME/plugins";
+our $FILTERSDIR = "$TOOLHOME/filters";
+our $CONFDIR = "$TOOLHOME/conf";
+
+if( @ARGV < 1 ){
+	print "usage: % $0 HOST\n";
+	exit 3;
+}
+
+my $host      = $ARGV[0];
+
+# setup work directory
+our $WORKDIR;
+if( $ENV{'HOME'} ){ $WORKDIR = $ENV{'HOME'} . "/.ncrt"; }
+else{
+	my ($name, $passwd, $uid, $gid, $quota, $comment, $gcos, $home, $shell, $expire ) = getpwuid $<;
+	$WORKDIR = "$home/.ncrt";
+}
+unless( -d $WORKDIR ){ mkdir $WORKDIR or die "$WORKDIR: cannot create, stopped"; }
+
+my $host2param = load_hosts;
+my $param = $$host2param{$host};
+
+unless( ping_to_agent $host, $param ){
+	print "NG\n";
+	exit 1;
+}
+
+print "OK\n";
+exit 0;
+
+

@@ -16,6 +16,7 @@ our @EXPORT = (
 	'generate_metrics_from_targetagent',
 	'generate_metrics_from_proxyagents',
 	'generate_metrics_from_localplugin',
+	'ping_to_agent',
 	'pass_through_filters',
 	'evaluate_values',
 	'generate_thresholds',
@@ -201,6 +202,67 @@ sub generate_metrics_from_localplugin ($$$) {
 	$main::PLUGIN_HAS_FAILED = 1 if $plugin_rc > 0;
 
 	return %metrics;
+}
+
+sub ping_by_ncrtprotocol ($$) {
+	my ($host, $param) = @_;
+
+	####
+	my $timeout = $$param{timeout}       // 50;
+	my $address = $$param{agent_address} // $host;
+	my $port    = $$param{agent_port}    // "46848";
+
+	####
+	my $ua = LWP::UserAgent->new;
+	$ua->agent("NCRTRemoteDetect/1.0");
+	$ua->timeout($timeout);
+	my $url = "http://$address:$port/ping";
+	my $req = HTTP::Request->new(GET => $url);
+	my $res = $ua->request($req);
+
+	return undef unless $res->is_success;
+	return 1;
+}
+
+sub ping_by_nrpeprotocol ($$) {
+	my ($host, $param) = @_;
+
+	####
+	my $timeout = $$param{timeout}       // 50;
+	my $address = $$param{agent_address} // $host;
+	my $port    = $$param{agent_port}    // "5666";
+	my $nrpever = $$param{agent_nrpever} // "2";
+	my $client  = $$param{agent_client}  // "/usr/lib/nagios/plugins/check_nrpe";;
+	my $option = "-H $address -p $port -t $timeout";
+	if   ( $nrpever == 2 ){ $option .= " -2"; }
+	elsif( $nrpever == 3 ){ $option .= " -3"; }
+	elsif( $nrpever == 4 ){ }
+
+	####
+	open my $h, '-|', "$client $option -c check_ok" or do {
+		return undef;
+	};
+	my $r = <$h>;
+	close $h;
+
+	chomp $r;
+	$r =~ m"^OK"x or do {
+		return undef;
+	};
+	return 1;
+}
+
+sub ping_to_agent ($$) {
+	my ($host, $param) = @_;
+
+	my $protocol = $$param{agent_protocol} // "ncrtagent";
+	if( $protocol eq 'nrpe' ){
+		return ping_by_nrpeprotocol $host, $param;
+	}elsif( $protocol eq 'ncrtagent' ){
+		return ping_by_ncrtprotocol $host, $param;
+	}else{
+		die;
+	}
 }
 
 sub pass_through_filters ($$$$%) {

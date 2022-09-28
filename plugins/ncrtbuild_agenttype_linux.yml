@@ -84,7 +84,7 @@
         rsync_opts: [ "-OJ", "--chown=root:root" ]
         src: "{{WORKDIR}}/ncrtagent/{{ansible_hostname}}/"
         dest: "{{NCRTAGENTHOME}}/conf/"
-      notify: "restart {{AGENTPACKAGE}}"
+      notify: restart ncrtagent
       tags: [ common ]
 
     - name: setup ncrtagent_linux

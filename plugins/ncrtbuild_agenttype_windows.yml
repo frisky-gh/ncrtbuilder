@@ -103,6 +103,27 @@
       notify: restart nsclient
       tags: [ commoninstall ]
 
+    ## /settings/external scripts/scripts
+    - name: setup scripts section
+      win_lineinfile:
+        path:  'C:\Program Files\NSClient++\nsclient.ini'
+        regex: '^\[/settings/external scripts/scripts\]'
+        line:  "[/settings/external scripts/scripts]"
+        insertafter: EOF
+      notify: restart nsclient
+      tags: [ commoninstall ]
+
+    - name: add nsclient++ detector plugins
+      win_lineinfile:
+        path:  'C:\Program Files\NSClient++\nsclient.ini'
+        regex: '^check_{{item}} *= *.*'
+        line:  'check_{{item}} = C:\Program Files\NSClient++\scripts\check_{{item}}.bat'
+        insertafter: '^\[/settings/external scripts/scripts\]'
+      with_items:
+        - ok
+      notify: restart nsclient
+      tags: [ commoninstall ]
+
     ## /settings/external scripts/wrapped scripts
     - name: setup wrapped scripts section
       win_lineinfile:
