@@ -55,12 +55,16 @@ inc/
 /conf/option/*.optionrules
 # threshold settings
 /conf/threshold/*.thresholds
-# settings for filters
+# settings for miscs
 /conf/metricfilter/*.filterrules
 /conf/thresholdfilter/*.filterrules
 /conf/reporter/*.conf
 /conf/reporter/*.rules
 /conf/reporter/*.tt
+/conf/agenttype/*.conf
+/conf/agenttype/*.pem
+/conf/agenttype/*.hosts
+/conf/contact/*.conf
 # filters
 /filters/*.filter
 #
