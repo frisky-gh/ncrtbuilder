@@ -258,10 +258,6 @@ close $h;
 our $ANSIBLEOPTIONS      = $ncrtconf{'ANSIBLEOPTIONS'};
 
 our $NCRTAGENTHOME       = $ncrtconf{'NCRTAGENTHOME'};
-our $AGENTPACKAGE	 = $ncrtconf{'AGENTPACKAGE'} || 'ncrtagent';
-our $NRPEPORT	         = $ncrtconf{'NRPEPORT'} // '5666';
-our $NRPETLS	         = $ncrtconf{'NRPETLS'} // 'yes';
-our $NRPEALLOWEDHOSTS	 = $ncrtconf{'NRPEALLOWEDHOSTS'};
 
 our $NCRTMASTERHOME      = $ncrtconf{'NCRTMASTERHOME'};
 
@@ -329,7 +325,6 @@ while( <$h> ){
 	}
 }
 close $h;
-$NRPEALLOWEDHOSTS = join ",", @ncrtmasteraddrs if $NRPEALLOWEDHOSTS eq '';
 
 #### find all build plugins
 my @agenttype_plugins;
@@ -1623,11 +1618,7 @@ foreach my $master ( @ncrtmasters ){
 		system_or_die "cp $WORKDIR/$f $WORKDIR/ncrtmaster/$master/$f";
 	}
 	
-	foreach my $f ( "ncrtbuild.conf", "messenger.rules", "messenger_webpage.tt", "messenger_expiredwebpage.tt", "messenger_mail.tt" ){
-		system_or_die "cp $CONFDIR/$f $WORKDIR/ncrtmaster/$master/$f";
-	}
-	
-	foreach my $f ( @masterconfs ){
+	foreach my $f ( "ncrtbuild.conf", @masterconfs ){
 		system_or_die "cp $CONFDIR/$f $WORKDIR/ncrtmaster/$master/$f";
 	}
 }
@@ -1660,10 +1651,6 @@ print $h <<"EOF";
  INFLUXDBUSER:        "$INFLUXDBUSER"
  INFLUXDBPASSWD:      "$INFLUXDBPASSWD"
  INFLUXDBDATABASE:    "$INFLUXDBDATABASE"
- AGENTPACKAGE:	      "$AGENTPACKAGE"
- NRPEPORT:            "$NRPEPORT"
- NRPETLS:             "$NRPETLS"
- NRPEALLOWEDHOSTS:    "$NRPEALLOWEDHOSTS"
  NCRTMASTERHOSTS:     "$ncrtmasterhosts"
 EOF
 close $h;
@@ -1674,13 +1661,6 @@ close $h;
 my $tags = 'common';
 unless( $quick ){
 	$tags .= ',commoninstall';
-	if   ( lc($AGENTPACKAGE) eq 'nrpe' )     { $tags .= ',nrpe'; }
-	elsif( lc($AGENTPACKAGE) eq 'nrpe-ng' )  { $tags .= ',nrpe-ng'; }
-	elsif( lc($AGENTPACKAGE) eq 'ncrtagent' ){}
-	else{ die "AGENTPACKAGE: invalid package, stopped"; }
-	if   ( lc($NRPETLS) eq 'yes' ){ $tags .= ',nrpetls'; }
-	elsif( lc($NRPETLS) eq 'no' ) {}
-	else{ die "NRPETLS: invalid setting, stopped"; }
 }
 
 #### run ansible for nagios master

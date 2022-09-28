@@ -35,7 +35,7 @@ my %default = (
 	agent_address => undef,
 	agent_port => 46848,
 );
-my $f = "$CONFDIR/agenttype_linux.hosts";
+my $f = "$CONFDIR/agenttype/linux.hosts";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };

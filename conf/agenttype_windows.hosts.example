@@ -1,4 +1,0 @@
-*		chocolatey_proxy=192.168.100,1:8080	nsclient_allowed_hosts=192.168.0.0/16	ansible_user=ncrtagent	ansible_password=********	ansible_winrm_transport=ssl
-
-winsv0001
-winsv0002

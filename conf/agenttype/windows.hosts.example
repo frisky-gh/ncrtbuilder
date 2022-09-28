@@ -1,0 +1,40 @@
+#
+#   "agenttype_windows" assumes NSClient++ daemon as the agent, and uses nrpe
+#  protocol for its communication.
+#  
+#  Following options are available:
+#
+#      Agent Side Options:
+#          nsclient_allowed_hosts
+#          chocolatey_proxy
+#
+#      Master Side Options:
+#          agent_address	(default:0.0.0.0)
+#          agent_port		(default:5666)
+#          agent_client		(default:/usr/lib/nagios/plugins/check_nrpe)
+#          agent_protocol	(default:nrpe)
+#
+#      Builder Side Options:
+#          ansible_user
+#          ansible_password
+#          ansible_connection			(default:winrm)
+#          ansible_winrm_transport
+#          ansible_winrm_server_cert_validation	(default:ignore)
+#
+#   When ncrtbuilder is executed, communication between Builder - Master by
+#  ansible. This communication usually uses WinRM, requires authentication,
+#  is encrypted, and is very complex. We recommend pre-testing the
+#  communication with ansible's win_ping module before executing ncrtbuilder.
+#
+#      cat > /tmp/hosts <<EOF
+#      [windows]
+#      samplehost01 ansible_connection=winrm ansible_winrm_server_cert_validation=ignore ansible_user=ncrtagent ansible_password=XXXXXXXX
+#      EOF
+#      ansible -i /tmp/hosts all -m win_ping
+#
+
+*		chocolatey_proxy=192.168.100,1:8080	nsclient_allowed_hosts=192.168.0.0/16	ansible_user=ncrtagent	ansible_password=********	ansible_winrm_transport=ssl
+
+winsv0001
+winsv0002
+

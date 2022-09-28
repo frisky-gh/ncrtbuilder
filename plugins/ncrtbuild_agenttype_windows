@@ -37,7 +37,7 @@ my %default = (
 	ansible_connection => 'winrm',
 	ansible_winrm_server_cert_validation => 'ignore'
 );
-my $f = "$CONFDIR/agenttype_windows.hosts";
+my $f = "$CONFDIR/agenttype/windows.hosts";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -85,9 +85,9 @@ close $h;
 #### generate ncrtagent.conf
 
 #### generate cert file.
-my $conf = "$CONFDIR/agenttype_windows.openssl.conf";
-my $cert = "$CONFDIR/agenttype_windows.cert.pem";
-my $key  = "$CONFDIR/agenttype_windows.key.pem";
+my $conf = "$CONFDIR/agenttype/windows.openssl.conf";
+my $cert = "$CONFDIR/agenttype/windows.cert.pem";
+my $key  = "$CONFDIR/agenttype/windows.key.pem";
 if( -f $conf && ! -f $cert && ! -f $key ){
 	system "openssl req -x509 -nodes -days 3650 -newkey rsa:2048"
 		. " -config $conf"
@@ -96,7 +96,7 @@ if( -f $conf && ! -f $cert && ! -f $key ){
 }
 
 #### generate dhparam file.
-my $dhparam = "$CONFDIR/agenttype_windows.dh2048.pem";
+my $dhparam = "$CONFDIR/agenttype/windows.dh2048.pem";
 if( ! -f $dhparam ){
 	system "openssl dhparam -out $dhparam -outform PEM 2048";
 }

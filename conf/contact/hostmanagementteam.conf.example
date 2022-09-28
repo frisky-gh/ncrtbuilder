@@ -1,0 +1,9 @@
+
+team	SampleTeam
+	host	samplehost01
+	host	samplehost02
+
+	user	user01
+	user	user02
+	
+
