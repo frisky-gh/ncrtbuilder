@@ -108,13 +108,18 @@ sub generate_metrics_by_nrpeprotocol ($$$$$) {
 	my %metrics;
 
 	####
-	my $timeout = $$param{timeout} // 50;
+	my $timeout = $$param{timeout}       // 50;
 	my $address = $$param{agent_address} // $proxyhost;
-	my $port    = $$param{agent_port} // "5666";
-	my $client  = $$param{agent_client} // "/usr/lib/nagios/plugins/check_nrpe";;
+	my $port    = $$param{agent_port}    // "5666";
+	my $nrpever = $$param{agent_nrpever} // 2;
+	my $client  = $$param{agent_client}  // "/usr/lib/nagios/plugins/check_nrpe";;
+	my $option = "-H $address -p $port -t $timeout";
+	if   ( $nrpever == 2 ){ $option .= " -2"; }
+	elsif( $nrpever == 3 ){ $option .= " -3"; }
+	elsif( $nrpever == 4 ){ }
 
 	####
-	open my $h, '-|', "$client -H $address -p $port -t $timeout -c check_$service" or do {
+	open my $h, '-|', "$client $option -c check_$service" or do {
 		$metrics{"nrpe[$proxyhost]-error"} = 3;
 		return %metrics;
 	};
@@ -231,7 +236,7 @@ sub ping_by_nrpeprotocol ($$) {
 	my $timeout = $$param{timeout}       // 50;
 	my $address = $$param{agent_address} // $host;
 	my $port    = $$param{agent_port}    // "5666";
-	my $nrpever = $$param{agent_nrpever} // "2";
+	my $nrpever = $$param{agent_nrpever} // 2;
 	my $client  = $$param{agent_client}  // "/usr/lib/nagios/plugins/check_nrpe";;
 	my $option = "-H $address -p $port -t $timeout";
 	if   ( $nrpever == 2 ){ $option .= " -2"; }

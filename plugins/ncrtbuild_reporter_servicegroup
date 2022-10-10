@@ -32,7 +32,12 @@ open my $h, '>>', $f or do {
 print $h "reporter/servicegroup.conf\n";
 print $h "reporter/servicegroup.rules\n";
 print $h "reporter/servicegroup_activesession.tt\n";
-print $h "reporter/servicegroup_mail.tt\n";
+print $h "reporter/servicegroup_inactivesession.tt\n";
+foreach my $f ( "mail", "slack_open", "slack_close" ){
+	my $p = "reporter/servicegroup_$f.tt";
+	next unless -f "$CONFDIR/$p";
+	print $h "$p\n";
+}
 close $h;
 
 exit 0;

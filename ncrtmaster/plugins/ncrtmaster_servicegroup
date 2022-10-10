@@ -73,6 +73,8 @@ our $GRAFANAORGID = $conf{GRAFANAORGID} // 1;
 # naemon2influx-grafana-helper url
 our $HELPERURL = $conf{HELPERURL} // "http://example.com/naemon2influx-grafana-helper";
 
+# semaphore is expired after 30 min.
+our $SEMAPHORETIMESPAN = $conf{SEMAPHORETIMESPAN} // 30*60;
 
 
 
@@ -203,20 +205,24 @@ sub load_confrules () {
 		next if m"^\s*(#|$)";
 		if    ( m"^===\s+(\S+)\s+===$" ){
 			$sg_regexp = qr"^$1$";
-		}elsif( m"^(?:(\w+)=(.*)|(\S+\@\S+))$" ){
-			if    ( $1 ne '' ){
-				push @confrules, {
-					type => 'PARAM',
-					sg_regexp => $sg_regexp,
-					key => $1, value => $2,
-				};
-			}elsif( $3 ne '' ){
-				push @confrules, {
-					type => 'EMAIL',
-					sg_regexp => $sg_regexp,
-					email => $3,
-				};
-			}
+		}elsif( m"^(\w+)=(.*)$" ){
+			push @confrules, {
+				type => 'PARAM',
+				sg_regexp => $sg_regexp,
+				key => $1, value => $2,
+			};
+		}elsif( m"^(?:(\S+\@\S+)|mail\s+(\S+))$" ){
+			push @confrules, {
+				type => 'EMAIL',
+				sg_regexp => $sg_regexp,
+				email => ($1 ne '' ? $1 : $2),
+			};
+		}elsif( m"^slack\s+(\S+)$" ){
+			push @confrules, {
+				type => 'SLACK',
+				sg_regexp => $sg_regexp,
+				url => $1,
+			};
 		}else{
 			die "$f:$.: illegal format, stopped";
 		}
@@ -230,6 +236,7 @@ sub apply_confrules ($$) {
 	my ($rules, $sg) = @_;
 	my %param;
 	my @email;
+	my @slack;
 
 	foreach my $rule ( @$rules ){
 		my $regexp = $$rule{sg_regexp};
@@ -239,10 +246,12 @@ sub apply_confrules ($$) {
 			$param{ $$rule{key} } = $$rule{value};
 		}elsif( $$rule{type} eq "EMAIL" ){
 			push @email, $$rule{email};
+		}elsif( $$rule{type} eq "SLACK" ){
+			push @slack, $$rule{url};
 		}
 	}
 
-	return \%param, \@email;
+	return \%param, \@email, \@slack;
 }
 
 #### I/O functions
@@ -469,7 +478,7 @@ sub req_httpapi ($$$) {
 	my ($url, $host, $desc) = @_;
 
 	my $ua = LWP::UserAgent->new;
-	$ua->agent("NCRTLiveStatusPlugin/1.0");
+	$ua->agent("NCRTSessionGroupPlugin/1.0");
 	$ua->timeout(60);
 	my $u = $url;
 	$u .= "/" unless $u =~ m"/$";
@@ -511,7 +520,7 @@ sub req ($) {
 	die;
 }
 
-####
+#### functions for Critical Setion
 
 sub start_criticalsection () {
 	my $f = "$WORKDIR/servicegroup_semaphore";
@@ -525,7 +534,7 @@ sub start_criticalsection () {
 	debuglog "$f: semaphore is '$l'.";
 	return undef unless $l =~ m"^pid=(\S+) unixtime=(\S+) timestamp=(\S+)";
 	my $last_t = $2;
-	return undef unless $t - $last_t > 10*60;
+	return undef unless $t - $last_t > $SEMAPHORETIMESPAN;
 	unlink $f or return undef;
 	debuglog "$f: semaphore is removed.";
 	symlink $d, $f and return 1;
@@ -552,8 +561,8 @@ sub end_criticalsection () {
 }
 
 sub start_criticalsection_for_session ($) {
-	my ($alertsession) = @_;
-	my $f = "$SESSIONDIR/sess_$alertsession/.semaphore";
+	my ($session) = @_;
+	my $f = "$SESSIONDIR/sess_$session/.semaphore";
 	my $t = time;
 	my $timestamp = timestamp $t;
 	my $d = "pid=$$ unixtime=$t timestamp=$timestamp";
@@ -564,7 +573,7 @@ sub start_criticalsection_for_session ($) {
 	debuglog "$f: semaphore is '$l'.";
 	return undef unless $l =~ m"^pid=(\S+) unixtime=(\S+) timestamp=(\S+)";
 	my $last_t = $2;
-	return undef unless $t - $last_t > 10*60;
+	return undef unless $t - $last_t > $SEMAPHORETIMESPAN;
 	unlink $f or return undef;
 	debuglog "$f: semaphore is removed.";
 	symlink $d, $f and return 1;
@@ -572,8 +581,8 @@ sub start_criticalsection_for_session ($) {
 }
 
 sub end_criticalsection_for_session ($) {
-	my ($alertsession) = @_;
-	my $f = "$SESSIONDIR/sess_$alertsession/.semaphore";
+	my ($session) = @_;
+	my $f = "$SESSIONDIR/sess_$session/.semaphore";
 	return undef unless -l $f;
 	my $l = readlink $f;
 	return undef unless $l =~ m"^pid=(\S+) unixtime=(\S+) timestamp=(\S+)";
@@ -581,7 +590,40 @@ sub end_criticalsection_for_session ($) {
 	unlink $f if $last_pid == $$;
 }
 
-####
+sub start_criticalsection_for_report ($$) {
+	my ($servicegroup, $reporttype) = @_;
+	my $f = "$WORKDIR/servicegroup_semaphore_for_report.$reporttype.$servicegroup";
+	my $t = time;
+	my $timestamp = timestamp $t;
+	my $d = "pid=$$ unixtime=$t timestamp=$timestamp";
+	symlink $d, $f and return 1;
+	debuglog "$f: semaphore is used.";
+	return undef unless -l $f;
+	my $l = readlink $f;
+	debuglog "$f: semaphore is '$l'.";
+	return undef unless $l =~ m"^pid=(\S+) unixtime=(\S+) timestamp=(\S+)";
+	my $last_t = $2;
+	return undef unless $t - $last_t > $SEMAPHORETIMESPAN;
+	unlink $f or return undef;
+	debuglog "$f: semaphore is removed.";
+	symlink $d, $f and return 1;
+	return undef;
+}
+
+sub end_criticalsection_for_report ($$) {
+	my ($servicegroup, $reporttype) = @_;
+	my $f = "$WORKDIR/servicegroup_semaphore_for_report.$reporttype.$servicegroup";
+errorlog "DEBUG: semaphore: %s", $f;
+	return undef unless -l $f;
+	my $l = readlink $f;
+errorlog "DEBUG: semaphore2: %s", $l;
+	return undef unless $l =~ m"^pid=(\S+) unixtime=(\S+) timestamp=(\S+)";
+	my $last_pid = $1;
+	unlink $f if $last_pid == $$;
+	unlink $f if $last_pid == $$;
+}
+
+#### functions for Service Details / Perf Details
 
 sub load_servicedetails () {
 	my $json = read_plain "$WORKDIR/servicegroup_servicedetails.json";
@@ -759,14 +801,14 @@ sub trim_perfstate_events ($$$) {
 	return \@t;
 }
 
-sub mkdir_for_alertsession ($) {
+sub mkdir_for_session ($) {
 	my ($sid) = @_;
 	my $d = "$SESSIONDIR/sess_$sid";
 	return if -d $d;
 	mkdir_or_die $d;
 }
 
-sub rmdir_for_alertsession ($) {
+sub rmdir_for_session ($) {
 	my ($sid) = @_;
 	my $d = "$SESSIONDIR/sess_$sid";
 	return unless -d $d;
@@ -802,9 +844,9 @@ sub store_trashbox ($) {
 }
 
 sub move_session_into_trashbox ($$$$) {
-	my ($trashbox, $alertsession, $next_alertsession, $expire_timespan) = @_;
+	my ($trashbox, $session, $next_session, $expire_timespan) = @_;
 	my $entry;
-	if( $next_alertsession eq '' ){
+	if( $next_session eq '' ){
 		$entry = {
 			type       => 'CLOSED',
 			createtime => time,
@@ -815,17 +857,17 @@ sub move_session_into_trashbox ($$$$) {
 			type       => 'RENAMED',
 			createtime => time,
 			expire_timespan => $expire_timespan,
-			next       => $next_alertsession,
+			next       => $next_session,
 		};
 		my $template = read_plain
 			"$CONFDIR/reporter/servicegroup_inactivesession.tt";
 		my $html = generate_by_template $template,
-			alertsession      => $alertsession,
-			next_alertsession => $next_alertsession;
+			session      => $session,
+			next_session => $next_session;
 		write_plain
-			"$SESSIONDIR/sess_$alertsession/index.html", $html;
+			"$SESSIONDIR/sess_$session/index.html", $html;
 	}
-	$$trashbox{sessions}->{$alertsession} = $entry;
+	$$trashbox{sessions}->{$session} = $entry;
 }
 
 sub get_expired_from_trashbox ($) {
@@ -844,12 +886,12 @@ sub get_expired_from_trashbox ($) {
 sub remove_session_from_trashbox ($$) {
 	my ($trashbox, $session) = @_;
 	my $sessions = $$trashbox{sessions};
-	rmdir_for_alertsession $session;
+	rmdir_for_session $session;
 	delete $$sessions{$session};
 }
 
 
-####
+#### funtions for Service Group Status Files
 sub create_sgstate ($) {
 	return {};
 }
@@ -873,22 +915,22 @@ sub store_sgstate ($$) {
 	};
 }
 
-sub create_alertsession () {
+sub create_session () {
 	my $random = pack('nnn', int rand 65536, $$ & 65535, int rand 65536);
-	my $alertsession = encode_base64($random, '');
-	$alertsession =~ s|\+|_|g;
-	$alertsession =~ s|/|-|g;
-	return $alertsession;
+	my $session = encode_base64($random, '');
+	$session =~ s|\+|_|g;
+	$session =~ s|/|-|g;
+	return $session;
 }
 
-sub get_alertsession_from_sgstate ($) {
+sub get_session_from_sgstate ($) {
 	my ($sgstate) = @_;
-	return $$sgstate{alertsession};
+	return $$sgstate{session};
 }
 
-sub set_alertsession_into_sgstate ($$) {
-	my ($sgstate, $alertsession) = @_;
-	$$sgstate{alertsession} = $alertsession;
+sub set_session_into_sgstate ($$) {
+	my ($sgstate, $session) = @_;
+	$$sgstate{session} = $session;
 }
 
 sub get_servicestates ($$) {
@@ -979,91 +1021,56 @@ sub get_perfstate_history ($) {
 	return $$sgstate{perfstate_history} // [];
 }
 
-sub set_highlighted_services ($$) {
-	my ($sgstate, $highlighted_services) = @_;
-	$$sgstate{highlighted_services} = $highlighted_services;
+sub set_highlighted_servicenames ($$) {
+	my ($sgstate, $highlighted_servicenames) = @_;
+	$$sgstate{highlighted_servicenames} = $highlighted_servicenames;
 }
 
-sub set_highlighted_perfs ($$) {
-	my ($sgstate, $highlighted_perfs) = @_;
-	$$sgstate{highlighted_perfs} = $highlighted_perfs;
+sub set_highlighted_perfnames ($$) {
+	my ($sgstate, $highlighted_perfnames) = @_;
+	$$sgstate{highlighted_perfnames} = $highlighted_perfnames;
 }
 
-sub get_highlighted_services ($) {
+sub get_highlighted_servicenames ($) {
 	my ($sgstate) = @_;
-	return $$sgstate{highlighted_services} // {};
+	return $$sgstate{highlighted_servicenames} // {};
 }
 
-sub get_highlighted_perfs ($) {
+sub get_highlighted_perfnames ($) {
 	my ($sgstate) = @_;
-	return $$sgstate{highlighted_perfs} // {};
+	return $$sgstate{highlighted_perfnames} // {};
 }
 
-sub generate_highlighted ($$$) {
-	my ($details, $last_highlighted, $changed) = @_;
+sub verify_highlighted ($$) {
+	my ($highlighted, $states) = @_;
+	while( my ($k, $v) = each %$states ){
+		if( defined $$v{hard_state} ){
+			next if $$highlighted{$k};
+			next if $$v{hard_state} == 0;
+			$$highlighted{$k} = 1;
+			debuglog "verify_highlighted: %s: completed.", $k;
+		}elsif( defined $$v{state} ){
+			next if $$highlighted{$k};
+			next if $$v{state} == 0;
+			$$highlighted{$k} = 1;
+			debuglog "verify_highlighted: %s: completed.", $k;
+		}
+	}
+}
+
+sub get_highlighted ($$) {
+	my ($highlighted, $d) = @_;
 	my %r;
-	foreach my $i ( keys %$last_highlighted ){
-		$r{$i} = $$details{$i};
-	}
-	foreach my $c ( @$changed ){
-		my $n = $$c{name};
-		$r{$n} = $$details{$n};
-	}
+	foreach my $i ( keys %$highlighted ){ $r{$i} = $$d{$i}; }
 	return \%r;
 }
 
-sub history_exists ($) {
-	my ($sgstate) = @_;
-	my $history = $$sgstate{servicestate_history};
-	return 1 if @$history;
-	return undef;
-}
-
-sub eval_history_score ($$$$$$) {
-	my ( $sgstate,
-	     $min_resend_timespan,
-	     $resend_threshold_for_ok,
-	     $resend_threshold_for_warn,
-	     $resend_threshold_for_crit,
-	     $resend_threshold_for_unknown ) = @_;
-	my $now = time;
-
-	my $ok_point      = 10000 / $resend_threshold_for_ok;
-	my $warn_point    = 10000 / $resend_threshold_for_warn;
-	my $crit_point    = 10000 / $resend_threshold_for_crit;
-	my $unknown_point = 10000 / $resend_threshold_for_unknown;
-
-	my $history    = $$sgstate{servicestate_history};
-	my $reporttime = $$sgstate{reporttime};
-
-	return undef if ($now - $reporttime) / 60 < $min_resend_timespan;
-
-	my %service2state;
-	foreach my $i ( sort {$$a{timestamp} <=> $$b{timestamp}} @$history ){
-		my $name       = $$i{name};
-		my $timestamp  = $$i{timestamp};
-		$service2state{$name} = $i;
-	}
-
-	my $score;
-	while( my ($k, $v) = each %service2state ){
-		my $name       = $$v{name};
-		my $timestamp  = $$v{timestamp};
-		my $hard_state = $$v{hard_state};
-		my $d = ($now - $timestamp) / 60 / $min_resend_timespan;
-		my $ratio = 1.0;
-		if( $d > 1.0 ){ $ratio += ($d - 1.0) / 10.0; }
-
-		if   ( $hard_state == 0 ){ $score += $ratio * $ok_point; }
-		elsif( $hard_state == 1 ){ $score += $ratio * $warn_point; }
-		elsif( $hard_state == 2 ){ $score += $ratio * $crit_point; }
-		elsif( $hard_state == 3 ){ $score += $ratio * $unknown_point; }
-		else{ die; }
-	}
-
-debuglog "DEBUG: EVAL_HISTORY_SCORE: $score";
-	return 1 if $score > 10000;
-	return undef;
+sub merge_highlighted ($$) {
+	my ($last_highlighted, $changed) = @_;
+	my %r;
+	foreach my $i ( keys %$last_highlighted ){ $r{$i}        = 1; }
+	foreach my $c ( @$changed )              { $r{$$c{name}} = 1; }
+	return \%r;
 }
 
 sub merge_history ($$) {
@@ -1074,6 +1081,16 @@ sub merge_history ($$) {
 		$$a{name} cmp $$b{name};
 	} (@$left, @$right);
 	return \@merged;
+}
+
+sub trim_history ($$) {
+	my ($history, $timestamp) = @_;
+	my @r;
+	return [] unless defined $history;
+	foreach my $h (@$history){
+		push @r, $h if $$h{timestamp} > $timestamp;
+	}
+	return \@r;
 }
 
 sub select_ngservice_from_servicestates ($) {
@@ -1098,65 +1115,227 @@ sub select_ngperf_from_perfstates ($) {
 	return \@r;
 }
 
-sub get_sessioncreatetime_from_sgstate ($) {
+sub get_sessiontime_from_sgstate ($) {
 	my ($sgstate) = @_;
-	return $$sgstate{sessioncreatetime};
+	return $$sgstate{sessioncreatetime}, $$sgstate{sessionupdatetime};
 }
 
-sub get_sessionupdatetime_from_sgstate ($) {
-	my ($sgstate) = @_;
-	return $$sgstate{sessionupdatetime};
+sub set_sessiontime_into_sgstate ($$$) {
+	my ($sgstate, $createtime, $updatetime) = @_;
+	$$sgstate{sessioncreatetime} = $createtime;
+	$$sgstate{sessionupdatetime} = $updatetime;
 }
 
-sub set_sessioncreatetime_into_sgstate ($$) {
-	my ($sgstate, $time) = @_;
-	$$sgstate{sessioncreatetime} = $time;
+#### functions related reporting
+
+sub load_reporttime ($$) {
+	my ($servicegroup, $reporttype) = @_;
+	my $f = "$WORKDIR/servicegroup_reporttime.$reporttype.$servicegroup";
+	my ( $dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+	     $atime,$mtime,$ctime,$blksize,$blocks ) = stat $f;
+	return $mtime;
 }
 
-sub set_sessionupdatetime_into_sgstate ($$) {
-	my ($sgstate, $time) = @_;
-	$$sgstate{sessionupdatetime} = $time;
+sub store_reporttime ($$) {
+	my ($servicegroup, $reporttype) = @_;
+	my $f = "$WORKDIR/servicegroup_reporttime.$reporttype.$servicegroup";
+	open my $h, '>', $f or return undef;
+	close $h;
+	return 1;
 }
 
-####
+#### functions related to mail reporting
 
-sub do_sendmail ($$$$$$$$$$$$) {
+sub eval_history ($$$$$$) {
+	my ( $servicestate_history, $perfstate_history,
+	     $threshold_for_ok,
+	     $threshold_for_warn,
+	     $threshold_for_crit,
+	     $threshold_for_unknown ) = @_;
+	my $now = time;
+
+	my $servicestate_changes_ok      = 0;
+	my $servicestate_changes_warn    = 0;
+	my $servicestate_changes_crit    = 0;
+	my $servicestate_changes_unknown = 0;
+	my $perfstate_changes_ok         = 0;
+	my $perfstate_changes_warn       = 0;
+	my $perfstate_changes_crit       = 0;
+	my $perfstate_changes_unknown    = 0;
+
+	foreach my $i ( @$servicestate_history ){
+		my $type       = $$i{type};
+		my $timestamp  = $$i{timestamp};
+		my $event      = $$i{event};
+		my $name       = $$i{name};
+		my $state      = $$i{new};
+		if   ( $state == 0 ){ $servicestate_changes_ok++; }
+		elsif( $state == 1 ){ $servicestate_changes_warn++; }
+		elsif( $state == 2 ){ $servicestate_changes_crit++; }
+		elsif( $state == 3 ){ $servicestate_changes_unknown++; }
+		else{ die; }
+	}
+	foreach my $i ( @$perfstate_history ){
+		my $type       = $$i{type};
+		my $timestamp  = $$i{timestamp};
+		my $event      = $$i{event};
+		my $name       = $$i{name};
+		my $state      = $$i{new};
+		if   ( $state == 0 ){ $perfstate_changes_ok++; }
+		elsif( $state == 1 ){ $perfstate_changes_warn++; }
+		elsif( $state == 2 ){ $perfstate_changes_crit++; }
+		elsif( $state == 3 ){ $perfstate_changes_unknown++; }
+		else{ die; }
+	}
+
+	return 1 if $servicestate_changes_ok      >= $threshold_for_ok;
+	return 1 if $servicestate_changes_warn    >= $threshold_for_warn;
+	return 1 if $servicestate_changes_crit    >= $threshold_for_crit;
+	return 1 if $servicestate_changes_unknown >= $threshold_for_unknown;
+	return undef;
+}
+
+sub must_report_by_mail ($$$$$$$$$) {
 	my (
-		$sg, $alertsession, $session_action, $report_reason,
-		$servicestates, $perfstates,
-		$servicestate_events,  $perfstate_events,
-		$servicestate_history, $perfstate_history,
-		$mailfrom, $recipient
+		$last_reporttime, $param, $sg, $session, $session_plan,
+		$highlighted_services, $highlighted_perfs,
+	       	$servicestate_history, $perfstate_history
 	) = @_;
 
-	my $ngservicelist = select_ngservice_from_servicestates $servicestates;
-	my $ngperflist = select_ngperf_from_perfstates $perfstates;
-	my $history = merge_history $servicestate_history, $perfstate_history;
-	my $template = read_plain "$CONFDIR/reporter/servicegroup_mail.tt";
-	my $mail = generate_by_template $template,
-		'reason'             => $report_reason,
-		'ngservicelist'      => $ngservicelist,
-		'ngperflist'         => $ngperflist,
-		'servicestate_events'=> $servicestate_events,
-		'perfstate_events'   => $perfstate_events,
-		'servicestate_history' => $servicestate_history,
-		'perfstate_history'    => $perfstate_history,
-		'history'              => $history,
-		'NOW'                  => time,
-		'SESSIONURL' => "$SESSIONURLBASE/sess_$alertsession/",
-		'MAILFROM' => $mailfrom, 'MAILTO' => $recipient,
-		'SERVICEGROUP' => $sg;
+	my $now = time;
 
-	debuglog "sendmail: from=%s", $mailfrom;
-	debuglog "sendmail: to=%s", $recipient;
-	debuglog "sendmail: message=%s", $mail;
-	sendmail $mail, $mailfrom, $recipient;
+	# params related to reporting via mail
+	my $resend_timespan       = $$param{RESEND_TIMESPAN} // 30;
+	my $min_resend_timespan   = $$param{MIN_RESEND_TIMESPAN} // 3;
+	my $threshold_for_ok      = $$param{RESEND_THRESHOLD_FOR_OK} // 5;
+	my $threshold_for_warn    = $$param{RESEND_THRESHOLD_FOR_WARN} // 5;
+	my $threshold_for_crit    = $$param{RESEND_THRESHOLD_FOR_CRIT} // 1;
+	my $threshold_for_unknown = $$param{RESEND_THRESHOLD_FOR_UNKNOWN} // 1;
+
+	if    ( $session_plan eq 'OPEN' ){
+		return 'open';
+	}elsif( $session_plan eq 'CLOSE' ){
+	       	return 'close' if @$servicestate_history;
+	       	return 'close' if @$perfstate_history;
+		return undef;
+	}elsif( $session_plan eq 'KEEP' || $session_plan eq 'UPDATE' ||
+	       	$session_plan eq 'RENAME' ){
+		return undef  if $now - $last_reporttime < $min_resend_timespan*60;
+		return 'keep' if $now - $last_reporttime > $resend_timespan*60;
+
+		return 'change' if eval_history
+			$servicestate_history, $perfstate_history,
+			$threshold_for_ok,
+			$threshold_for_warn,
+			$threshold_for_crit,
+			$threshold_for_unknown;
+	}
+	return undef;
 }
 
-####
+sub report_by_mail ($$$$$$$$$$$) {
+	my (
+		$last_reporttime, $param, $sg, $session, $session_plan,
+		$highlighted_services, $highlighted_perfs,
+	       	$servicestate_history, $perfstate_history,
+		$reason, $emails
+	) = @_;
 
-sub generate_html_for_alertsession ($$$$$$){
-	my ($sg, $alertsession, $highlighted_services, $highlighted_perfs, $perf2graphs_cache, $now) = @_;
+	my $mailfrom = $$param{MAILFROM};
+	my $history = merge_history $servicestate_history, $perfstate_history;
+	my $template = read_plain "$CONFDIR/reporter/servicegroup_mail.tt";
+
+	foreach my $recipient ( @$emails ){
+
+		my $mail = generate_by_template $template,
+			'highlighted_services' => $highlighted_services,
+			'highlighted_perfs'    => $highlighted_perfs,
+			'servicestate_history' => $servicestate_history,
+			'perfstate_history'    => $perfstate_history,
+			'history'              => $history,
+			'session_plan'         => $session_plan,
+			'reason'               => $reason,
+			'NOW'                  => time,
+			'SESSIONURL' => "$SESSIONURLBASE/sess_$session/",
+			'MAILFROM' => $mailfrom, 'MAILTO' => $recipient,
+			'SERVICEGROUP' => $sg;
+
+		debuglog "sendmail: from=%s", $mailfrom;
+		debuglog "sendmail: to=%s", $recipient;
+		debuglog "sendmail: message=%s", $mail;
+		sendmail $mail, $mailfrom, $recipient;
+	}
+}
+
+#### functions for Slack
+
+sub must_report_by_slack ($$$$$$$) {
+	my ( $last_reporttime, $param, $sg, $session, $session_plan,
+	     $sessioncreatetime, $sessionupdatetime) = @_;
+
+	if    ( $session_plan eq 'OPEN' ){
+		return 'open';
+	}elsif( $session_plan eq 'CLOSE' ){
+		return 'close';
+	}elsif( $session_plan eq 'RENAME' ){
+		return 'rename';
+	}elsif( $session_plan eq 'KEEP' &&
+		$last_reporttime <= $sessioncreatetime ){
+		return 'open';
+	}
+
+	return undef;
+}
+
+sub post_http_to_url ($$$) {
+	my ($url, $message, $param) = @_;
+
+	my $timeout = $$param{SLACK_TIMEOUT} // 60;
+	my $proxy   = $$param{SLACK_PROXY};
+
+	my $ua = LWP::UserAgent->new;
+	$ua->agent("NCRTSessionGroupPlugin/1.0");
+	$ua->timeout($timeout);
+	$ua->proxy(['http', 'https'], $proxy) if $proxy;
+
+	my $header = [
+		'Content-type' => 'application/json',
+	];
+
+	my $req = HTTP::Request->new('POST', $url, $header, $message);
+	my $res = $ua->request($req);
+	return undef unless $res->is_success;
+	my $res_content = $res->content;
+	return undef unless $res_content eq 'ok';
+	return 1;
+}
+
+sub report_by_slack ($$$$$$$$$) {
+	my ( $last_reporttime, $param, $sg, $session, $session_plan,
+	     $sessioncreatetime, $sessionupdatetime,
+	     $reason, $urls) = @_;
+	return unless defined $urls;
+
+	my $template = read_plain "$CONFDIR/reporter/servicegroup_slack_$reason.tt";
+	return if $template eq '';
+	my $json = generate_by_template $template,
+		'reason'       => $reason,
+		'SERVICEGROUP' => $sg,
+		'SESSIONURL' => "$SESSIONURLBASE/sess_$session/",
+		'NOW' => time;
+
+	foreach my $url ( @$urls ){
+		my $r = post_http_to_url $url, $json, $param;
+		debuglog "post_messege_to_slack_channel; sg=%s action=%s result=%s",
+			$sg, $reason, $r;
+	}
+}
+
+
+#### functions for Alert Settion Web Page
+
+sub generate_html_for_session ($$$$$$){
+	my ($sg, $session, $highlighted_services, $highlighted_perfs, $perf2graphs_cache, $now) = @_;
 
 	my @graphlist;
 	foreach my $name ( sort keys %$highlighted_perfs ){
@@ -1179,7 +1358,7 @@ sub generate_html_for_alertsession ($$$$$$){
 		'SERVICEGROUP' => $sg,
 		'NOW' => $now;
 
-	my $d = "$SESSIONDIR/sess_$alertsession";
+	my $d = "$SESSIONDIR/sess_$session";
 	write_plain "$d/index.html", $html;
 }
 
@@ -1210,8 +1389,8 @@ sub query_panels_to_naemon2influx_grafana_helper ($$) {
 }
 
 sub update_perf2graphs_cache ($$) {
-	my ($perf2graphs_cache, $highlighted_perfs) = @_;
-	while( my ($name, $detail) = each %$highlighted_perfs ){
+	my ($perf2graphs_cache, $highlighted_perfnames) = @_;
+	while( my ($name, undef) = each %$highlighted_perfnames ){
 		next if defined $$perf2graphs_cache{$name};
 
 		unless( $name =~ m"^(\w+):([^:]+):([^:]+):(.*)$" ){
@@ -1243,13 +1422,12 @@ sub update_perf2graphs_cache ($$) {
 	}
 }
 
-sub generate_graphs_for_alertsession ($$$) {
-	my ($alertsession, $perf2graphs_cache, $hilighted_perfs) = @_;
-	my $d = "$SESSIONDIR/sess_$alertsession";
+sub generate_graphs_for_session ($$$) {
+	my ($session, $perf2graphs_cache, $hilighted_perfnames) = @_;
+	my $d = "$SESSIONDIR/sess_$session";
 
 	my $t = time;
-	foreach my $name ( sort keys %$hilighted_perfs ){
-		my $perf   = $$hilighted_perfs{$name};
+	foreach my $name ( sort keys %$hilighted_perfnames ){
 		my $graphs = $$perf2graphs_cache{$name};
 
 		unless( $name =~ m"^(\w+):([^:]+):([^:]+):(.*)$" ){
@@ -1270,8 +1448,8 @@ sub generate_graphs_for_alertsession ($$$) {
 	}
 }
 
-sub generate_graphinfos_for_alertsession ($$$) {
-	my ($alertsession, $perf2graphs_cache, $hilighted_perfs) = @_;
+sub generate_graphinfos_for_session ($$$) {
+	my ($session, $perf2graphs_cache, $hilighted_perfs) = @_;
 
 	my $t = time;
 	my @r;
@@ -1289,7 +1467,7 @@ sub generate_graphinfos_for_alertsession ($$$) {
 			my $id  = $$graph{id}  or next;
 			my $url = $$graph{url} or next;
 			push @r, {
-				alertsession => $alertsession,
+				session => $session,
 				url => $url,
 				filename => "$host_encoded,$service_encoded,$id.png",
 			};
@@ -1300,7 +1478,26 @@ sub generate_graphinfos_for_alertsession ($$$) {
 	return @r;
 }
 
-####
+#
+# Data Structure:
+#
+#     Service Group State
+#         Service Group Name
+#         Session
+#         All Service States
+#         All Perf States
+#         NG Service Names
+#         NG Performance Names
+#         History
+#         Highlighted
+#         		* History and Highlighted are forgotten if
+#         		NG service/perf doesn't exist within same length of
+#         		time as the session was closed.
+#
+#
+#
+
+#### Main Entry Point
 start_criticalsection or exit 1;
 
 my $socket = "/var/cache/naemon/live";
@@ -1333,9 +1530,9 @@ if( @$perfdetail_changes || @$perfdetail_events ){
 my $trashbox = load_trashbox;
 my $trashbox_has_been_updated;
 my $perf2graphs_cache = {};
+
 my $now = time;
-my @graphinfos;
-my @sessioninfos;
+my @page_update_plan;
 
 #
 my $confrules = load_confrules;
@@ -1345,48 +1542,53 @@ foreach my $sg ( sort keys %$sgname2servicenames ){
 	my $last_sgstate = load_sgstate $sg;
 	my $sgstate_has_been_updated;
 
-	####
-	my ($param, $emails) = apply_confrules $confrules, $sg;
-	my $mailfrom = $$param{MAILFROM};
-	my $update_timespan = $$param{UPDATE_TIMESPAN} // 5;
-	my $resend_timespan = $$param{RESEND_TIMESPAN} // 30;
-	my $close_timespan  = $$param{CLOSE_TIMESPAN}  // 30;
-	my $rename_timespan = $$param{RENAME_TIMESPAN} // 720;
-	my $expire_timespan = $$param{EXPIRE_TIMESPAN} // 720;
+	my ($param, $emails, $slackurls) = apply_confrules $confrules, $sg;
 
-	my $min_resend_timespan       = $$param{MIN_RESEND_TIMESPAN} // 3;
-	my $resend_threshold_for_ok   = $$param{RESEND_THRESHOLD_FOR_OK} // 5;
-	my $resend_threshold_for_warn = $$param{RESEND_THRESHOLD_FOR_WARN} // 5;
-	my $resend_threshold_for_crit = $$param{RESEND_THRESHOLD_FOR_CRIT} // 1;
-	my $resend_threshold_for_unknown = $$param{RESEND_THRESHOLD_FOR_UNKNOWN} // 1;
+	#### 2. get last service states
 
+	my $last_servicestates = get_servicestates_from_sgstate $last_sgstate;
+	my $last_perfstates    = get_perfstates_from_sgstate    $last_sgstate;
+	my ($last_sessioncreatetime, $last_sessionupdatetime) =
+		get_sessiontime_from_sgstate $last_sgstate;
+	my ($last_num_of_service_ng, $last_num_of_perf_ng, $last_ngchangetime) =
+		get_num_of_ng_from_sgstate $last_sgstate;
+	my $last_num_of_ng = $last_num_of_service_ng + $last_num_of_perf_ng;
 
-	#### 2-a. get service states of current / last
+	my $last_servicestate_history = get_servicestate_history $last_sgstate;
+	my $last_perfstate_history    = get_perfstate_history    $last_sgstate;
+	my $last_highlighted_servicenames = get_highlighted_servicenames
+		$last_sgstate;
+	my $last_highlighted_perfnames    = get_highlighted_perfnames
+		$last_sgstate;
 
+	my ($last_session, $last_sessionstarttime) =
+		get_session_from_sgstate $last_sgstate;
+
+	#### 3. get current service states
+
+	my $servicenames = $$sgname2servicenames{$sg};
 	my $servicestates = get_servicestates
-		$servicedetails, $$sgname2servicenames{$sg};
+		$servicedetails, $servicenames;
 	my $perfstates = get_perfstates
-		$perfdetails, $$sgname2servicenames{$sg}, $servicename2perfnames;
+		$perfdetails, $servicenames, $servicename2perfnames;
 
 	set_servicestates_into_sgstate $sgstate, $servicestates;
 	set_perfstates_into_sgstate    $sgstate, $perfstates;
 
-	my $last_servicestates = get_servicestates_from_sgstate $last_sgstate;
-	my $last_perfstates    = get_perfstates_from_sgstate    $last_sgstate;
-
-	#### 2-b. get changes of service states, and number of NG
+	#### 4. calculate changes of service states
 
 	my ($num_of_service_ng, $servicestate_changes, $servicestate_events) =
 		cmp_servicestates $last_servicestates, $servicestates;
 	my ($num_of_perf_ng, $perfstate_changes, $perfstate_events) =
 		cmp_perfstates $last_perfstates, $perfstates;
 
-	my ($last_num_of_service_ng, $last_num_of_perf_ng, $last_ngchangetime) =
-		get_num_of_ng_from_sgstate $last_sgstate;
 	my $ngchangetime = $last_ngchangetime;
+
 	if(
-		$num_of_service_ng != $last_num_of_service_ng ||
-		$num_of_perf_ng != $last_num_of_perf_ng
+		@$servicestate_changes				||
+		@$perfstate_changes 				||
+		$num_of_service_ng != $last_num_of_service_ng	||
+		$num_of_perf_ng    != $last_num_of_perf_ng
 	){
 		$sgstate_has_been_updated = 1;
 		$ngchangetime = time;
@@ -1394,239 +1596,207 @@ debuglog "DEBUG: STORE_SGSTATE $sg: num of ng changed: $last_num_of_service_ng->
 	}
 	set_num_of_ng_into_sgstate $sgstate,
 		 $num_of_service_ng, $num_of_perf_ng, $ngchangetime;
-
-	my $last_num_of_ng = $last_num_of_service_ng + $last_num_of_perf_ng;
 	my $num_of_ng = $num_of_service_ng + $num_of_perf_ng;
 
-	#### 2-c. get session creation time / update time
+	#### 5. calculate histories and highlited
 
-	my $last_sessioncreatetime = get_sessioncreatetime_from_sgstate $last_sgstate;
-	my $last_sessionupdatetime = get_sessionupdatetime_from_sgstate $last_sgstate;
-
-	#### 3. make target of alert session
-
-	my ($last_alertsession, $last_sessionstarttime) =
-		get_alertsession_from_sgstate $last_sgstate;
-	my $alertsession = $last_alertsession;
-	my $session_target;
-	if( $last_alertsession eq '' ){
-		if    ( $last_num_of_service_ng == 0 && $num_of_service_ng == 0 ){
-		}elsif( $last_num_of_service_ng >  0 && $num_of_service_ng >  0 ){
-		}elsif( $last_num_of_service_ng == 0 && $num_of_service_ng >  0 ){
-			$session_target = 'OPEN';
-			$alertsession = create_alertsession;
-		}else{
-			die;
-		}
-	}elsif( $last_num_of_service_ng == 0 && $num_of_service_ng == 0 &&
-		$now - $last_ngchangetime > $close_timespan*60 ){
-		$session_target = 'CLOSE';
-	}elsif( $now - $last_sessionupdatetime > $update_timespan*60 ){
-		$session_target = 'UPDATE';
-	}elsif( $now - $last_sessioncreatetime > $rename_timespan*60 ){
-		$session_target = 'RENAME';
-		$alertsession = create_alertsession;
-	}else{
-		$session_target = 'KEEP';
-	}
-	set_alertsession_into_sgstate $sgstate, $alertsession;
-
-	#### 4. update both histories and highlited services / perfs.
-
-	my $last_servicestate_history = get_servicestate_history $last_sgstate;
-	my $last_perfstate_history    = get_perfstate_history    $last_sgstate;
-	my $last_highlighted_services = get_highlighted_services $last_sgstate;
-	my $last_highlighted_perfs    = get_highlighted_perfs    $last_sgstate;
 	my $servicestate_history = $last_servicestate_history;
-	my $perfstate_history    = $last_perfstate_history;
-	my $highlighted_services = $last_highlighted_services;
-	my $highlighted_perfs    = $last_highlighted_perfs;
-
+	my $highlighted_servicenames = $last_highlighted_servicenames;
 	if( @$servicestate_changes ){
 		$servicestate_history = merge_history
 			$last_servicestate_history, $servicestate_changes;
-		$highlighted_services = generate_highlighted $servicedetails,
-			$last_highlighted_services, $servicestate_changes;
-		$sgstate_has_been_updated = 1;
-debuglog "DEBUG: STORE_SGSTATE $sg: servicestate_changes\n";
-	}elsif( $alertsession ne '' ){
-		$highlighted_services = generate_highlighted $servicedetails,
-			$last_highlighted_services, [];
-	}else{
-		$highlighted_services = {};
+		$highlighted_servicenames = merge_highlighted
+	       		$last_highlighted_servicenames, $servicestate_changes;
 	}
+	verify_highlighted $highlighted_servicenames, $servicestates;
+	set_servicestate_history     $sgstate, $servicestate_history;
+	set_highlighted_servicenames $sgstate, $highlighted_servicenames;
+
+	my $perfstate_history = $last_perfstate_history;
+	my $highlighted_perfnames = $last_highlighted_perfnames;
 	if( @$perfstate_changes ){
 		$perfstate_history = merge_history
 			$last_perfstate_history, $perfstate_changes;
-		$highlighted_perfs = generate_highlighted $perfdetails,
-			$last_highlighted_perfs, $perfstate_changes;
-		$sgstate_has_been_updated = 1;
-debuglog "DEBUG: STORE_SGSTATE $sg: perfstate_changes\n";
-	}elsif( $alertsession ne '' ){
-		$perfstate_history = $last_perfstate_history;
-		$highlighted_perfs = generate_highlighted $perfdetails,
-			$last_highlighted_perfs, [];
-	# If there isn't NG while the timespan of session close, forget highlights and history.
-	}elsif( (int(%$highlighted_perfs) > 0 || @$perfstate_history > 0) &&
-		$num_of_service_ng == 0 && $num_of_perf_ng == 0 &&
-		$now - $last_ngchangetime > $close_timespan*60){
-		$perfstate_history = [];
-		$highlighted_perfs = {};
-		$sgstate_has_been_updated = 1;
-debuglog "DEBUG: $sg: forget highlights and history.";
-	}else{
-		$highlighted_perfs = {};
+		$highlighted_perfnames = merge_highlighted
+			$last_highlighted_perfnames, $perfstate_changes;
 	}
-	set_servicestate_history $sgstate, $servicestate_history;
-	set_perfstate_history    $sgstate, $perfstate_history;
-	set_highlighted_services $sgstate, $highlighted_services;
-	set_highlighted_perfs    $sgstate, $highlighted_perfs;
-my @t = (%$highlighted_perfs);
-debuglog "DEBUG: highlighted_perfs = @t";
+	verify_highlighted $highlighted_perfnames, $perfstates;
+	set_perfstate_history        $sgstate, $perfstate_history;
+	set_highlighted_perfnames    $sgstate, $highlighted_perfnames;
 
-	#### 5. make target of reporting
+	#### 6. make plan of session
+	my $update_timespan = $$param{UPDATE_TIMESPAN} // 5;
+	my $resend_timespan = $$param{RESEND_TIMESPAN} // 30;
+	my $close_timespan  = $$param{CLOSE_TIMESPAN}  // 30;
+	my $rename_timespan = $$param{RENAME_TIMESPAN} // 720;
+	my $expire_timespan = $$param{EXPIRE_TIMESPAN} // 720;
 
-	# $perfstate_events and $perfstate_events_trimed is not used.
-	my $perfstate_events_trimed = trim_perfstate_events
-        	$perfstate_events, $last_servicestates, $servicestates;
+	my $session_plan;
+	my $session;
+	if( $last_session eq '' ){
+		if    ( $num_of_service_ng >  0 ){
+			$session_plan = 'OPEN';
+			$session = create_session;
 
-	my ($last_reporttime) = get_reporttime_from_sgstate $last_sgstate;
-	my $report_target;
-	my $report_reason;
-	if    ( $session_target eq 'OPEN' ){
-		$report_target = 'DO'; $report_reason = 'CHANGE';
-	}elsif( $session_target eq 'CLOSE' ){
-my $json = encode_json $$sgstate{servicestate_history};
-debuglog "DEBUG: CLOSE: servicestate_history = %s", $json;
-		my $score = history_exists $sgstate;
-		if( $score > 0 ){
-			$report_target = 'DO'; $report_reason = 'CHANGE';
+		}elsif(	$num_of_perf_ng == 0 && (
+				@$servicestate_history      > 0	||
+				@$perfstate_history         > 0
+			) &&
+			$now - $last_ngchangetime > $close_timespan*60
+		){
+			$session_plan = 'FORGET';
+		}else{
 		}
-	}elsif( @$servicestate_events ){
-my $json = encode_json $servicestate_events;
-debuglog "DEBUG: CHANGE: servicestate_events = %s", $json;
-		$report_target = 'DO'; $report_reason = 'CHANGE';
-	}elsif( $last_alertsession ne '' &&
-	        $now - $last_reporttime > $resend_timespan*60 ){
-		$report_target = 'DO'; $report_reason = 'KEEP';
-debuglog "DEBUG: KEEP: servicegroup = %s", $sg;
-	}elsif( $last_alertsession ne '' &&
-	        eval_history_score $sgstate,
-			$min_resend_timespan,
-			$resend_threshold_for_ok,
-			$resend_threshold_for_warn,
-			$resend_threshold_for_crit,
-			$resend_threshold_for_unknown ){
-		$report_target = 'DO'; $report_reason = 'CHANGE';
+
+	}elsif( $last_num_of_service_ng == 0 && $num_of_service_ng == 0 &&
+		$now - $last_ngchangetime > $close_timespan*60 ){
+		$session_plan = 'CLOSE';
+		$session = $last_session;
+
+	}elsif( $now - $last_sessionupdatetime > $update_timespan*60 ){
+		$session_plan = 'UPDATE';
+		$session = $last_session;
+
+	}elsif( $now - $last_sessioncreatetime > $rename_timespan*60 ){
+		$session_plan = 'RENAME';
+		$session = create_session;
+
 	}else{
+		$session_plan = 'KEEP';
+		$session = $last_session;
 	}
 
-	#### 5-a. report
+	#### 7. update session
+debuglog "DEBUG: SESSION %s: target:%s id:%s->%s",
+$sg, $session_plan, $last_session, $session
+if $last_session ne '' || $session ne '';
+	my $highlighted_services = get_highlighted
+		$highlighted_servicenames, $servicestates;
+	my $highlighted_perfs    = get_highlighted
+		$highlighted_perfnames,    $perfstates;
+	my $sessioncreatetime;
+	my $sessionupdatetime;
 
-	if( $report_target eq 'DO' ){
-debuglog "DEBUG: STORE_SGSTATE $sg: DO\n";
-		$sgstate_has_been_updated = 1;
-		set_reporttime_into_sgstate $sgstate, $now;
-		set_servicestate_history $sgstate, [];
-		set_perfstate_history    $sgstate, [];
-
-		foreach my $recipient ( @$emails ){
-			do_sendmail $sg, $alertsession,
-				$session_target, $report_reason,
-				$servicestates, $perfstates,
-				$servicestate_events, $perfstate_events,
-				$servicestate_history, $perfstate_history,
-				$mailfrom, $recipient;
-		}
-	}else{
-		if    ( $session_target eq 'UPDATE' ){
-			set_reporttime_into_sgstate $sgstate, $last_reporttime;
-		}elsif( $session_target eq 'KEEP' ){
-			set_reporttime_into_sgstate $sgstate, $last_reporttime;
-		}
-	}
-
-	#### 5-b. update alert session according to target.
-
-debuglog "DEBUG: ALERTSESSION %s: target:%s id:%s->%s", $sg, $session_target, $last_alertsession, $alertsession;
-	if    ( $session_target eq 'OPEN' ){
-		mkdir_for_alertsession $alertsession;
-		set_sessioncreatetime_into_sgstate $sgstate, $now;
-		set_sessionupdatetime_into_sgstate $sgstate, $now;
-		#update_perf2graphs_cache $perf2graphs_cache, $highlighted_perfs;
-		#push @graphinfos, generate_graphinfos_for_alertsession $alertsession,
-		#	$perf2graphs_cache, $highlighted_perfs;
-		#generate_html_for_alertsession $sg, $alertsession,
-		#	$highlighted_services, $highlighted_perfs,
-		#	$perf2graphs_cache;
-		push @sessioninfos, [
-			$sg, $alertsession,
+	if    ( $session_plan eq 'OPEN' ){
+		mkdir_for_session $session;
+		set_session_into_sgstate $sgstate, $session;
+		$sessioncreatetime = $now;
+		$sessionupdatetime = $now;
+		push @page_update_plan, [
+			$sg, $session,
 			$highlighted_services, $highlighted_perfs
 		];
 		$sgstate_has_been_updated = 1;
-debuglog "DEBUG: STORE_SGSTATE $sg: OPEN\n";
 
-	}elsif( $session_target eq 'CLOSE' ){
-		$trashbox_has_been_updated = 1;
+	}elsif( $session_plan eq 'CLOSE' ){
+		set_session_into_sgstate $sgstate, undef;
+		$sessioncreatetime = undef;
+		$sessionupdatetime = undef;
 		move_session_into_trashbox $trashbox,
-			$last_alertsession, undef, $expire_timespan;
-		set_alertsession_into_sgstate $sgstate, undef;
+			$last_session, undef, $expire_timespan;
 		$sgstate_has_been_updated = 1;
-debuglog "DEBUG: STORE_SGSTATE $sg: RENAME\n";
-
-	}elsif( $session_target eq 'UPDATE' ){
-		mkdir_for_alertsession $alertsession;
-		set_sessioncreatetime_into_sgstate $sgstate, $last_sessioncreatetime;
-		set_sessionupdatetime_into_sgstate $sgstate, $now;
-		#update_perf2graphs_cache $perf2graphs_cache, $highlighted_perfs;
-		#push @graphinfos, generate_graphinfos_for_alertsession $alertsession,
-		#	$perf2graphs_cache, $highlighted_perfs;
-		#generate_html_for_alertsession $sg, $alertsession,
-		#	$highlighted_services, $highlighted_perfs,
-		#	$perf2graphs_cache;
-		push @sessioninfos, [
-			$sg, $alertsession,
-			$highlighted_services, $highlighted_perfs
-		];
-		$sgstate_has_been_updated = 1;
-debuglog "DEBUG: STORE_SGSTATE $sg: UPDATE\n";
-
-	}elsif( $session_target eq 'RENAME' ){
 		$trashbox_has_been_updated = 1;
-		move_session_into_trashbox $trashbox,
-			$last_alertsession, $alertsession, $expire_timespan;
-		mkdir_for_alertsession $alertsession;
-		set_sessioncreatetime_into_sgstate $sgstate, $now;
-		set_sessionupdatetime_into_sgstate $sgstate, $now;
-		#update_perf2graphs_cache $perf2graphs_cache, $highlighted_perfs;
-		#push @graphinfos, generate_graphinfos_for_alertsession $alertsession,
-		#	$perf2graphs_cache, $highlighted_perfs;
-		#generate_html_for_alertsession $sg, $alertsession,
-		#	$highlighted_services, $highlighted_perfs,
-		#	$perf2graphs_cache;
-		push @sessioninfos, [
-			$sg, $alertsession,
+
+	}elsif( $session_plan eq 'UPDATE' ){
+		mkdir_for_session $session;
+		set_session_into_sgstate $sgstate, $session;
+		$sessioncreatetime = $last_sessioncreatetime;
+		$sessionupdatetime = $now;
+		push @page_update_plan, [
+			$sg, $session,
 			$highlighted_services, $highlighted_perfs
 		];
 		$sgstate_has_been_updated = 1;
-debuglog "DEBUG: STORE_SGSTATE $sg: RENAME\n";
 
-	}elsif( $session_target eq 'KEEP' ){
-		set_sessioncreatetime_into_sgstate $sgstate, $last_sessioncreatetime;
-		set_sessionupdatetime_into_sgstate $sgstate, $last_sessionupdatetime;
+	}elsif( $session_plan eq 'RENAME' ){
+		mkdir_for_session $session;
+		set_session_into_sgstate $sgstate, $session;
+		$sessioncreatetime = $now;
+		$sessionupdatetime = $now;
+		move_session_into_trashbox $trashbox,
+			$last_session, $session, $expire_timespan;
+		push @page_update_plan, [
+			$sg, $session,
+			$highlighted_services, $highlighted_perfs
+		];
+		$sgstate_has_been_updated = 1;
+		$trashbox_has_been_updated = 1;
 
-	}else{
+	}elsif( $session_plan eq 'KEEP' ){
+		$sessioncreatetime = $last_sessioncreatetime;
+		$sessionupdatetime = $last_sessionupdatetime;
+
+	}elsif( $session_plan eq 'FORGET' ){
+		$sessioncreatetime = undef;
+		$sessionupdatetime = undef;
+		set_highlighted_servicenames $sgstate, {};
+		set_highlighted_perfnames    $sgstate, {};
+		set_servicestate_history     $sgstate, [];
+		set_perfstate_history        $sgstate, [];
+		$sgstate_has_been_updated = 1;
 	}
 
-	#### 6. store servicegroup state
+	set_sessiontime_into_sgstate $sgstate,
+       		$sessioncreatetime, $sessionupdatetime;
+
+	# store servicegroup state
 	if( $sgstate_has_been_updated ){
-my $t = get_alertsession_from_sgstate $sgstate;
-debuglog "DEBUG: STORE_SGSTATE %s: target:%s id:%s", $sg, $session_target, $t;
 		store_sgstate $sg, $sgstate;
 	}
+
+	#### 8. reporting plan
+
+	# 8-a. reporting by mail
+	my $last_reporttime = load_reporttime $sg, "mail";
+	my $s = $highlighted_services;
+	my $p = $highlighted_perfs;
+	my $sh = trim_history $servicestate_history, $last_reporttime;
+	my $ph = trim_history $perfstate_history, $last_reporttime;
+	my $must_report = must_report_by_mail $last_reporttime, $param,
+	       	$sg, $session, $session_plan,
+		$s, $p, $sh, $ph;
+	if( $must_report ){
+		if( fork == 0 ){
+			if( start_criticalsection_for_report $sg, "mail" ){
+				report_by_mail $last_reporttime, $param,
+				       	$sg, $session, $session_plan,
+					$s, $p, $sh, $ph,
+					$must_report, $emails;
+				store_reporttime $sg, "mail";
+				end_criticalsection_for_report $sg, "mail";
+
+			}else{
+				errorlog "REPORTING_ERROR: mail, sg=$sg: cannot start criticalsection.";
+			}
+			exit 0;
+		}
+	}
+
+	# 8-b. reporting by slack
+	my $last_reporttime = load_reporttime $sg, "slack";
+	my $must_report = must_report_by_slack $last_reporttime, $param,
+		$sg, $session, $session_plan,
+       		$sessioncreatetime, $sessionupdatetime;
+	if( $must_report ){
+		if( fork == 0 ){
+			if( start_criticalsection_for_report $sg, "slack" ){
+
+				report_by_slack $last_reporttime, $param,
+				       	$sg, $session, $session_plan,
+       					$sessioncreatetime, $sessionupdatetime,
+					$must_report, $slackurls;
+				store_reporttime $sg, "slack";
+				end_criticalsection_for_report $sg, "slack";
+			}else{
+				errorlog "REPORTING_ERROR: slack, sg=$sg: cannot start criticalsection.";
+			}
+			exit 0;
+		}
+	}
+
 }
 
-#### 7. trashbox
+#### 9. trashbox
 
 my $expired = get_expired_from_trashbox $trashbox;
 if( $expired ){
@@ -1641,31 +1811,19 @@ if( $trashbox_has_been_updated ){
 
 end_criticalsection;
 
-#### 8. download graphs
+#### 10. update page resource (download graphs)
 
-foreach my $sessioninfo ( @sessioninfos ){
-	my ($sg, $alertsession, $highlighted_services, $highlighted_perfs) = @$sessioninfo;
-	start_criticalsection_for_session $alertsession or next;
+foreach my $e ( @page_update_plan ){
+	my ($sg, $session, $highlighted_services, $highlighted_perfs) = @$e;
+	start_criticalsection_for_session $session or next;
 	update_perf2graphs_cache $perf2graphs_cache, $highlighted_perfs;
-	generate_graphs_for_alertsession $alertsession,
+	generate_graphs_for_session $session,
 		$perf2graphs_cache, $highlighted_perfs;
-	generate_html_for_alertsession $sg, $alertsession,
+	generate_html_for_session $sg, $session,
 		$highlighted_services, $highlighted_perfs,
 		$perf2graphs_cache, $now;
-	end_criticalsection_for_session $alertsession;
+	end_criticalsection_for_session $session;
 }
-#foreach my $graphinfo ( @graphinfos ){
-#	my $alertsession = $$graphinfo{alertsession};
-#	my $url          = $$graphinfo{url};
-#	my $filename     = $$graphinfo{filename};
-#
-#	my $dstdir = "$SESSIONDIR/sess_$alertsession";
-#	my $png = download_panel_png_from_grafana $url;
-#	write_plain "$dstdir/$filename", $png;
-#	debuglog "    %s: downloaded.", "$dstdir/$filename";
-#}
-
-
 
 exit 0;
 
