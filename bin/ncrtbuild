@@ -276,7 +276,7 @@ our $INFLUXDBUSER	 = $ncrtconf{'INFLUXDBUSER'}     // 'naemon';
 our $INFLUXDBPASSWD      = $ncrtconf{'INFLUXDBPASSWD'}   // 'naemon';
 our $INFLUXDBDATABASE    = $ncrtconf{'INFLUXDBDATABASE'} // 'naemon';
 
-our $HELPERURL           = $ncrtconf{'HELPERURL'} // 'http://example.com/naemon2influx-grafana-helper';
+our $HELPERURL           = $ncrtconf{'HELPERURL'} // 'http://example.com/grafana-dashboard-helper';
 
 sub get_naemon2influx_deb ($) {
 	my ($d) = @_;
@@ -291,21 +291,21 @@ sub get_naemon2influx_deb ($) {
 	return undef;
 }
 
-sub get_naemon2influx_grafana_helper_deb ($) {
+sub get_grafana_dashboard_helper_deb ($) {
 	my ($d) = @_;
 	opendir my $h, $d or do {
 		die "$d: cannot open, stopped";
 	};
 	while( my $e = readdir $h ){
-		next unless $e =~ m"^naemon2influx-grafana-helper_.*\.deb$";
+		next unless $e =~ m"^grafana-dashboard-helper_.*\.deb$";
 		return $e;
 	}
 	closedir $h;
 	return undef;
 }
 
-our $NAEMON2INFLUX_DEB                = get_naemon2influx_deb $CONFDIR;
-our $NAEMON2INFLUX_GRAFANA_HELPER_DEB = get_naemon2influx_grafana_helper_deb $CONFDIR;
+our $NAEMON2INFLUX_DEB            = get_naemon2influx_deb $CONFDIR;
+our $GRAFANA_DASHBOARD_HELPER_DEB = get_grafana_dashboard_helper_deb $CONFDIR;
 
 #### load ncrtmaster.conf
 my @ncrtmasters;
@@ -363,16 +363,16 @@ if( $plan{step1} ){
 		system_or_die "cp $SRCDIR/naemon2influx/$NAEMON2INFLUX_DEB $CONFDIR/$NAEMON2INFLUX_DEB";
 	}
 
-	#### build naemon2influx-grafana-helper package
-	if( not defined $NAEMON2INFLUX_GRAFANA_HELPER_DEB ){
-		unless( -d "$SRCDIR/naemon2influx-grafana-helper" ){
-			system_or_die "git clone --depth=1 https://github.com/frisky-gh/naemon2influx-grafana-helper.git $SRCDIR/naemon2influx-grafana-helper";
+	#### build grafana-dashboard-helper package
+	if( not defined $GRAFANA_DASHBOARD_HELPER_DEB ){
+		unless( -d "$SRCDIR/grafana-dashboard-helper" ){
+			system_or_die "git clone --depth=1 https://github.com/frisky-gh/grafana-dashboard-helper.git $SRCDIR/grafana-dashboard-helper";
 		}
-		system_or_die "cd $SRCDIR/naemon2influx-grafana-helper && dpkg-buildpackage -us -uc";
-		$NAEMON2INFLUX_GRAFANA_HELPER_DEB = get_naemon2influx_grafana_helper_deb $SRCDIR;
-		defined $NAEMON2INFLUX_GRAFANA_HELPER_DEB or
-			die "naemon2influx-grafana-helper: cannot build package, stopped";
-		system_or_die "cp $SRCDIR/$NAEMON2INFLUX_GRAFANA_HELPER_DEB $CONFDIR/$NAEMON2INFLUX_GRAFANA_HELPER_DEB";
+		system_or_die "cd $SRCDIR/grafana-dashboard-helper && dpkg-buildpackage -us -uc";
+		$GRAFANA_DASHBOARD_HELPER_DEB = get_grafana_dashboard_helper_deb $SRCDIR;
+		defined $GRAFANA_DASHBOARD_HELPER_DEB or
+			die "grafana-dashboard-helper: cannot build package, stopped";
+		system_or_die "cp $SRCDIR/$GRAFANA_DASHBOARD_HELPER_DEB $CONFDIR/$GRAFANA_DASHBOARD_HELPER_DEB";
 	}
 
 	#### create server cert. if not exists
@@ -1644,7 +1644,7 @@ print $h <<"EOF";
  NCRTAGENTHOME:       "$NCRTAGENTHOME"
  NCRTMASTERHOME:      "$NCRTMASTERHOME"
  NAEMON2INFLUX_DEB:   "$NAEMON2INFLUX_DEB"
- NAEMON2INFLUX_GRAFANA_HELPER_DEB: "$NAEMON2INFLUX_GRAFANA_HELPER_DEB"
+ GRAFANA_DASHBOARD_HELPER_DEB: "$GRAFANA_DASHBOARD_HELPER_DEB"
  INFLUXDBHOST:        "$INFLUXDBHOST"
  INFLUXDBPORT:        "$INFLUXDBPORT"
  INFLUXDBADMINUSER:   "$INFLUXDBADMINUSER"

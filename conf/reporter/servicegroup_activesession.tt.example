@@ -30,8 +30,8 @@
       <td>[% service.service %]</td>
       <td>[% st %]</td>
       <td>
-        <a href="/pub/thruk/cgi-bin/extinfo.cgi?type=2&host=[% service.host %]&service=[% service.service %]">Thruk</a>
-        <a href="/pub/naemon2influx-grafana-helper/redirect.html?hostname=[% service.host %]&servicedesc=[% service.service %]">Grafana</a>
+        <a href="/thruk/cgi-bin/extinfo.cgi?type=2&host=[% service.host %]&service=[% service.service %]">Thruk</a>
+        <a href="/grafana-dashboard-helper/redirect.html?hostname=[% service.host %]&servicedesc=[% service.service %]">Grafana</a>
       </td>
     </tr>
     [% END %]

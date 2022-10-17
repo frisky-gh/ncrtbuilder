@@ -34,18 +34,26 @@ $CONFDIR = $ARGV[0];
 $WORKDIR = $ARGV[1];
 
 #### load global conf.
-my %conf;
-my $f = "$CONFDIR/reporter/servicegroup.conf";
-open my $h, '<', $f or do {
-	#die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*($|#)";
-	die "$f:$.: illegal format, stopped" unless m"^(\w+)=(.*)$";
-	$conf{$1} = $2;
+
+sub read_conffile (\%$) {
+	my ($confref, $filename) = @_;
+	my $f = "$CONFDIR/$filename";
+	open my $h, '<', $f or do {
+		#die "$f: cannot open, stopped";
+		return;
+	};
+	while( <$h> ){
+		chomp;
+		next if m"^\s*($|#)";
+		die "$f:$.: illegal format, stopped" unless m"^(\w+)=(.*)$";
+		$$confref{$1} = $2;
+	}
+	close $h;
 }
-close $h;
+
+my %conf;
+read_conffile %conf, "ncrtbuild.conf";
+read_conffile %conf, "reporter/servicegroup.conf";
 
 #### global variables
 
@@ -70,8 +78,8 @@ our $GRAFANAAPIKEY = $conf{GRAFANAAPIKEY} // "";
 # grafana organization ID
 our $GRAFANAORGID = $conf{GRAFANAORGID} // 1;
 
-# naemon2influx-grafana-helper url
-our $HELPERURL = $conf{HELPERURL} // "http://example.com/naemon2influx-grafana-helper";
+# grafana-dashboard-helper url
+our $HELPERURL = $conf{HELPERURL} // "http://example.com/grafana-dashboard-helper";
 
 # semaphore is expired after 30 min.
 our $SEMAPHORETIMESPAN = $conf{SEMAPHORETIMESPAN} // 30*60;
@@ -613,10 +621,8 @@ sub start_criticalsection_for_report ($$) {
 sub end_criticalsection_for_report ($$) {
 	my ($servicegroup, $reporttype) = @_;
 	my $f = "$WORKDIR/servicegroup_semaphore_for_report.$reporttype.$servicegroup";
-errorlog "DEBUG: semaphore: %s", $f;
 	return undef unless -l $f;
 	my $l = readlink $f;
-errorlog "DEBUG: semaphore2: %s", $l;
 	return undef unless $l =~ m"^pid=(\S+) unixtime=(\S+) timestamp=(\S+)";
 	my $last_pid = $1;
 	unlink $f if $last_pid == $$;
@@ -854,10 +860,10 @@ sub move_session_into_trashbox ($$$$) {
 		};
 	}else{
 		$entry = {
-			type       => 'RENAMED',
-			createtime => time,
+			type            => 'RENAMED',
+			createtime      => time,
 			expire_timespan => $expire_timespan,
-			next       => $next_session,
+			next            => $next_session,
 		};
 		my $template = read_plain
 			"$CONFDIR/reporter/servicegroup_inactivesession.tt";
@@ -1372,14 +1378,14 @@ sub download_panel_png_from_grafana ($) {
 	return $res->content;
 }
 
-sub query_panels_to_naemon2influx_grafana_helper ($$) {
+sub query_panels_to_grafana_dashboard_helper ($$) {
 	my ($host, $service ) = @_;
 	my $ua = LWP::UserAgent->new;
 	my $server_endpoint = sprintf
 		'%s/dashboard_info.js?hostname=%s&servicedesc=%s',
 		$HELPERURL, $host, $service;
 	my $req = HTTP::Request->new('GET' => $server_endpoint);
-	debuglog "naemon2influx-grafana-helper: url=%s, requesting...", $server_endpoint;
+	debuglog "grafana-dashboard-helper: url=%s, requesting...", $server_endpoint;
 	my $res = $ua->request($req);
 	return undef unless $res->code eq '200';
 	my $obj;
@@ -1399,7 +1405,7 @@ sub update_perf2graphs_cache ($$) {
 		my ($measure, $host, $service, $perfname) = ($1, $2, $3, $4);
 		my $host_encoded    = path_encode $host;
 		my $service_encoded = path_encode $service;
-		my $panels = query_panels_to_naemon2influx_grafana_helper
+		my $panels = query_panels_to_grafana_dashboard_helper
 			$host_encoded, $service_encoded;
 		foreach my $panel ( @{$panels // []} ){
 			my $id = $$panel{id};
@@ -1667,7 +1673,7 @@ debuglog "DEBUG: STORE_SGSTATE $sg: num of ng changed: $last_num_of_service_ng->
 	}
 
 	#### 7. update session
-debuglog "DEBUG: SESSION %s: target:%s id:%s->%s",
+debuglog "DEBUG: SERVICEGROUP %s: target:%s id:%s->%s",
 $sg, $session_plan, $last_session, $session
 if $last_session ne '' || $session ne '';
 	my $highlighted_services = get_highlighted
@@ -1694,6 +1700,10 @@ if $last_session ne '' || $session ne '';
 		$sessionupdatetime = undef;
 		move_session_into_trashbox $trashbox,
 			$last_session, undef, $expire_timespan;
+		push @page_update_plan, [
+			$sg, $session,
+			$highlighted_services, $highlighted_perfs
+		];
 		$sgstate_has_been_updated = 1;
 		$trashbox_has_been_updated = 1;
 
@@ -1723,6 +1733,7 @@ if $last_session ne '' || $session ne '';
 		$trashbox_has_been_updated = 1;
 
 	}elsif( $session_plan eq 'KEEP' ){
+		set_session_into_sgstate $sgstate, $session;
 		$sessioncreatetime = $last_sessioncreatetime;
 		$sessionupdatetime = $last_sessionupdatetime;
 

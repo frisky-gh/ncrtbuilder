@@ -1,19 +1,15 @@
 
+#### Ansible settings
 ANSIBLEOPTIONS=-u root
 
 #### NCRTAgent settings
 NCRTAGENTHOME=/opt/ncrtagent
-AGENTPACKAGE=nrpe
-NRPEPORT=5666
-NRPETLS=yes
 
 #### NCRTMaster settings
 NCRTMASTERHOME=/opt/ncrtmaster
-SESSIONDIR=/var/www/pub/ncrtmaster
-SESSIONURLBASE=http://example.com/ncrtmaster/
 
-#### naemon2influx-grafana-helper settings
-HELPERURL=http://example.com/naemon2influx-grafana-helper/
+#### grafana-dashboard-helper settings
+HELPERURL=http://example.com/grafana-dashboard-helper
 
 #### Grafana settings
 GRAFANAURL=https://example.com/grafana

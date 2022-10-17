@@ -108,16 +108,16 @@
         src:  "{{TOOLHOME}}/conf/{{item}}"
       with_items:
         - "{{NAEMON2INFLUX_DEB}}"
-        - "{{NAEMON2INFLUX_GRAFANA_HELPER_DEB}}"
+        - "{{GRAFANA_DASHBOARD_HELPER_DEB}}"
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
-    - name: install naemon2influx / naemon2influx-grafana-helper
+    - name: install naemon2influx / grafana-dashboard-helper
       apt:
         deb: "{{NCRTMASTERHOME}}/debs/{{item}}"
       with_items:
         - "{{NAEMON2INFLUX_DEB}}"
-        - "{{NAEMON2INFLUX_GRAFANA_HELPER_DEB}}"
+        - "{{GRAFANA_DASHBOARD_HELPER_DEB}}"
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
@@ -284,9 +284,9 @@
           value: "time	label	label	tag=state	data"
       tags: [ common ]
 
-    - name: setup naemon2influx-grafana-helper settings
+    - name: setup grafana-dashboard-helper settings
       lineinfile:
-        dest: /etc/naemon/naemon2influx-grafana-helper.conf
+        dest: /etc/influxdb/grafana-dashboard-helper.conf
         regexp: "^{{item.key}}="
         line:   "{{item.key}}={{item.value}}"
         insertafter: EOF
