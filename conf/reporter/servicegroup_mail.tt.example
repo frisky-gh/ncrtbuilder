@@ -1,20 +1,30 @@
 From: "Naemon ServiceGroup Reporter" <[%MAILFROM%]>
 To: "You" <[%MAILTO%]>
-[% IF    reason == "CHANGE" -%]
+[% ngservices = [] -%]
+[% FOREACH i IN highlighted_services -%]
+[%     IF    i.value.hard_state == "0" -%]
+[%     ELSIF i.value.hard_state == "1" %][% ngservices.push(i.value) -%]
+[%     ELSIF i.value.hard_state == "2" %][% ngservices.push(i.value) -%]
+[%     ELSIF i.value.hard_state == "3" %][% ngservices.push(i.value) -%]
+[%     ELSE %][% END -%]
+[% END -%]
+[% IF    reason == "open" -%]
+Subject: [ALERT] "[%SERVICEGROUP%]" is now NG
+[% ELSIF ngservices.size == 0 -%]
+Subject: [ALERT] All Status of "[%SERVICEGROUP%]" are OK
+[% ELSIF servicestate_history.size > 0 -%]
 Subject: [ALERT] "[%SERVICEGROUP%]" Status has Changed
-[% ELSIF reason == "KEEP" -%]
-Subject: [ALERT] "[%SERVICEGROUP%]" Has been NG
 [% ELSE -%]
-Subject: [ALERT] "[%SERVICEGROUP%]"
+Subject: [ALERT] "[%SERVICEGROUP%]" Has been NG
 [% END -%]
 
-[% IF ngservicelist.size > 0 -%]
+[% IF ngservices.size > 0 -%]
 [% localtime(NOW) %]
 === Current Service NG Status ===
 
 host                 service              state
 -------------------- -------------------- ------
-[%     FOREACH ng IN ngservicelist -%]
+[%     FOREACH ng IN ngservices -%]
 [%         IF    ng.hard_state == "0" %][% state = "OK" -%]
 [%         ELSIF ng.hard_state == "1" %][% state = "WARN" -%]
 [%         ELSIF ng.hard_state == "2" %][% state = "CRIT" -%]
@@ -62,28 +72,19 @@ timestamp           host                 performance          state change
 [%     END -%]
 
 [% END -%]
-[% IF ngperflist.size > 0 -%]
-=== Current Performance NG Status Detail ===
+[% IF highlighted_perfs.size > 0 -%]
+=== Current Performance Status Details ===
 
 host            item                             p value    threshold
 --------------- -------------------------------- - -------- ---------
-[%     FOREACH ng IN ngperflist -%]
-[%         IF    ng.statetext == "under_crit" %][%op="<"%][%pr="C"%][%th=ng.crit-%]
-[%         ELSIF ng.statetext == "over_crit"  %][%op=">"%][%pr="C"%][%th=ng.crit-%]
-[%         ELSIF ng.statetext == "under_warn" %][%op="<"%][%pr="W"%][%th=ng.warn-%]
-[%         ELSIF ng.statetext == "over_warn"  %][%op=">"%][%pr="W"%][%th=ng.warn-%]
+[%     FOREACH ng IN highlighted_perfs -%]
+[%         IF    ng.value.statetext == "under_crit" %][%op="<"%][%pr="C"%][%th=ng.value.crit-%]
+[%         ELSIF ng.value.statetext == "over_crit"  %][%op=">"%][%pr="C"%][%th=ng.value.crit-%]
+[%         ELSIF ng.value.statetext == "under_warn" %][%op="<"%][%pr="W"%][%th=ng.value.warn-%]
+[%         ELSIF ng.value.statetext == "over_warn"  %][%op=">"%][%pr="W"%][%th=ng.value.warn-%]
+[%         ELSE %][%op=" "%][%pr=" "%][%th=" "-%]
 [%         END -%]
-[%         safesprintf("%-15s %-32s %1s %8s%1s%-8s", ng.host, ng.name, pr, ng.value, op, th) %]
-[%     END -%]
-
-[% END -%]
-[% IF servicestate_events.size > 0 -%]
-=== Current Events ===
-
-host                 message
--------------------- ---------------------------------------------------
-[%     FOREACH ev IN servicestate_events -%]
-[%         safesprintf("%-20s service %s has been %s", ev.host, ev.service, ev.event) %]
+[%         safesprintf("%-15s %-32s %1s %8s%1s%-8s", ng.value.host, ng.value.name, pr, ng.value.value, op, th) %]
 [%     END -%]
 
 [% END -%]
