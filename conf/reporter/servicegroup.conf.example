@@ -4,4 +4,5 @@ DEBUG=1
 SESSIONDIR=/var/www/html/ncrtmaster
 SESSIONURLBASE=https://example.com/ncrtmaster
 
+MAILFROM=ncrt@example.com
 

@@ -48,6 +48,12 @@ sub nMB ($) {
 	return sprintf "%.2fMB", $_[0];
 }
 
+sub debuglog ($) {
+	open my $h, ">>", "$WORKDIR/logfile.log" or return;
+	print $h $_[0], "\n";
+	close $h;
+}
+
 ####
 
 sub read_conf () {
@@ -189,6 +195,16 @@ sub eval_changes ($$$) {
 		$$curr_stats{$f} = ['renamed', 0, 0];
 	}
 
+	#	LAST			CURR
+	# A)	log	inode=1000	(none)			out of scope
+	# B)	log.1	inode=1001	(none)			out of scope
+	# C)	log.2	inode=1002	log.2	inode=1001
+	# 	log.3	inode=1003	log.3	inode=1002
+	# D)	(none)			log.4	inode=1003
+	# E)    hoge	inode=2000	hoge	inode=2001
+	# F)	(none)			fuga	inode=2002
+	# G)	foo	inode=3000	(none)
+	# 	(none)			bar	inode=3000
 	my %changes;
 	while( my ($group, $files) = each %$groups ){
 		my $changes = 0;
@@ -198,21 +214,19 @@ sub eval_changes ($$$) {
 			my $last_stat = $$last_stats{$file};
 			my $orig_file = $last_inode2file{$curr_inode};
 
-			if    ( defined  $last_stat && defined  $orig_file ){
-				# holded or rotated file
+			if    ( defined  $orig_file ){
+				# C) D) G)
 				my $orig_stat = $$last_stats{$orig_file};
 				my ($orig_inode, $orig_size, $orig_mtime) = @$orig_stat;
 				$changes += $curr_size - $orig_size;
-			}elsif( defined  $last_stat && !defined $orig_file ){
-				# replaced with new file or created new file
+				if( $curr_size < $orig_size ){
+					debuglog "C) D) G) $file=>$orig_file: inode:$orig_inode=>$curr_inode mtime:$orig_mtime=>$curr_mtime, size:$orig_size=>$curr_size";
+				}
+			}elsif( defined  $last_stat ){
+				# E) replaced with new file
 				$changes += $curr_size;
-			}elsif( !defined $last_stat && defined  $orig_file ){
-				# renamed file
-				my $orig_stat = $$last_stats{$orig_file};
-				my ($orig_inode, $orig_size, $orig_mtime) = @$orig_stat;
-				$changes += $curr_size - $orig_size;
-			}elsif( !defined $last_stat && !defined $orig_file ){
-				# found new file
+			}elsif( !defined $last_stat ){
+				# F) found new file
 				;
 			}else{ die; }
 		}

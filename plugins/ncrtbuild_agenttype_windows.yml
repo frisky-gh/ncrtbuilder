@@ -164,7 +164,7 @@
 
     - name: setup dhparam files
       win_copy:
-        src:  "{{TOOLHOME}}/conf/agenttype_windows.dh2048.pem"
+        src:  "{{TOOLHOME}}/conf/agenttype/windows.dh2048.pem"
         dest: 'C:\Program Files\NSClient++\security\nrpe_dh_2048.pem'
       tags: [ commoninstall ]
 
