@@ -1,7 +1,10 @@
 
-=== VirtualHostName ===
+=== VirtualHost001 ===
 
-VirtualServiceName	/var/cache/naemon/live	mppfstmg01oc,disk
+VirtualService01	/var/cache/naemon/live	srchost001,realservice01
 
+=== RemoteHost002 ===
+
+service02		https://username:password@example.com/Livestatus-API/index.php/      RemoteHost002,service02
 
 

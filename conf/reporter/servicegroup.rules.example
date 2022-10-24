@@ -1,67 +1,23 @@
 
 === .* ===
-MAILFROM=fccl-sdd-mppf-ope@mcdev.fmworld.net
+MAILFROM=naemon-admin@example.com
 
 UPDATE_TIMESPAN=10
 RESEND_TIMESPAN=30
 CLOSE_TIMESPAN=30
 EXPIRE_TIMESPAN=1440
 RENAME_TIMESPAN=720
-GRAPH_TIMESPAN=360
 
 === .*Staging ===
 RESEND_TIMESPAN=720
 RENAME_TIMESPAN=2880
 
 === .*Product ===
-fccl-sdd-mppf-ope@mcdev.fmworld.net
+mail operaters@example.com
+slack https://hooks.slack.com/services/XXXX/YYYY/ZZZZ
 
-=== .*Operation ===
-fccl-sdd-mppf-ope@mcdev.fmworld.net
-
-
-
-=== MPPFStaging ===
-yamamoto-koji@fujitsu.com
-
-=== NewsAPI_Staging ===
-honda.yuken@fujitsu.com
-kanaami.junya@fujitsu.com
-yamamoto-koji@fujitsu.com
-
-=== SPNVStaging ===
-hirao.tsuyoshi@fujitsu.com
-fj5316jd@fujitsu.com
-
-=== Manabi_Staging ===
-honda.yuken@fujitsu.com
-kanaami.junya@fujitsu.com
-yamamoto-koji@fujitsu.com
+=== .*Staging ===
+mail developers@example.com
 
 
-
-=== MPPFProduct ===
-sasajima0120@pdx.ne.jp
-
-=== NewsAPI_Product ===
-sasajima0120@pdx.ne.jp
-bimmbamm3@gmail.com
-
-=== SPNVProduct ===
-fccl-spnv-emerg-external@ml.jp.fujitsu.com
-
-=== Manabi_Product ===
-sasajima0120@pdx.ne.jp
-
-
-
-=== MPPFOperation ===
-sasajima0120@pdx.ne.jp
-
-
-
-=== CommonDevelopmentEnv ===
-RESEND_TIMESPAN=1440
-RENAME_TIMESPAN=2880
-#fccl-sdc1-consumer@dl.jp.fujitsu.com
 
