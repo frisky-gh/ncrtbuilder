@@ -64,6 +64,7 @@ inc/
 /conf/agenttype/*.conf
 /conf/agenttype/*.pem
 /conf/agenttype/*.hosts
+/conf/agenttype/*.yml
 /conf/contact/*.conf
 # filters
 /filters/*.filter
