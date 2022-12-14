@@ -295,6 +295,10 @@
           value: "{{GRAFANAURL}}"
         - key:   GRAFANAAPIKEY
           value: "{{GRAFANAAPIKEY}}"
+        - key:   GRAFANAADMINUSER
+          value: "{{GRAFANAADMINUSER}}"
+        - key:   GRAFANAADMINPASSWD
+          value: "{{GRAFANAADMINPASSWD}}"
         - key:   GRAFANADATASOURCE
           value: "{{GRAFANADATASOURCE}}"
       tags: [ common ]

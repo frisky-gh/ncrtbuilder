@@ -1372,7 +1372,7 @@ sub download_panel_png_from_grafana ($) {
 	my ($url) = @_;
 	my $ua = LWP::UserAgent->new;
 	my $req = HTTP::Request->new('GET' => "$url&from=now-6h&to=now");
-	$req->authorization_basic('api_key', $GRAFANAAPIKEY);
+	$req->header( Authorization => "Bearer $GRAFANAAPIKEY" );
 	debuglog "grafana: url=%s, requesting...", $url;
 	my $res = $ua->request($req);
 	return $res->content;
