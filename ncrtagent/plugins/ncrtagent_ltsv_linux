@@ -147,7 +147,7 @@ while( my ($ltsvfile, $rules) = each %file2rules ){
 
 if( @output ){
 	my $output = join ' / ', @output;
-	print "output=$output\n";
+	print "message=$output\n";
 }
 
 exit $rc;

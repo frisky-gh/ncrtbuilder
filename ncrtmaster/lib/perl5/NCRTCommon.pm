@@ -86,16 +86,16 @@ sub generate_metrics_by_ncrtprotocol ($$$$$) {
 	my $res = $ua->request($req);
 
 	my %metrics;
-	unless($res->is_success) {
-		$metrics{"ncrtagent[$proxyhost]-error"} = 1;
-		return %metrics;
-	}
-
 	foreach my $i ( split m"\n+", $res->content ){
 		next unless $i =~ m"^([^\s=]+)=(.*)$";
 		my $k = $1;
 		my $v = $2;
-		$metrics{$k} = $v;
+		if( $k eq "message" ){ push @{$metrics{$k}}, $v; }
+		else                 { $metrics{$k} = $v; }
+	}
+	unless($res->is_success) {
+		$metrics{"ncrtagent[$proxyhost]-error"} = 1;
+		return %metrics;
 	}
 
 	$metrics{"ncrtagent[$proxyhost]-error"} = 0;
@@ -295,26 +295,28 @@ sub pass_through_filters ($$$$%) {
 		};
 
 		while( my ($k, $v) = each %metrics ){
-			print $in "$k=$v\n";
+			if( ref($v) eq "ARRAY" ){
+				foreach my $i (@$v){ print $in "$k=$i\n"; }
+			}else{
+				print $in "$k=$v\n";
+			}
 		}
 		close $in;
 
 		%metrics = ();
-		my @output;
 		while( <$out> ){
 			chomp;
 			next if m"^\s*(#|$)";
 			die "$_, stopped" unless m"^([^[:cntrl:]\s:;=]+)=(.*)$";
 			my $k = $1;
 			my $v = $2;
-			if( $k eq 'output' ){ push @output, $v; }
-			else                { $metrics{$k} = $v; }
+			if( $k eq 'message' ){ push @{$metrics{$k}}, $v; }
+			else                 { $metrics{$k} = $v; }
 		}
 		close $out;
 
 		my $plugin_rc = $? >> 8;
 		$main::PLUGIN_HAS_FAILED = 1 if $plugin_rc > 0;
-
 	}
 	return %metrics;
 }
@@ -328,6 +330,7 @@ sub evaluate_values ($$$%) {
 
 	foreach my $k ( sort keys %values ){
 		my $v = $values{$k};
+		next unless ref($v) eq "";
 		next if $v =~ m"^\s*$";
 		next if $v =~ m"^([-+]?\d+(?:\.\d+)?)([%a-zA-Z]*)$";
 
@@ -425,14 +428,20 @@ sub generate_detection_results ($$$%) {
 		}
 	}
 
+	my @messages;
 	my (@p, @c, @w);
 	foreach my $k ( sort keys %metrics ){
 		my $v = $metrics{$k};
-		my ($min, $max);
 	
+		if( ref($v) eq "ARRAY" ){
+			push @messages, @$v;
+			next;
+		}
 		next unless $v =~ m"^([-+]?\d+(?:\.\d+)?)(.*)$";
 		my $value = $1;
 		my $unit = $2;
+
+		my ($min, $max);
 		if   ( $unit eq '%' ) { $min = '0.00'; $max = '100.00'; }
 		elsif( $unit eq 'MB' ){ $min = '0.00'; }
 		my $key_text = $unit ? "$k\[$unit\]" : "$k";
@@ -472,7 +481,7 @@ sub generate_detection_results ($$$%) {
 	elsif( @c ){ $status = 'CRIT'; $statuscode = 2; }
 	elsif( @w ){ $status = 'WARN'; $statuscode = 1; }
 
-	my $output = join ' / ', $status, @main::OUTPUTS, @c, @w;
+	my $output = join ' / ', $status, @main::OUTPUTS, @c, @w, @messages;
 	my $perfdata = join ' ', @p;
 	return $statuscode, $output, $perfdata;
 }
