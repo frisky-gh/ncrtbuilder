@@ -270,11 +270,12 @@ our $GRAFANAADMINPASSWD  = $ncrtconf{'GRAFANAADMINPASSWD'};
 
 our $INFLUXDBHOST	 = $ncrtconf{'INFLUXDBHOST'} // 'localhost';
 our $INFLUXDBPORT	 = $ncrtconf{'INFLUXDBPORT'} // '8086';
-our $INFLUXDBADMINUSER   = $ncrtconf{'INFLUXDBADMINUSER'}   // 'admin';
-our $INFLUXDBADMINPASSWD = $ncrtconf{'INFLUXDBADMINPASSWD'} // 'admin';
-our $INFLUXDBUSER	 = $ncrtconf{'INFLUXDBUSER'}     // 'naemon';
-our $INFLUXDBPASSWD      = $ncrtconf{'INFLUXDBPASSWD'}   // 'naemon';
-our $INFLUXDBDATABASE    = $ncrtconf{'INFLUXDBDATABASE'} // 'naemon';
+our $INFLUXDBPREFIX      = $ncrtconf{'INFLUXDBPREFIX'}      // 'ncrt';
+our $INFLUXDBDATABASE    = $ncrtconf{'INFLUXDBDATABASE'}    // 'ncrt';
+our $INFLUXDBADMINUSER   = $ncrtconf{'INFLUXDBADMINUSER'}   // 'ncrtadmin';
+our $INFLUXDBADMINPASSWD = $ncrtconf{'INFLUXDBADMINPASSWD'} // 'XXXXXXXX';
+our $INFLUXDBUSER	 = $ncrtconf{'INFLUXDBUSER'}        // 'ncrt';
+our $INFLUXDBPASSWD      = $ncrtconf{'INFLUXDBPASSWD'}      // 'XXXXXXXX';
 
 our $HELPERURL           = $ncrtconf{'HELPERURL'} // 'http://example.com/grafana-dashboard-helper';
 
@@ -1647,6 +1648,7 @@ print $h <<"EOF";
  GRAFANA_DASHBOARD_HELPER_DEB: "$GRAFANA_DASHBOARD_HELPER_DEB"
  INFLUXDBHOST:        "$INFLUXDBHOST"
  INFLUXDBPORT:        "$INFLUXDBPORT"
+ INFLUXDBPREFIX:      "$INFLUXDBPREFIX"
  INFLUXDBADMINUSER:   "$INFLUXDBADMINUSER"
  INFLUXDBADMINPASSWD: "$INFLUXDBADMINPASSWD"
  INFLUXDBUSER:        "$INFLUXDBUSER"
