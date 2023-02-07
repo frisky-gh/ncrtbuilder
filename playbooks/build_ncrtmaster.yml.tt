@@ -43,7 +43,7 @@
 
     - name: add repository for grafana
       apt_repository:
-        repo: deb https://packages.grafana.com/oss/deb stable main
+        repo: deb https://apt.grafana.com stable main
       when: "ansible_os_family == 'Debian'"
       no_log: True
       tags: [ commoninstall ]
@@ -321,6 +321,8 @@
           value: "{{GRAFANAADMINPASSWD}}"
         - key:   GRAFANADATASOURCE
           value: "{{GRAFANADATASOURCE}}"
+        - key:   GRAFANAORGID
+          value: "{{GRAFANAORGID}}"
       tags: [ common ]
 
 
