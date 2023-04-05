@@ -1673,9 +1673,11 @@ generate_playbook 'build_ncrtmaster', ['linux'];
 my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -t \"%s\"",
 	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $tags;
 if( $plan{step8} ){
-	system_or_die "ansible-playbook -v" .
+	my $cmd = "ansible-playbook -v" .
 		" -i $WORKDIR/master_hosts.yml" .
 		" $options $WORKDIR/build_ncrtmaster.yml";
+	print $cmd;
+	system_or_die $cmd;
 }
 
 ######## Step 9. ########
@@ -1692,9 +1694,11 @@ my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -t \"%s\"",
 	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $tags;
 
 if( $plan{step9} ){
-	system_or_die "ansible-playbook -v" .
+	my $cmd = "ansible-playbook -v" .
 		" -i $WORKDIR/agent_hosts.yml" .
 		" $options $WORKDIR/build_ncrtagent.yml";
+	print $cmd;
+	system_or_die $cmd;
 }
 
 
