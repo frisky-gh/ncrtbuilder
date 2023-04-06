@@ -1367,18 +1367,22 @@ sub report_by_slack ($$$$$) {
 
 	my $f = "$CONFDIR/reporter/servicegroup_slack_$reporting_plan.tt";
 	my $template = read_plain $f;
-	return if $template eq '';
+	return undef if $template eq '';
 	my $json = generate_by_template $template,
 		'reason'       => $reporting_plan,
 		'SERVICEGROUP' => $sg,
 		'SESSIONURL' => "$SESSIONURLBASE/sess_$session/",
 		'NOW' => time;
 
+	my $error_occured;
 	foreach my $url ( @$urls ){
 		my $r = post_http_to_url $url, $json, $param;
 		debuglog "report_by_slack: sg=%s action=%s result=%s",
 			$sg, $reporting_plan, $r;
+		$error_occured = 1 unless $r;
 	}
+	return undef if $error_occured;
+	return 1;
 }
 
 sub create_reporting_plan_by_slack ($$$$) {
