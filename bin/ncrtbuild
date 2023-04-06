@@ -355,7 +355,7 @@ if( $plan{step1} ){
 	#### build naemon2influx package
 	if( not defined $NAEMON2INFLUX_DEB ){
 		unless( -d "$SRCDIR/naemon2influx" ){
-			system_or_die "git clone --depth=1 https://github.com/hakong/naemon2influx.git $SRCDIR/naemon2influx";
+			system_or_die "git clone --depth=1 https://github.com/frisky-gh/naemon2influx.git $SRCDIR/naemon2influx";
 		}
 		system_or_die "make deb -C $SRCDIR/naemon2influx";
 		$NAEMON2INFLUX_DEB = get_naemon2influx_deb "$SRCDIR/naemon2influx";
