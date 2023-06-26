@@ -117,7 +117,7 @@ while( <$h> ){
 		(\S+)
 		\s+
 		(\S+)
-		(\s+ ([-\w]+),([-\w]+))+
+		(\s+ ([-\w]+),([-\w]+)(,\S+)?)+
 		\S*
 	$"x;
 	my ($vservice, $socket, @host_desc) = split m"\s+";
@@ -138,7 +138,7 @@ my $state = 0;
 foreach my $i ( @$info ){
 	my ($socket, @host_desc) = @$i;
 	foreach my $host_desc ( @host_desc ){
-		my ($host, $desc) = split m",", $host_desc;
+		my ($host, $desc, $prefix) = split m",", $host_desc;
 
 		my ($e, $s, %r) = req $socket, $host, $desc;
 		if( $e ){
@@ -148,7 +148,7 @@ foreach my $i ( @$info ){
 		$state = $s if $s > $state;
 
 		while( my ($k, $v) = each %r ){
-			$metrics{$k} = $v;
+			$metrics{"$prefix$k"} = $v;
 		}
 	}
 }

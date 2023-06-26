@@ -115,6 +115,7 @@ my $message = $5;
 my $elapsed = ns $6;
 my $size = nB $7;
 my $status = $statuscode eq $wantstatus ? 0 : 1;
+$status = 2 if $result eq "CRITICAL";
 print "web[$vservicename]-size=$size\n";
 print "web[$vservicename]-elapsed=$elapsed\n";
 print "web[$vservicename]-status=$status\n";

@@ -440,7 +440,7 @@ if( $plan{step2} ){
 define host {
 	name				ncrt-generic-host
 	
-	check_command			ncrt-check-host
+	check_command			ncrtmaster_do_nothing
 	check_interval			4
 	retry_interval			1
 	max_check_attempts		3
