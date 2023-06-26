@@ -40,7 +40,7 @@ while( <$h> ){
 		(\S+)
 		\s+
 		(\S+)
-		(\s+ ([-\w]+),([-\w]+))+
+		(\s+ ([-\w]+),([-\w]+)(,\S+)?)+
 		\S*
 	$"x ){
 		my ($vservice, $socket, @host_desc) = split m"\s+";
