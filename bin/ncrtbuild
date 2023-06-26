@@ -270,11 +270,12 @@ our $GRAFANAADMINPASSWD  = $ncrtconf{'GRAFANAADMINPASSWD'};
 
 our $INFLUXDBHOST	 = $ncrtconf{'INFLUXDBHOST'} // 'localhost';
 our $INFLUXDBPORT	 = $ncrtconf{'INFLUXDBPORT'} // '8086';
-our $INFLUXDBADMINUSER   = $ncrtconf{'INFLUXDBADMINUSER'}   // 'admin';
-our $INFLUXDBADMINPASSWD = $ncrtconf{'INFLUXDBADMINPASSWD'} // 'admin';
-our $INFLUXDBUSER	 = $ncrtconf{'INFLUXDBUSER'}     // 'naemon';
-our $INFLUXDBPASSWD      = $ncrtconf{'INFLUXDBPASSWD'}   // 'naemon';
-our $INFLUXDBDATABASE    = $ncrtconf{'INFLUXDBDATABASE'} // 'naemon';
+our $INFLUXDBPREFIX      = $ncrtconf{'INFLUXDBPREFIX'}      // 'ncrt';
+our $INFLUXDBDATABASE    = $ncrtconf{'INFLUXDBDATABASE'}    // 'ncrt';
+our $INFLUXDBADMINUSER   = $ncrtconf{'INFLUXDBADMINUSER'}   // 'ncrtadmin';
+our $INFLUXDBADMINPASSWD = $ncrtconf{'INFLUXDBADMINPASSWD'} // 'XXXXXXXX';
+our $INFLUXDBUSER	 = $ncrtconf{'INFLUXDBUSER'}        // 'ncrt';
+our $INFLUXDBPASSWD      = $ncrtconf{'INFLUXDBPASSWD'}      // 'XXXXXXXX';
 
 our $HELPERURL           = $ncrtconf{'HELPERURL'} // 'http://example.com/grafana-dashboard-helper';
 
@@ -1647,6 +1648,7 @@ print $h <<"EOF";
  GRAFANA_DASHBOARD_HELPER_DEB: "$GRAFANA_DASHBOARD_HELPER_DEB"
  INFLUXDBHOST:        "$INFLUXDBHOST"
  INFLUXDBPORT:        "$INFLUXDBPORT"
+ INFLUXDBPREFIX:      "$INFLUXDBPREFIX"
  INFLUXDBADMINUSER:   "$INFLUXDBADMINUSER"
  INFLUXDBADMINPASSWD: "$INFLUXDBADMINPASSWD"
  INFLUXDBUSER:        "$INFLUXDBUSER"
@@ -1671,9 +1673,11 @@ generate_playbook 'build_ncrtmaster', ['linux'];
 my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -t \"%s\"",
 	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $tags;
 if( $plan{step8} ){
-	system_or_die "ansible-playbook -v" .
+	my $cmd = "ansible-playbook -v" .
 		" -i $WORKDIR/master_hosts.yml" .
 		" $options $WORKDIR/build_ncrtmaster.yml";
+	print $cmd;
+	system_or_die $cmd;
 }
 
 ######## Step 9. ########
@@ -1690,9 +1694,11 @@ my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -t \"%s\"",
 	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $tags;
 
 if( $plan{step9} ){
-	system_or_die "ansible-playbook -v" .
+	my $cmd = "ansible-playbook -v" .
 		" -i $WORKDIR/agent_hosts.yml" .
 		" $options $WORKDIR/build_ncrtagent.yml";
+	print $cmd;
+	system_or_die $cmd;
 }
 
 

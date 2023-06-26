@@ -28,7 +28,7 @@
     ## InfluxDB (install)
     - name: install packages for influxdb
       apt:
-        name: [ influxdb, influxdb-client, python-requests, python-influxdb ]
+        name: [ influxdb, influxdb-client, python3-requests, python3-influxdb ]
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
@@ -37,6 +37,13 @@
       apt_key:
         data: "{{ lookup('file', '[%=TOOLHOME _ "/playbooks/grafana.asc"%]') }}"
         keyring: /etc/apt/trusted.gpg.d/grafana.gpg
+      when: "ansible_os_family == 'Debian'"
+      no_log: True
+      tags: [ commoninstall ]
+
+    - name: add repository for grafana
+      apt_repository:
+        repo: deb https://apt.grafana.com stable main
       when: "ansible_os_family == 'Debian'"
       no_log: True
       tags: [ commoninstall ]
@@ -70,8 +77,9 @@
           - naemon-livestatus
           - nagios-plugins
           - naemon-thruk
-          - python-passlib
+          - python3-passlib
           - nagios-nrpe-plugin
+          - rsync
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
@@ -150,7 +158,7 @@
       tags: [ commoninstall ]
 
     - name: setup influxdb for naemon2influx
-      shell: "influx -host {{INFLUXDBHOST}} -port {{INFLUXDBPORT}} -username {{INFLUXDBADMINUSER}} -password \"{{INFLUXDBADMINPASSWD}}\" -execute \"grant all on naemon to naemon\""
+      shell: "influx -host {{INFLUXDBHOST}} -port {{INFLUXDBPORT}} -username {{INFLUXDBADMINUSER}} -password \"{{INFLUXDBADMINPASSWD}}\" -execute \"grant all on {{INFLUXDBDATABASE}} to {{INFLUXDBUSER}}\""
       tags: [ commoninstall ]
 
     ## Grafana (setting)
@@ -276,6 +284,10 @@
       with_items:
         - key:   output
           value: "http://{{INFLUXDBHOST}}:{{INFLUXDBPORT}}"
+        - key:   global_prefix
+          value: "{{INFLUXDBPREFIX}}"
+        - key:   database
+          value: "{{INFLUXDBDATABASE}}"
         - key:   username
           value: "{{INFLUXDBUSER}}"
         - key:   password
@@ -291,6 +303,14 @@
         line:   "{{item.key}}={{item.value}}"
         insertafter: EOF
       with_items:
+        - key:   INFLUXURL
+          value: "http://{{INFLUXDBHOST}}:{{INFLUXDBPORT}}"
+        - key:   INFLUXUSER
+          value: "{{INFLUXDBUSER}}"
+        - key:   INFLUXPASSWORD
+          value: "{{INFLUXDBPASSWD}}"
+        - key:   INFLUXDATABASE
+          value: "{{INFLUXDBDATABASE}}"
         - key:   GRAFANAURL
           value: "{{GRAFANAURL}}"
         - key:   GRAFANAAPIKEY
@@ -301,6 +321,8 @@
           value: "{{GRAFANAADMINPASSWD}}"
         - key:   GRAFANADATASOURCE
           value: "{{GRAFANADATASOURCE}}"
+        - key:   GRAFANAORGID
+          value: "{{GRAFANAORGID}}"
       tags: [ common ]
 
 
