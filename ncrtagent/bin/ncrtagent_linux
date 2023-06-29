@@ -78,10 +78,8 @@ sub compile_allow ($) {
 		if( $subnet =~ m"^(\d+\.\d+\.\d+\.\d+)/(\d+)$" ){
 			my $addr = $1;
 			my $netbit = $2;
-			my $bin_netmask = inet_aton '255.255.255.255';
-			for( my $i = $netbit; $i < 32; ++$i ){ 
-				vec($bin_netmask, $i, 1) = 0;
-			}
+			my $bin_netmask = pack 'V1',
+				pack('b*', "1"x$netbit . "0"x(32-$netbit));
 			my $bin_addr = inet_aton $addr;
 			my $bin_subnet = $bin_addr & $bin_netmask;
 			push @allow, [$bin_subnet, $bin_netmask];
@@ -293,7 +291,7 @@ sub cmd_daemon ($) {
 			next;
 		}
 
-		if( $path =~ m"^/measure/([-\w]+)/([-\w]+)/([-\w]+)" ){
+		if( $path =~ m"^/measure/([-\w]+)/([-\w.]+)/([-\w]+)" ){
 			my $measure = $1;
 			my $host = $2;
 			my $service = $3;

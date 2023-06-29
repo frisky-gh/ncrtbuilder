@@ -795,8 +795,8 @@ sub read_rules4option () {
 			chomp;
 			next if m"^\s*(#|$)";
 			if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
-				$vhost_re = qr"$1";
-				$vservice_re = qr"$2";
+				$vhost_re = qr"^$1$";
+				$vservice_re = qr"^$2$";
 			}elsif( m"^option\s+(\S+(\s+\S+)*)" ){
 				my $options = $1;
 				my %options;
@@ -828,7 +828,7 @@ sub generate_agentconf_for_agent ($$$) {
 		next if m"^\s*(#|$)";
 		m"^(\S+)\s+(.*)" or
 			die "$f:$.: illegal format, stopped";
-		push @rules, [qr"$1", $2];
+		push @rules, [qr"^$1$", $2];
 	}
 	close $h;
 
@@ -938,7 +938,7 @@ sub generate_agentconf_for_indirect ($$$$) {
 			$option{$1} = $2;
 		}elsif( m"^(\S+)\s+(\S.*)$" ){
 			push @{$vhostvservice2rules{$vhostvservice}},
-				[qr"$1", $2, {%option}];
+				[qr"^$1$", $2, {%option}];
 		}else{
 			die "$f:$.: illegal format, stopped";
 		}
@@ -1026,8 +1026,8 @@ sub generate_filter_settings ($\%\@) {
 			chomp;
 			next if m"^\s*(#|$)";
 			if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
-				$vhost_re = qr"$1";
-				$vservice_re = qr"$2";
+				$vhost_re = qr"^$1$";
+				$vservice_re = qr"^$2$";
 			}elsif( m"^filter\s+(\S+)" ){
 				my $filter = $1;
 
@@ -1098,8 +1098,8 @@ sub generate_masterconf_for_filter ($$$@) {
 			chomp;
 			next if m"^\s*(#|$)";
 			if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
-				$vhost_re = qr"$1";
-				$vservice_re = qr"$2";
+				$vhost_re = qr"^$1$";
+				$vservice_re = qr"^$2$";
 			}elsif( m"^filter\s+(\S+)" ){
 				my $filter = $1;
 
@@ -1177,8 +1177,8 @@ sub generate_masterconf_for_threshold ($$@) {
 			chomp;
 			next if m"^\s*(#|$)";
 			if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
-				$vhost_re = qr"$1";
-				$vservice_re = qr"$2";
+				$vhost_re = qr"^$1$";
+				$vservice_re = qr"^$2$";
 			}elsif( m"^\S+" ){
 				push @rules, [$vhost_re, $vservice_re, $_];
 			}else{
@@ -1231,8 +1231,8 @@ if( $plan{step7} ){
 			chomp;
 			next if m"^\s*(#|$)";
 			if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
-				$vhost_re = qr"$1";
-				$vservice_re = qr"$2";
+				$vhost_re = qr"^$1$";
+				$vservice_re = qr"^$2$";
 			}elsif( m"^\S+" ){
 				push @rules, [$vhost_re, $vservice_re, $_];
 			}else{

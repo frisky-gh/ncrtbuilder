@@ -10,6 +10,10 @@
           - monitoring-plugins-basic
           - monitoring-plugins-common
           - monitoring-plugins-standard
+          - liburi-perl
+          - libhttp-daemon-perl
+          - libwww-perl
+          - libtemplate-perl
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
@@ -82,7 +86,7 @@
         checksum: yes
         delete: yes
         rsync_opts: [ "-OJ", "--chown=root:root" ]
-        src: "{{WORKDIR}}/ncrtagent/{{ansible_hostname}}/"
+        src: "{{WORKDIR}}/ncrtagent/{{inventory_hostname}}/"
         dest: "{{NCRTAGENTHOME}}/conf/"
       notify: restart ncrtagent
       tags: [ common ]
