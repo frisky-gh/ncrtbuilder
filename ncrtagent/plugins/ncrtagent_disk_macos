@@ -1,0 +1,147 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 5 ){
+	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $MEASURE = $ARGV[2];
+our $HOST = $ARGV[3];
+our $SERVICE = $ARGV[4];
+
+####
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+sub nP ($) {
+	return sprintf "%.2f%%", $_[0];
+}
+sub nMB ($) {
+	return sprintf "%.2fMB", $_[0];
+}
+
+#### load detector conf.
+my @exist_rules;
+my $f = "$CONFDIR/agent/disk.rules.$MEASURE.$HOST";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)$";
+	push @exist_rules, $1;
+}
+close $h;
+
+my @ignore_rules;
+my $f = "$CONFDIR/agent/disk.ignores.$MEASURE.$HOST";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)$";
+	push @ignore_rules, qr"^$1$";
+}
+close $h;
+
+sub match ($@) {
+	my ($path, @patterns) = @_;
+	foreach my $pattern ( @patterns ){
+		return 1 if $path =~ $pattern;
+	}
+	return undef;
+}
+
+####
+# data
+my %disk;
+
+# mounts
+my %mount;
+open my $h, '-|', "LANG=C mount" or do {
+	die "mount: cannot execute, stopped";
+};
+while( <$h> ){
+	chomp;
+	next unless m"^(\S+)\s+on\s+(\S+)+\(([-\w]+)((,\s*[-\w]+)*)\)$";
+	my $device = $1;
+	my $mountpoint = $2;
+	my $fs = $3;
+	my $option = $4;
+	my $info = { status => 'rw' };
+	foreach my $o ( split m",\s*", $option ){
+		$info->{status} = "read-only" if $o eq "ro";
+	}
+	$mount{$mountpoint} = $info;
+}
+close $h;
+
+# df
+open my $h, '-|', "LANG=C df -m -i" or do {
+	die "df: cannot execute, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if $. == 1;
+	die "$_, stopped" unless m"^
+		(?<source> /\S+|devfs|map\s\S+) \s+
+		(?<total>  \d+) \s+
+		(?<used>   \d+) \s+
+		(?<avail>  \d+) \s+
+		(?<pct>    \d+)% \s+
+		(?<iused>   \d+) \s+
+		(?<iavail>  \d+) \s+
+		(?:-|(?<ipct>\d+)%) \s+
+		(?<target> \S.*)$"x;
+	next if match $+{target}, @ignore_rules;
+
+	my $avail = $+{total} - $+{used};
+	$avail = 0 if $mount{$+{target}}->{status} eq 'ro';
+	$disk{$+{target}}->{total}     = nMB $+{total};
+	$disk{$+{target}}->{used}      = nMB $+{used};
+	$disk{$+{target}}->{avail}     = nMB $avail;
+	$disk{$+{target}}->{'avail-pct'} =
+		nP( $+{total} == 0 ? 0 : 100 * $avail / $+{total} );
+
+	my $itotal = $+{iused} + $+{iavail};
+	my $iavail = $mount{$+{target}}->{status} eq 'ro' ? 0 : $+{iavail};
+	$disk{$+{target}}->{itotal}     = n $itotal;
+	$disk{$+{target}}->{iused}      = n $+{iused};
+	$disk{$+{target}}->{iavail}     = n $iavail;
+	$disk{$+{target}}->{'iavail-pct'} =
+		nP( $itotal == 0 ? 0 : 100 * $iavail / $itotal );
+}
+close $h;
+
+# mount check
+foreach my $path ( @exist_rules ){
+	next if defined $mount{$path}->{status};
+	next if match $path, @ignore_rules;
+	$disk{$path}->{total}        = nMB 0;
+	$disk{$path}->{used}         = nMB 0;
+	$disk{$path}->{avail}        = nMB 0;
+	$disk{$path}->{'avail-pct'}  = nP 0;
+	$disk{$path}->{itotal}       = n 0;
+	$disk{$path}->{iused}        = n 0;
+	$disk{$path}->{iavail}       = n 0;
+	$disk{$path}->{'iavail-pct'} = nP 0;
+}
+
+# output
+foreach my $path ( sort keys %disk ){
+	my $values = $disk{$path};
+	foreach my $k ( sort keys %$values ){
+		my $v = $values->{$k};
+		print "disk[$path]-$k=$v\n";
+	}
+}
+
+exit 0;
+

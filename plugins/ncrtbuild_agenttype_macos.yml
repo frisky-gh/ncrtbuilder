@@ -1,0 +1,98 @@
+---
+
+- hosts: macos.__HOSTTYPE__
+  tasks:
+    - group:
+        system: yes
+        name: ncrtagent
+      tags: [ commoninstall ]
+
+    - user:
+        system: yes
+        name: ncrtagent
+        group: ncrtagent
+        comment: NCRT Agent User
+      tags: [ commoninstall ]
+
+    - name: install homebrew packages
+      homebrew:
+        name: "{{item}}"
+      vars:
+        ansible_become: true
+        ansible_become_user: ncrtagent
+        ansible_become_method: sudo
+        ansible_become_flags: -H -E
+      loop:
+        - cpanminus
+        - rsync
+      tags: [ commoninstall ]
+
+    - file:
+        path: "{{NCRTAGENTHOME}}"
+        state: directory
+        owner: root
+        group: wheel
+      tags: [ commoninstall ]
+
+    - name: setup modules in ncrt agent
+      synchronize:
+        checksum: yes
+        rsync_opts: [ "-OJ", "--chown=root:wheel", "--exclude=/filters/" ]
+        src: "{{TOOLHOME}}/ncrtagent/"
+        dest: "{{NCRTAGENTHOME}}/"
+      tags: [ common ]
+
+    - name: setup filters
+      synchronize:
+        checksum: yes
+        rsync_opts: [ "-OJ", "--chown=root:wheel" ]
+        src: "{{TOOLHOME}}/filters/"
+        dest: "{{NCRTAGENTHOME}}/filters/"
+      tags: [ common ]
+
+    - name: install CPAN packages
+      cpanm:
+        name: "{{item}}"
+        installdeps: true
+        locallib: "{{NCRTAGENTHOME}}"
+      vars:
+        #ansible_become: true
+        #ansible_become_user: ncrtagent
+        #ansible_become_method: sudo
+        #ansible_become_flags: -H -E
+      environment:
+        http_proxy: "{{ansible_cpanm_proxy}}"
+      loop:
+        - HTTP::Daemon
+        - LWP::Protocol::https
+        - Template::Toolkit
+        - Time::Piece
+        - JSON::PP
+      tags: [ commoninstall ]
+
+    - name: setup settings in ncrt agent
+      synchronize:
+        checksum: yes
+        delete: yes
+        rsync_opts: [ "-OJ", "--chown=root:wheel" ]
+        src: "{{WORKDIR}}/ncrtagent/{{inventory_hostname}}/"
+        dest: "{{NCRTAGENTHOME}}/conf/"
+      notify: restart ncrtagent
+      tags: [ common ]
+
+    - name: generate ncrtagent_macos.plist
+      template:
+        src: ncrtbuild_agenttype_macos.plist.tmpl
+        dest: /Library/LaunchDaemons/com.github.frisky-gh.ncrtagent_macos.plist
+      notify: restart ncrtagent
+      tags: [ common ]
+
+  handlers:
+    - name: restart ncrtagent service
+      community.general.launchd:
+        name: com.github.frisky-gh.ncrtagent_macos
+        enabled: true
+        state: restarted
+      listen: restart ncrtagent
+
+

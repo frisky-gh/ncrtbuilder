@@ -1,0 +1,84 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+#### load global conf.
+my %ncrtconf;
+my $f = "$CONFDIR/ncrtbuild.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\w+)=(.*)$";
+	$ncrtconf{$1} = $2;
+}
+close $h;
+
+#### load macos conf.
+my %targets;
+my %default = (
+	listen_address => "0.0.0.0",
+	listen_port => 46848,
+	daemon_user => "ncrtagent",
+	timeout => 60,
+	agent_protocol => 'ncrtagent',
+	agent_address => undef,
+	agent_port => 46848,
+);
+my $f = "$CONFDIR/agenttype/macos.hosts";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\*|[-.\w]+)((\s+\w+=\S*)*)$";
+	my $host = $1;
+	my %param;
+	foreach my $kv ( split m"\s+", $2 ){
+		next unless $kv =~ m"^(\w+)=(.*)$";
+		$param{$1} = $2;
+	}
+
+	if( $host eq "*" ){
+		%default = %param;
+	}else{
+		$targets{$host} = { %default, %param };
+	}
+}
+close $h;
+
+#### append hosts info.
+my $f = "$WORKDIR/hosts";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($k, $v) = each %targets ){
+	my @param;
+	while( my ($k, $v) = each %$v ){
+		push @param, "$k=$v";
+	}
+	print $h "$k	macos	", join("\t", @param), "\n";
+}
+close $h;
+
+#### append agenttype info.
+my $f = "$WORKDIR/agenttypes";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "macos	display_name=MacOS:%hostname% address=%hostname%\n";
+close $h;
+
+#### generate ncrtagent.conf
+

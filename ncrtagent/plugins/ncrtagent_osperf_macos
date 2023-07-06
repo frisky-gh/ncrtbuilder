@@ -1,0 +1,119 @@
+#!/usr/bin/perl
+
+use strict;
+
+our $LONGTERM_H = 1;
+
+if( @ARGV < 5 ){
+	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $MEASURE = $ARGV[2];
+our $HOST = $ARGV[3];
+our $SERVICE = $ARGV[4];
+
+####
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+sub nP ($$) {
+	if( $_[1] > 0 ){
+		return sprintf "%.2f%%", 100 * $_[0] / $_[1];
+	}else{
+		return sprintf "%.2f%%", 0;
+	}
+}
+sub nMB ($) {
+	return sprintf "%.2fMB", $_[0];
+}
+
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
+	foreach my $k ( sort {$a cmp $b} keys %$var ){
+		next if $k eq 'timestamp';
+		push @ltsv, "$k:".$var->{$k};
+	}
+	return join "\t", @ltsv;
+}
+
+sub ltsv2var ( $ ){
+	my ($ltsv) = @_;
+	my %var;
+	foreach my $kv ( split m"\t", $ltsv ){
+		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
+			next;
+		};
+		my $k = $1;
+		my $v = $2;
+		$var{$k} = $v;
+	}
+	return %var;
+}
+
+####
+
+my @category_rules;
+my $f = "$CONFDIR/agent/osperf.conf.$MEASURE.$HOST";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*($|#)";
+	die "$f:$.: illegal format, stopped" unless m"^(\w+)=(.*)$";
+	$LONGTERM_H = 0 + $2 if $1 eq 'LONGTERM_H';
+}
+close $h;
+
+####
+
+my %m;
+
+open my $h, '-|', "LANG=C top -l 1 -S -n 0" or do {
+	die "df: cannot execute, stopped";
+};
+while( <$h> ){
+	chomp;
+
+	if    ( m"^Load Avg: (\d+\.\d+), (\d+\.\d+), (\d+\.\d+)\s*$" ){
+		$m{loadavg} = n $1;
+	}elsif( m"^CPU usage: (\d+\.\d+)% user, (\d+\.\d+)% sys, (\d+\.\d+)% idle$" ){
+		$m{user}   = n $1;
+		$m{system} = n $2;
+		$m{idle}   = n $3;
+	}elsif( m"^PhysMem: (\d+)M used \((\d+)M wired, (\d+)M compressor\), (\d+)M unused.\s*$" ){
+		$m{'mem-total'}      = nMB $1 + $4;
+		$m{'mem-used'}       = nMB $1;
+		$m{'mem-wired'}      = nMB $2;
+		$m{'mem-compressor'} = nMB $3;
+		$m{'mem-free'}       = nMB $4;
+		$m{'mem-free-pct'}   = nP $4, $1+$4;
+	}elsif( m"^Swap: (\d+)(B|M) \+ (\d+)(B|M) free.\s*$" ){
+		my $used = $2 eq 'B' ? $1/1024/1024 : $1;
+		my $free = $4 eq 'B' ? $3/1024/1024 : $3;
+		$m{'swap-used'}      = nMB $used;
+		$m{'swap-free'}      = nMB $free;
+		$m{'swap-total'}     = nMB $used + $free;
+		$m{'swap-free-pct'}  = nP $free, $used + $free;
+	}elsif( m"^Swap: (\d+)(B|M) + (\d+)(B|M) " ){
+		die;
+	}elsif( m"^Processes: (\d+) total, (\d+) running, (\d+) sleeping, (\d+) threads\s*$" ){
+		$m{procs}   = n $1;
+		$m{threads} = n $4;
+	}
+}
+
+#
+foreach my $k ( sort keys %m ){
+	my $v = $m{$k};
+	print "$k=$v\n";
+}
+
+exit 0;
+
+

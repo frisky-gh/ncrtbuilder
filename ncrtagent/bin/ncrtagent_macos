@@ -1,0 +1,288 @@
+#!/usr/bin/perl
+
+our ($TOOLHOME, $PLUGINSDIR, $CONFDIR);
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = "$1/..";
+	while( $TOOLHOME =~ s{(^|/)[^\./][^/]*/\.\.(/|$)}{} ){}
+	$TOOLHOME =~ s{/$}{};
+	$PLUGINSDIR = "$TOOLHOME/plugins";
+	$CONFDIR = "$TOOLHOME/conf";
+}
+use lib "$TOOLHOME/lib/perl5";
+
+use English;
+use Socket;
+use IO::Handle;
+use URI::Escape;
+use HTTP::Daemon;
+use HTTP::Status;
+use LWP::UserAgent;
+use IPC::Open2;
+use strict;
+
+our $NAME = 'ncrtagent_macos';
+our $LOGFILE  = '/Users/ncrtagent/ncrtagent.log';
+our $WORKDIR;
+
+####
+our $LOGFH = *STDERR;
+our $DEBUG = 0;
+
+sub debuglog ($;@) {
+	return unless $DEBUG;
+	my ($format, @args) = @_;
+	my ($sec,$min,$hour,$day,$mon,$year) = localtime time;
+	my $t = sprintf '%04d-%02d-%02d_%02d:%02d:%02d', $year+1900, $mon+1, $day, $hour, $min, $sec;
+	printf $LOGFH "$t $format\n", @args;
+}
+
+sub accesslog ($;@) {
+	my ($format, @args) = @_;
+	my ($sec,$min,$hour,$day,$mon,$year) = localtime time;
+	my $t = sprintf '%04d-%02d-%02d_%02d:%02d:%02d', $year+1900, $mon+1, $day, $hour, $min, $sec;
+	printf $LOGFH "$t $format\n", @args;
+}
+
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "host_service:".$var->{host_service} if defined $var->{host_service};
+	foreach my $k ( sort {$a cmp $b} keys %$var ){
+		next if $k eq 'host_service';
+                push @ltsv, "$k:".$var->{$k};
+	}
+	return join "\t", @ltsv;
+}
+
+sub ltsv2var ( $ ){
+	my ($ltsv) = @_;
+	my %var;
+	foreach my $kv ( split m"\t", $ltsv ){
+		$kv =~ m"^([^[:cntrl:]\s:;=]+)[:=](.*)$" or do {
+			next;
+		};
+		my $k = $1;
+		my $v = $2;
+		$var{$k} = $v;
+	}
+	return %var;
+}
+
+####
+sub compile_allow ($) {
+	my ($allow) = @_;
+	my @allow;
+	foreach my $subnet ( split m",", $allow ){
+		if( $subnet =~ m"^(\d+\.\d+\.\d+\.\d+)/(\d+)$" ){
+			my $addr = $1;
+			my $netbit = $2;
+			my $bin_netmask = pack 'V1',
+				pack('b*', "1"x$netbit . "0"x(32-$netbit));
+			my $bin_addr = inet_aton $addr;
+			my $bin_subnet = $bin_addr & $bin_netmask;
+			push @allow, [$bin_subnet, $bin_netmask];
+		}elsif( $subnet =~ m"^(\d+\.\d+\.\d+\.\d+)$" ){
+			my $bin_netmask = inet_aton '255.255.255.255';
+			my $bin_addr = inet_aton $subnet;
+			push @allow, [$bin_addr, $bin_netmask];
+		}
+	}
+	return @allow;
+}
+
+sub check_allow ($@) {
+	my ($bin_addr, @allow) = @_;
+	foreach my $subnet_netmask ( @allow ){
+		if( $$subnet_netmask[0] eq ($bin_addr & $$subnet_netmask[1]) ){
+			return 1;
+		}
+	}
+	return undef;
+}
+
+sub setup_workdir () {
+	if( $ENV{'HOME'} ){ $WORKDIR = $ENV{'HOME'} . "/.ncrt"; }
+	else{
+        	my ($name, $pw, $uid, $gid, $quota, $comment, $gcos,
+		    $home, $shell, $expire ) = getpwuid $<;
+        	$WORKDIR = "$home/.ncrt";
+	}
+	unless( -d $WORKDIR ){
+		mkdir $WORKDIR or die "$WORKDIR: cannot create, stopped";
+ 	}
+}
+
+sub read_conf () {
+	my %conf = (
+		'listen_address' => '0.0.0.0',
+		'listen_port' => 46848,
+		'daemon_user' => undef,
+		'DEBUG' => 0,
+	);
+
+	my $conffile = "$CONFDIR/ncrtagent_macos.conf";
+	open my $h, '<', $conffile or do {
+		die "cannot open $conffile: $OS_ERROR, stopped";
+	};
+	while (<$h>) {
+		next if m"^\s*(#|$)";
+		die "$conffile:$.: illegal format, stopped" unless m"^(\w+)=(.*)$";
+		$conf{$1} = $2;
+	}
+	close $h or do {
+		die "close failed for $conffile: $OS_ERROR, stopped";
+	};
+	return \%conf;
+}
+
+sub read_command ($) {
+	my ($cmd) = @_;
+
+	#my $out, my $in;
+	my $pid = open2 my $out, my $in, $cmd;
+	close $in;
+
+	my @messages;
+	my %metrics;
+	while( <$out> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$_, stopped" unless m"^([^[:cntrl:]\s:;=]+)=(.*)$";
+		my $k = $1;
+		my $v = $2;
+		if( $k eq 'message' ){ push @messages, $v; }
+		elsif( $v =~ m"^([-+]?\d+(?:\.\d+)?)([%a-zA-Z]*)$" ){
+			$metrics{$k} = $v;
+		}
+	}
+	close $out;
+
+	waitpid $pid, 0;
+	my $plugin_rc = $? >> 8;
+	my $ok = 1;
+	if( $plugin_rc > 0 ){
+		push @messages, "plugin_rc:$plugin_rc";
+		$ok = undef;
+	}
+	return $ok, \%metrics, \@messages;
+}
+
+####
+sub action_measure ($$$$$) {
+	my ($conf, $conn, $measure, $host, $service) = @_;
+	my $cmd = "$PLUGINSDIR/ncrtagent_${measure}_macos $CONFDIR $WORKDIR $measure $host $service";
+	my ($ok, $metrics, $messages) = read_command $cmd;
+
+	my $content;
+	foreach my $k ( sort keys %$metrics ){
+		my $v = $$metrics{$k};
+		$content .= "$k=$v\n";
+	}
+	foreach my $v ( @$messages ){
+		$content .= "message=$v\n";
+	}
+
+	my $res = HTTP::Response->new;
+	if( $ok ){ $res->code(200); }
+	else     { $res->code(500); }
+	$res->header('Content-Type' => 'text/plain');
+	$res->content($content);
+	$conn->send_response($res);
+}
+
+sub action_ping ($$) {
+	my ($conf, $conn) = @_;
+	my $res = HTTP::Response->new;
+	$res->code(200);
+	$res->header('Content-Type' => 'text/plain');
+	$res->content("OK\n");
+	$conn->send_response($res);
+}
+
+
+####
+sub cmd_launchd_daemon ($) {
+	my ($conf) = @_;
+
+	setup_workdir;
+
+	my @allow = compile_allow( $$conf{allow} // "0.0.0.0/0" );
+
+	$0 = $NAME;
+	my $d = HTTP::Daemon->new(
+		'ReuseAddr' => 1,
+		'LocalAddr' => $$conf{listen_address},
+		'LocalPort' => $$conf{listen_port}
+	) or do {
+		die sprintf 'cannot listen %s:%d: %s, stopped',
+			$$conf{listen_address}, $$conf{listen_port}, $OS_ERROR;
+	};
+
+	$SIG{'TERM'} = sub {
+		#$d->shutdown;
+		$d->close;
+	};
+	$SIG{'HUP'} = sub {
+		if( open $LOGFH, '>>', $LOGFILE ){ $LOGFH->autoflush; }
+		else{ $LOGFH = *STDERR; }
+	};
+	$SIG{'CHLD'} = 'IGNORE';
+
+	while (my ($conn, $peer_addr) = $d->accept) {
+		my $req = $conn->get_request;
+		next unless $req;
+		my $method = $req->method;
+		my $path = uri_unescape $req->uri->path;
+		my ($port, $bin_addr) = unpack_sockaddr_in $peer_addr;
+		my $addr = inet_ntoa $bin_addr;
+		accesslog 'req: client=%s:%d method=%s path=%s',
+			$addr, $port, $method, $path;
+
+		unless( check_allow $bin_addr, @allow ){
+			accesslog 'error: denied.';
+			$conn->send_error(RC_FORBIDDEN);
+			$conn->close;
+			undef $conn;
+			next;
+		}
+
+		if( $path =~ m"^/measure/([-\w]+)/([-\w.]+)/([-\w]+)" ){
+			my $measure = $1;
+			my $host = $2;
+			my $service = $3;
+			my $pid = fork;
+			if( $pid == 0 ){
+				$d->close;
+				$SIG{'CHLD'} = 'DEFAULT';
+				action_measure $conf, $conn,
+					$measure, $host, $service;
+				exit 0;
+			}
+		}elsif( $path =~ m"^/ping" ){
+			action_ping $conf, $conn;
+		}else{
+			$conn->send_error(RC_FORBIDDEN);
+		}
+		$conn->close;
+		undef $conn;
+	}
+}
+
+
+####
+my $conf = read_conf;
+$DEBUG = $conf->{DEBUG};
+
+
+####
+if    ( $ARGV[0] eq "launchd-daemon" ){
+	cmd_launchd_daemon $conf;
+	exit 0;
+}else{
+	print "usage: % $0 {launchd-daemon}\n";
+	exit 0;
+}
+
+
+

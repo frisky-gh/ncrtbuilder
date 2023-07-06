@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+ <dict>
+
+  <key>Label</key>
+  <string>com.github.frisky-gh.ncrtagent_macos</string>
+
+  <key>ProgramArguments</key>
+  <array>
+     <string>/opt/ncrtagent/bin/ncrtagent_macos</string>
+     <string>launchd-daemon</string>
+  </array>
+
+  <key>UserName</key>
+  <string>ncrtagent</string>
+
+  <key>GroupName</key>
+  <string>ncrtagent</string>
+
+  <key>StandardOutPath</key>
+  <string>/Users/ncrtagent/ncrtagent.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>/Users/ncrtagent/ncrtagent.log</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+ </dict>
+</plist>
