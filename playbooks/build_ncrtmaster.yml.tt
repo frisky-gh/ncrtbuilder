@@ -84,7 +84,7 @@
       tags: [ commoninstall ]
 
     ## NCRT (install)
-    - name: install naemon and dependancies
+    - name: install ncrtmaster dependancies
       apt:
         name:
           - libjson-xs-perl
@@ -95,6 +95,7 @@
           - libstring-random-perl
           - libmime-encwords-perl
           - liburi-query-perl
+          - libossp-uuid-perl
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 

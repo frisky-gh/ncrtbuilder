@@ -24,6 +24,7 @@ use URI::Escape;
 use MIME::Base64;
 use MIME::EncWords ':all';
 use Template;
+use OSSP::uuid;
 
 if( @ARGV < 2 ){
 	print "usage: % $0 CONFDIR WORKDIR\n";
@@ -530,6 +531,11 @@ sub req ($) {
 
 #### functions for Critical Setion
 
+# Three different critical sections are defined.
+#  * service group state
+#  * session page
+#  * reporting state
+
 sub start_criticalsection () {
 	my $f = "$WORKDIR/servicegroup_semaphore";
 	my $t = time;
@@ -568,7 +574,7 @@ sub end_criticalsection () {
 	unlink $f if $last_pid == $$;
 }
 
-sub start_criticalsection_for_session ($) {
+sub start_criticalsection_of_page ($) {
 	my ($session) = @_;
 	my $f = "$SESSIONDIR/sess_$session/.semaphore";
 	my $t = time;
@@ -588,7 +594,7 @@ sub start_criticalsection_for_session ($) {
 	return undef;
 }
 
-sub end_criticalsection_for_session ($) {
+sub end_criticalsection_of_page ($) {
 	my ($session) = @_;
 	my $f = "$SESSIONDIR/sess_$session/.semaphore";
 	return undef unless -l $f;
@@ -604,6 +610,7 @@ sub start_criticalsection_for_report ($$) {
 	my $t = time;
 	my $timestamp = timestamp $t;
 	my $d = "pid=$$ unixtime=$t timestamp=$timestamp";
+	$reporttype, $servicegroup;
 	symlink $d, $f and return 1;
 	debuglog "$f: semaphore is used.";
 	return undef unless -l $f;
@@ -807,14 +814,14 @@ sub trim_perfstate_events ($$$) {
 	return \@t;
 }
 
-sub mkdir_for_session ($) {
+sub mkdir_of_page ($) {
 	my ($sid) = @_;
 	my $d = "$SESSIONDIR/sess_$sid";
 	return if -d $d;
 	mkdir_or_die $d;
 }
 
-sub rmdir_for_session ($) {
+sub rmdir_of_page ($) {
 	my ($sid) = @_;
 	my $d = "$SESSIONDIR/sess_$sid";
 	return unless -d $d;
@@ -892,7 +899,7 @@ sub get_expired_from_trashbox ($) {
 sub remove_session_from_trashbox ($$) {
 	my ($trashbox, $session) = @_;
 	my $sessions = $$trashbox{sessions};
-	rmdir_for_session $session;
+	rmdir_of_page $session;
 	delete $$sessions{$session};
 }
 
@@ -922,11 +929,9 @@ sub store_sgstate ($$) {
 }
 
 sub create_session () {
-	my $random = pack('nnn', int rand 65536, $$ & 65535, int rand 65536);
-	my $session = encode_base64($random, '');
-	$session =~ s|\+|_|g;
-	$session =~ s|/|-|g;
-	return $session;
+	my $uuid = new OSSP::uuid;
+	$uuid->make("v4", undef, undef);
+	return $uuid->export("str");
 }
 
 sub get_session_from_sgstate ($) {
@@ -997,14 +1002,14 @@ sub set_num_of_ng_into_sgstate ($$$$) {
 	$$sgstate{ng_timestamp} = $ng_timestamp;
 }
 
-sub get_reporttime_from_sgstate ($) {
-	my ($sgstate) = @_;
-	return $$sgstate{reporttime};
+sub get_reporttime_from_sgstate ($$) {
+	my ($sgstate, $type) = @_;
+	return $$sgstate{"reporttime.$type"};
 }
 
-sub set_reporttime_into_sgstate ($$) {
-	my ($sgstate, $time) = @_;
-	$$sgstate{reporttime} = $time;
+sub set_reporttime_into_sgstate ($$$) {
+	my ($sgstate, $type, $time) = @_;
+	$$sgstate{"reporttime.$type"} = $time;
 }
 
 sub set_servicestate_history ($$) {
@@ -1174,6 +1179,143 @@ sub store_reportstatus ($$$) {
 	return 1;
 }
 
+sub output_to_pageupdatequeue ($$) {
+	my ($session, $entry) = @_;
+	my $d = "$WORKDIR/servicegroup_pageupdatequeue";
+	unless( -d $d ){ mkdir $d, 0700 or die; }
+
+	my $json;
+	eval {
+		$json = JSON::XS->new->encode( $entry );
+	};
+	
+	my $f = "req." . $session . "." . time . "." . $$;
+	open my $h, ">", "$d/.$f" or die;
+	print $h $json;
+	close $h;
+
+	rename "$d/.$f", "$d/$f" or die;
+	return 1;
+}
+
+sub hold_in_pageupdatequeue () {
+	my $d = "$WORKDIR/servicegroup_pageupdatequeue";
+	unless( -d $d ){ mkdir $d, 0700 or die; }
+
+	my $time = time;
+	opendir my $h, $d or die;
+	while( my $e = readdir $h ){
+		next unless $e =~ m"^req\.([^./\s]+)\.(\d+)\.(.+)$";
+
+		my $f = "hold.$time.$1.$2.$3";
+		rename "$d/$e", "$d/$f" or die;
+		open my $g, "<", "$d/$f" or die;
+		my $json = join "", <$g>;
+		close $g;
+
+		my $obj;
+		eval {
+			$obj = JSON::XS->new->decode( $json );
+		};
+		if( $@ ){
+			errorlog "hold_in_pageupdatequeue: decode error, json=%s",
+				$json;
+		}
+		closedir $h;
+
+		return $1, $f, $obj;
+	}
+	closedir $h;
+	return undef, undef, undef;
+}
+
+sub remove_from_pageupdatequeue ($) {
+	my ($qid) = @_;
+	my $d = "$WORKDIR/servicegroup_pageupdatequeue";
+	
+	unlink "$d/$qid" or die;
+	return 1;
+}
+
+sub unhold_in_pageupdatequeue ($) {
+	my ($qid) = @_;
+	my $d = "$WORKDIR/servicegroup_pageupdatequeue";
+	
+	die unless $qid =~ m"^hold\.(\d+)\.([^./\s]+)\.(\d+)\.(.+)$";
+	my $f = "req.$2.$3.$4";
+	rename "$d/$qid", "$d/$f" or die;
+	return 1;
+}
+
+sub output_to_reportqueue ($$$) {
+	my ($type, $servicegroup, $entry) = @_;
+	my $d = "$WORKDIR/servicegroup_reportqueue";
+	unless( -d $d ){ mkdir $d, 0700 or die; }
+
+	my $json;
+	eval {
+		$json = JSON::XS->new->encode( $entry );
+	};
+	
+	my $f = "req." . $type . "." . $servicegroup . "." . time . "." . $$;
+	open my $h, ">", "$d/.$f" or die;
+	print $h $json;
+	close $h;
+
+	rename "$d/.$f", "$d/$f" or die;
+	return 1;
+}
+
+sub hold_in_reportqueue () {
+	my $d = "$WORKDIR/servicegroup_reportqueue";
+	unless( -d $d ){ mkdir $d, 0700 or die; }
+
+	my $time = time;
+	opendir my $h, $d or die;
+	while( my $e = readdir $h ){
+		next unless $e =~ m"^req\.(\w+)\.(\w+)\.(\d+)\.(.+)$";
+
+		my $f = "hold.$time.$1.$2.$3.$4";
+		rename "$d/$e", "$d/$f" or die;
+		open my $g, "<", "$d/$f" or die;
+		my $json = join "", <$g>;
+		close $g;
+
+		my $obj;
+		eval {
+			$obj = JSON::XS->new->decode( $json );
+		};
+		if( $@ ){
+			errorlog "hold_in_reportqueue: decode error, json=%s",
+				$json;
+		}
+		closedir $h;
+
+		return $1, $2, $f, $obj;
+	}
+	closedir $h;
+	return undef, undef, undef, undef;
+}
+
+sub remove_from_reportqueue ($) {
+	my ($qid) = @_;
+	my $d = "$WORKDIR/servicegroup_reportqueue";
+	
+	unlink "$d/$qid" or die;
+	return 1;
+}
+
+sub unhold_in_reportqueue ($) {
+	my ($qid) = @_;
+	my $d = "$WORKDIR/servicegroup_reportqueue";
+	
+	die unless $qid =~ m"^hold\.(\d+)\.(\w+)\.(\w+)\.(\d+)\.(.+)$";
+	my $f = "req.$2.$3.$4.$5";
+	rename "$d/$qid", "$d/$f" or die;
+	return 1;
+}
+
+
 #### functions related to mail reporting
 
 sub eval_history ($$$$$$) {
@@ -1225,49 +1367,14 @@ sub eval_history ($$$$$$) {
 	return undef;
 }
 
-sub report_by_mail ($$$$$$$$$) {
-	my (
-		$param, $sg, $session, $reporting_plan,
-	       	$trimed_servicestate_history, $trimed_perfstate_history,
-		$highlighted_services, $highlighted_perfs,
-		$emails
-	) = @_;
-
-	my $mailfrom = $$param{MAILFROM};
-	my $history = merge_history
-		$trimed_servicestate_history, $trimed_perfstate_history;
-	my $template = read_plain "$CONFDIR/reporter/servicegroup_mail.tt";
-
-	foreach my $recipient ( @$emails ){
-
-		my $mail = generate_by_template $template,
-			'highlighted_services' => $highlighted_services,
-			'highlighted_perfs'    => $highlighted_perfs,
-			'servicestate_history' => $trimed_servicestate_history,
-			'perfstate_history'    => $trimed_perfstate_history,
-			'history'              => $history,
-			'reason'               => $reporting_plan,
-			'NOW'                  => time,
-			'SESSIONURL' => "$SESSIONURLBASE/sess_$session/",
-			'MAILFROM' => $mailfrom, 'MAILTO' => $recipient,
-			'SERVICEGROUP' => $sg;
-
-		debuglog "sendmail: from=%s", $mailfrom;
-		debuglog "sendmail: to=%s", $recipient;
-		debuglog "sendmail: message=%s", $mail;
-		sendmail $mail, $mailfrom, $recipient;
-	}
-}
-
-sub create_reporting_plan_by_mail ($$$$$$) {
+sub create_reporting_plan_of_mail ($$$$$$$$) {
 	my (
 		$param, $sg, $session, $session_plan,
-	       	$servicestate_history, $perfstate_history
+	       	$servicestate_history, $perfstate_history,
+		$last_reporttime, $curr_reporttime
 	) = @_;
 
-	my $now = time;
-	my $last_reporttime = load_reporttime $sg, "mail";
-	my $elapsed = $now - $last_reporttime;
+	my $elapsed = $curr_reporttime - $last_reporttime;
 
 	my $trimed_servicestate_history = trim_history
 		$servicestate_history, $last_reporttime;
@@ -1304,7 +1411,7 @@ sub create_reporting_plan_by_mail ($$$$$$) {
 	return undef;
 }
 
-sub execute_reporting_plan_by_mail ($$$$$$$$$) {
+sub output_report_specification_of_mail ($$$$$$$$$) {
 	my (
 		$param, $sg, $session, $reporting_plan,
 	       	$servicestate_history, $perfstate_history,
@@ -1312,29 +1419,49 @@ sub execute_reporting_plan_by_mail ($$$$$$$$$) {
 		$emails
 	) = @_;
 
-	return if fork;
-
-	unless( start_criticalsection_for_report $sg, "mail" ){
-		errorlog "REPORTING_ERROR: mail, sg=$sg: cannot start criticalsection.";
-		exit 0;
-	}
-
 	my $last_reporttime = load_reporttime $sg, "mail";
 	my $trimed_servicestate_history = trim_history
 		$servicestate_history, $last_reporttime;
 	my $trimed_perfstate_history = trim_history
 		$perfstate_history, $last_reporttime;
 
-	report_by_mail $param, $sg, $session, $reporting_plan,
-	       	$trimed_servicestate_history, $trimed_perfstate_history,
-		$highlighted_services, $highlighted_perfs,
-		$emails;
+	my $mailfrom = $$param{MAILFROM};
+	my $history = merge_history
+		$trimed_servicestate_history, $trimed_perfstate_history;
+	my $template = read_plain "$CONFDIR/reporter/servicegroup_mail.tt";
 
-	store_reporttime $sg, "mail";
-	end_criticalsection_for_report $sg, "mail";
+	my $queueentry = [];
+	foreach my $mailto ( @$emails ){
 
-	exit 0;
+		my $mailbody = generate_by_template $template,
+			'highlighted_services' => $highlighted_services,
+			'highlighted_perfs'    => $highlighted_perfs,
+			'servicestate_history' => $trimed_servicestate_history,
+			'perfstate_history'    => $trimed_perfstate_history,
+			'history'              => $history,
+			'reason'               => $reporting_plan,
+			'NOW'                  => time,
+			'SESSIONURL' => "$SESSIONURLBASE/sess_$session/",
+			'MAILFROM' => $mailfrom, 'MAILTO' => $mailto,
+			'SERVICEGROUP' => $sg;
+		push @$queueentry, [$mailbody, $mailfrom, $mailto];
+	}
+	output_to_reportqueue 'mail', $sg, $queueentry;
 }
+
+sub execute_report_by_mail ($) {
+	my ($queueentry) = @_;
+
+	foreach my $i ( @$queueentry ){
+		my ($mailbody, $mailfrom, $mailto) = @$i;
+		debuglog "sendmail: from=%s",    $mailfrom;
+		debuglog "sendmail: to=%s",      $mailto;
+		debuglog "sendmail: message=%s", $mailbody;
+		sendmail $mailbody, $mailfrom, $mailto;
+	}
+	return 1;
+}
+
 
 #### functions for Slack
 
@@ -1357,93 +1484,65 @@ sub post_http_to_url ($$$) {
 	my $res = $ua->request($req);
 	return undef unless $res->is_success;
 	my $res_content = $res->content;
+	debuglog "post_http_to_url: response body=%s", $res_content;
 	return undef unless $res_content eq 'ok';
 	return 1;
 }
 
-sub report_by_slack ($$$$$) {
-	my ( $param, $sg, $session, $reporting_plan, $urls) = @_;
-	return unless defined $urls;
+sub create_reporting_plan_of_slack ($$$$$$) {
+	my (
+		$param, $sg, $session, $session_plan,
+		$last_reporttime, $curr_reporttime
+	) = @_;
+
+     	my $plan;
+	if    ( $session_plan eq 'OPEN' ){
+		return 'open';
+	}elsif( $session_plan eq 'CLOSE' ){
+		return 'close';
+	}elsif( $session_plan eq 'RENAME' ){
+		return 'rename';
+	}
+	return undef;
+}
+
+sub output_report_specification_of_slack ($$$$$) {
+	my ($param, $sg, $session, $reporting_plan, $urls) = @_;
+
+	my $time = time;
 
 	my $f = "$CONFDIR/reporter/servicegroup_slack_$reporting_plan.tt";
 	my $template = read_plain $f;
-	return undef if $template eq '';
+	return if $template eq '';
 	my $json = generate_by_template $template,
 		'reason'       => $reporting_plan,
 		'SERVICEGROUP' => $sg,
 		'SESSIONURL' => "$SESSIONURLBASE/sess_$session/",
 		'NOW' => time;
 
-	my $error_occured;
+	output_to_reportqueue 'slack', $sg, [$urls, $json, $param];
+}
+
+sub execute_report_by_slack ($) {
+	my ( $queueentry) = @_;
+
+	my ( $urls, $req, $param ) = @$queueentry;
 	foreach my $url ( @$urls ){
-		my $r = post_http_to_url $url, $json, $param;
-		debuglog "report_by_slack: sg=%s action=%s result=%s",
-			$sg, $reporting_plan, $r;
-		$error_occured = 1 unless $r;
+		my $r = post_http_to_url $url, $req, $param;
+		debuglog "report_by_slack: result=%s", $r;
+
+		next if $r;
+
+		errorlog "REPORTING_ERROR: slack: failed(rc=%d).", $r;
+		return undef;
 	}
-	return undef if $error_occured;
 	return 1;
-}
-
-sub create_reporting_plan_by_slack ($$$$) {
-	my ($param, $sg, $session, $session_plan) = @_;
-
-	my ($last_time, $last_status) =	load_reportstatus $sg, 'slack';
-
-     	my $plan;
-	if    ( $session_plan eq 'OPEN' ){
-		$plan = 'open';
-	}elsif( $session_plan eq 'CLOSE' ){
-		$plan = 'close';
-	}elsif( $session_plan eq 'RENAME' ){
-		$plan = 'rename';
-	}
-	if( defined $plan ){
-		return undef if $last_status eq "$plan $session";
-		store_reportstatus $sg, 'slack', "$plan $session";
-		return $plan;
-	}
-
-	return undef unless defined $last_time;
-	return undef if $last_status eq "";
-
-	my ($last_plan, $last_session) = split m" ", $last_status;
-	return undef unless $session eq $last_session;
-
-	return undef unless $last_time < time - 5*60;
-
-	store_reportstatus $sg, 'slack', "$last_plan $session";
-	return $last_plan;
-}
-
-sub execute_reporting_plan_by_slack ($$$$$) {
-	my ($param, $sg, $session, $reporting_plan, $urls) = @_;
-
-	return if fork;
-	unless( start_criticalsection_for_report $sg, "slack" ){
-		errorlog "REPORTING_ERROR: ".
-	       		"slack, sg=%s: cannot start criticalsection.", $sg;
-		end_criticalsection_for_report $sg, "slack";
-		exit 0;
-	}
-
-	my $r = report_by_slack $param, $sg, $session, $reporting_plan, $urls;
-	unless( $r ){
-		errorlog "REPORTING_ERROR: ".
-			"slack, sg=%s: failed(rc=%d).", $sg, $r;
-		end_criticalsection_for_report $sg, "slack";
-		exit 0;
-	}
-
-	store_reportstatus $sg, "slack", "";
-	end_criticalsection_for_report $sg, "slack";
-	exit 0;
 }
 
 
 #### functions for Alert Settion Web Page
 
-sub generate_html_for_session ($$$$$$){
+sub generate_html_of_page ($$$$$$){
 	my ($sg, $session, $highlighted_services, $highlighted_perfs, $perf2graphs_cache, $now) = @_;
 
 	my @graphlist;
@@ -1478,6 +1577,8 @@ sub download_panel_png_from_grafana ($) {
 	$req->header( Authorization => "Bearer $GRAFANAAPIKEY" );
 	debuglog "grafana: url=%s, requesting...", $url;
 	my $res = $ua->request($req);
+	debuglog "grafana: status=%s", $res->status_line;
+	return undef unless $res->code eq '200';
 	return $res->content;
 }
 
@@ -1531,7 +1632,7 @@ sub update_perf2graphs_cache ($$) {
 	}
 }
 
-sub generate_graphs_for_session ($$$) {
+sub generate_graphs_of_page ($$$) {
 	my ($session, $perf2graphs_cache, $hilighted_perfnames) = @_;
 	my $d = "$SESSIONDIR/sess_$session";
 
@@ -1557,7 +1658,7 @@ sub generate_graphs_for_session ($$$) {
 	}
 }
 
-sub generate_graphinfos_for_session ($$$) {
+sub generate_graphinfos_of_page ($$$) {
 	my ($session, $perf2graphs_cache, $hilighted_perfs) = @_;
 
 	my $t = time;
@@ -1607,7 +1708,14 @@ sub generate_graphinfos_for_session ($$$) {
 #
 
 #### Main Entry Point
+
+# In this critical section, loading and storing of service group state
+# (sgstate) is allowed.
+# Because this script is called every minute by cron, this critical section
+# must be completed within one minute.
+
 start_criticalsection or exit 1;
+eval {
 
 my $socket = "/var/cache/naemon/live";
 my (
@@ -1638,12 +1746,9 @@ if( @$perfdetail_changes || @$perfdetail_events ){
 #
 my $trashbox = load_trashbox;
 my $trashbox_has_been_updated;
-my $perf2graphs_cache = {};
-
-my $now = time;
-my @page_update_plan;
 
 #
+my $now = time;
 my $confrules = load_confrules;
 
 foreach my $sg ( sort keys %$sgname2servicenames ){
@@ -1672,6 +1777,13 @@ foreach my $sg ( sort keys %$sgname2servicenames ){
 
 	my ($last_session, $last_sessionstarttime) =
 		get_session_from_sgstate $last_sgstate;
+
+	my $last_reporttime_mail  = get_reporttime_from_sgstate $last_sgstate,
+		'mail';
+	my $last_reporttime_slack = get_reporttime_from_sgstate $last_sgstate,
+		'slack';
+	set_reporttime_into_sgstate $sgstate, 'mail',  $last_reporttime_mail;
+	set_reporttime_into_sgstate $sgstate, 'slack', $last_reporttime_slack;
 
 	#### 3. get current service states
 
@@ -1787,11 +1899,11 @@ if $last_session ne '' || $session ne '';
 	my $sessionupdatetime;
 
 	if    ( $session_plan eq 'OPEN' ){
-		mkdir_for_session $session;
+		mkdir_of_page $session;
 		set_session_into_sgstate $sgstate, $session;
 		$sessioncreatetime = $now;
 		$sessionupdatetime = $now;
-		push @page_update_plan, [
+		output_to_pageupdatequeue $session, [
 			$sg, $session,
 			$highlighted_services, $highlighted_perfs
 		];
@@ -1803,7 +1915,7 @@ if $last_session ne '' || $session ne '';
 		$sessionupdatetime = undef;
 		move_session_into_trashbox $trashbox,
 			$last_session, undef, $expire_timespan;
-		push @page_update_plan, [
+		output_to_pageupdatequeue $session, [
 			$sg, $session,
 			$highlighted_services, $highlighted_perfs
 		];
@@ -1811,24 +1923,24 @@ if $last_session ne '' || $session ne '';
 		$trashbox_has_been_updated = 1;
 
 	}elsif( $session_plan eq 'UPDATE' ){
-		mkdir_for_session $session;
+		mkdir_of_page $session;
 		set_session_into_sgstate $sgstate, $session;
 		$sessioncreatetime = $last_sessioncreatetime;
 		$sessionupdatetime = $now;
-		push @page_update_plan, [
+		output_to_pageupdatequeue $session, [
 			$sg, $session,
 			$highlighted_services, $highlighted_perfs
 		];
 		$sgstate_has_been_updated = 1;
 
 	}elsif( $session_plan eq 'RENAME' ){
-		mkdir_for_session $session;
+		mkdir_of_page $session;
 		set_session_into_sgstate $sgstate, $session;
 		$sessioncreatetime = $now;
 		$sessionupdatetime = $now;
 		move_session_into_trashbox $trashbox,
 			$last_session, $session, $expire_timespan;
-		push @page_update_plan, [
+		output_to_pageupdatequeue $session, [
 			$sg, $session,
 			$highlighted_services, $highlighted_perfs
 		];
@@ -1853,34 +1965,37 @@ if $last_session ne '' || $session ne '';
 	set_sessiontime_into_sgstate $sgstate,
        		$sessioncreatetime, $sessionupdatetime;
 
-	# store servicegroup state
-	if( $sgstate_has_been_updated ){
-		store_sgstate $sg, $sgstate;
-	}
+	#### 8. report planning
 
-	#### 8. reporting plan
-
-	# 8-a. reporting by mail
-	my $reporting_plan = create_reporting_plan_by_mail
+	my $curr_reporttime = time;
+	my $reporting_plan = create_reporting_plan_of_mail
 		$param, $sg, $session, $session_plan,
-		$servicestate_history, $perfstate_history;
+		$servicestate_history, $perfstate_history,
+		$last_reporttime_mail, $curr_reporttime;
 	if( defined $reporting_plan ){
-		execute_reporting_plan_by_mail
+		output_report_specification_of_mail
 			$param, $sg, $session, $reporting_plan,
 			$servicestate_history, $perfstate_history,
 			$highlighted_services, $highlighted_perfs,
 			$emails;
+		set_reporttime_into_sgstate $sgstate, "mail", $curr_reporttime;
+		$sgstate_has_been_updated = 1;
 	}
-
-	# 8-b. reporting by slack
-	my $reporting_plan = create_reporting_plan_by_slack
-		$param, $sg, $session, $session_plan;
+	my $reporting_plan = create_reporting_plan_of_slack
+		$param, $sg, $session, $session_plan,
+		$last_reporttime_slack, $curr_reporttime;
 	if( defined $reporting_plan ){
-		execute_reporting_plan_by_slack
+		output_report_specification_of_slack
 			$param, $sg, $session, $reporting_plan,
 			$slackurls;
+		set_reporttime_into_sgstate $sgstate, "slack", $curr_reporttime;
+		$sgstate_has_been_updated = 1;
 	}
 
+	# store servicegroup state
+	if( $sgstate_has_been_updated ){
+		store_sgstate $sg, $sgstate;
+	}
 }
 
 #### 9. trashbox
@@ -1896,21 +2011,105 @@ if( $trashbox_has_been_updated ){
 	store_trashbox $trashbox;
 }
 
+};
+if( $@ ){ errorlog "main: ERROR: caused=%s", $@; }
 end_criticalsection;
 
-#### 10. update page resource (download graphs)
+eval {
 
-foreach my $e ( @page_update_plan ){
-	my ($sg, $session, $highlighted_services, $highlighted_perfs) = @$e;
-	start_criticalsection_for_session $session or next;
-	update_perf2graphs_cache $perf2graphs_cache, $highlighted_perfs;
-	generate_graphs_for_session $session,
-		$perf2graphs_cache, $highlighted_perfs;
-	generate_html_for_session $sg, $session,
-		$highlighted_services, $highlighted_perfs,
-		$perf2graphs_cache, $now;
-	end_criticalsection_for_session $session;
+#### 10. reporting
+
+# In criticalsection for report, loading / storing of report status is allowed.
+
+while( 1 ){
+	my ($reporttype, $servicegroup, $qid, $entry) = hold_in_reportqueue;
+	last unless defined $reporttype;
+	next if fork;
+
+	unless( start_criticalsection_for_report $servicegroup, $reporttype ){
+		errorlog "reporting: ERROR: cannot start criticalsection, " .
+			"type=%s, sg=%s",
+			$reporttype, $servicegroup;
+		unhold_in_reportqueue $qid;
+		exit 0;
+	}
+	debuglog "reporting: start criticalsection, type=%s, sg=%s",
+			$reporttype, $servicegroup;
+	eval {
+
+		my $r;
+		# 8-a. reporting by mail
+		if    ( $reporttype eq 'mail' ){
+			$r = execute_report_by_mail $entry;
+
+		# 8-b. reporting by slack
+		}elsif( $reporttype eq 'slack' ){
+			$r = execute_report_by_slack $entry;
+		}
+
+		if( $r ){
+			debuglog "reporting: remove, qid=%s", $qid;
+			remove_from_reportqueue $qid;
+		}else{
+			debuglog "reporting: unhold, qid=%s", $qid;
+			unhold_in_reportqueue $qid;
+		}
+	};
+	if( $@ ){ errorlog "reporting: ERROR: caused=%s", $@; }
+	end_criticalsection_for_report $servicegroup, $reporttype;
+	exit 0;
 }
+
+#### 11. update page resource (download graphs)
+
+my $now = time;
+my $perf2graphs_cache = {};
+
+while( 1 ){
+	my ($session, $qid, $entry) = hold_in_pageupdatequeue;
+	last unless defined $session;
+	next if fork;
+	my ($sg, $session, $highlighted_services, $highlighted_perfs) = @$entry;
+
+	# Typically, session pages are refreshed every five minutes.
+	# However, pages are not always refreshed.
+	# If the last refreshing took longer than 5 minutes, for example,
+	# a very slow download of the page graph, the refresh will be skipped.
+	#
+	# In this critical section, reading and writing of session pages is
+	# allowed.
+
+	unless( start_criticalsection_of_page $session ){
+		errorlog "page_update: ERROR: cannot start criticalsection, " .
+			"session=%s", $session;
+		unhold_in_pageupdatequeue $qid;
+		exit 0;
+	}
+	debuglog "page_update: start criticalsection, session=%s", $session;
+
+	eval {
+		my $r = 1;
+		update_perf2graphs_cache $perf2graphs_cache, $highlighted_perfs;
+		generate_graphs_of_page $session,
+			$perf2graphs_cache, $highlighted_perfs;
+		generate_html_of_page $sg, $session,
+			$highlighted_services, $highlighted_perfs,
+			$perf2graphs_cache, $now;
+
+		if( $r ){
+			debuglog "page_update: remove, session=%s", $session;
+			remove_from_pageupdatequeue $qid;
+		}else{
+			debuglog "page_update: unhold, session=%s", $session;
+			unhold_in_rpageupdatequeue $qid;
+		}
+	};
+	if( $@ ){ errorlog "page_update: ERROR: caused=%s", $@; }
+	end_criticalsection_of_page $session;
+}
+
+};
+if( $@ ){ errorlog "subsequent: ERROR: caused=%s", $@; }
 
 exit 0;
 
