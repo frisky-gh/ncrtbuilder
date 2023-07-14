@@ -10,6 +10,7 @@
 #	ansible_become=
 #	ansible_become_user=
 #	ansible_become_method=
+#	ansible_brew_proxy=
 #	ansible_cpanm_proxy=
 
 *		allow=10.0.0.0/8

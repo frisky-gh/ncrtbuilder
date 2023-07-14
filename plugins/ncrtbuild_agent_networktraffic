@@ -33,7 +33,7 @@ open my $h, '<', $f or do {
 while( <$h> ){
 	chomp;
 	my ($host, $agenttype) = split m"\s+";
-	next unless $agenttype =~ m"^(linux)$";
+	next unless $agenttype =~ m"^(linux|macos)$";
 	$targets{$host} = 1;
 }
 close $h;

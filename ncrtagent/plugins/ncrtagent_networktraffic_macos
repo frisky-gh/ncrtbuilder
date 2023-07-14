@@ -1,0 +1,227 @@
+#!/usr/bin/perl
+
+use strict;
+
+our $LONGTERM_H = 2;
+
+if( @ARGV < 5 ){
+	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $MEASURE = $ARGV[2];
+our $HOST = $ARGV[3];
+our $SERVICE = $ARGV[4];
+
+####
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+
+sub nc ($) {
+	return sprintf "%d", $_[0];
+}
+
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
+	foreach my $k ( sort {$a cmp $b} keys %$var ){
+		next if $k eq 'timestamp';
+		push @ltsv, "$k:".$var->{$k};
+	}
+	return join "\t", @ltsv;
+}
+
+sub ltsv2var ( $ ){
+	my ($ltsv) = @_;
+	my %var;
+	foreach my $kv ( split m"\t", $ltsv ){
+		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
+			next;
+		};
+		my $k = $1;
+		my $v = $2;
+		$var{$k} = $v;
+	}
+	return %var;
+}
+
+sub calc_delta ($$\%) {
+	my ($f, $longterm_h, $curr) = @_;
+	my @history;
+
+	my $now = time;
+	my $longterm_limit  = $now - $longterm_h * 60 * 60;
+	my $shortterm_limit = $now - 59;
+
+	# load history
+	if( open my $h, '<', $f ){
+		while( <$h> ){
+			chomp;
+			my %v = ltsv2var $_;
+			push @history, \%v;
+		}
+		close $h;
+	}
+
+	# search origin
+	my $shortterm_origin;
+	foreach my $e ( @history ){
+		last	if $e->{timestamp} > $shortterm_limit;
+		$shortterm_origin = $e;
+	}
+	my $longterm_origin;
+	foreach my $e ( @history ){
+		last	if $e->{timestamp} > $shortterm_limit;
+		last	if $e->{timestamp} > $longterm_limit and
+			defined $longterm_origin;
+		$longterm_origin = $e;
+	}
+
+	# store history
+	open my $h, '>', "$f.$$" or do {
+		die "$f.$$: cannot open, stopped";
+	};
+	push @history, { 'timestamp' => $now,  %$curr };
+	foreach my $e ( @history ){
+		next if $e->{timestamp} < $longterm_limit;
+		print $h var2ltsv( %$e ), "\n";
+	}
+	close $h;
+	unlink $f;
+	rename "$f.$$", $f;
+
+	# calc difference
+	my %shortterm_delta;
+	if( $shortterm_origin ){
+		my $deltat = $now - $shortterm_origin->{timestamp};
+		while( my ($k, $v) = each %$curr ){
+			my $v2 = $shortterm_origin->{$k} // next;
+			my $deltav = $v - $v2;
+			next if $deltav < 0;
+			$shortterm_delta{$k} = $deltav / $deltat;
+		}
+	}
+	my %longterm_delta;
+	if( $longterm_origin ){
+		my $deltat = $now - $longterm_origin->{timestamp};
+		while( my ($k, $v) = each %$curr ){
+			my $v2 = $longterm_origin->{$k} // next;
+			my $deltav = $v - $v2;
+			next if $deltav < 0;
+			$longterm_delta{$k} = $deltav / $deltat;
+		}
+	}
+
+	return \%shortterm_delta, \%longterm_delta;
+}
+
+####
+
+my @category_rules;
+my $f = "$CONFDIR/agent/networktraffic.conf.$MEASURE.$HOST";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*($|#)";
+		die "$f:$.: illegal format, stopped" unless m"^(\w+)=(.*)$";
+		$LONGTERM_H = 0 + $2 if $1 eq 'LONGTERM_H';
+	}
+	close $h;
+}
+
+#### load detector conf. for agents
+my @ignore_rules;
+my $f = "$CONFDIR/agent/networktraffic.ignores.$MEASURE.$HOST";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)$";
+		push @ignore_rules, qr"^$2$";
+	}
+	close $h;
+}
+
+####
+# data
+my %d;
+my %lastd;
+my @history;
+
+# load curr data
+open my $h, '-|', "netstat -ibd" or do {
+	die "netstat: cannot execute, stopped";
+};
+my $ifname;
+my $mode;
+my $labels = <$h>;
+OUTSIDE:
+while( <$h> ){
+	chomp;
+	next unless m"^
+		(\S+)\s+
+		.*
+		\s+(-|\d+)
+		\s+(-|\d+)
+		\s+(-|\d+)
+		\s+(-|\d+)
+		\s+(-|\d+)
+		\s+(-|\d+)
+		\s+(-|\d+)
+		\s+(-|\d+)
+	$"x;
+	my $ifname = $1;
+	my $ipkts  = $2;
+	my $ierrs  = $3;
+	my $ibytes = $4;
+	my $opkts  = $5;
+	my $oerrs  = $6;
+	my $obytes = $7;
+	my $coll   = $8;
+	my $drop   = $9;
+
+	next if $ierrs eq '-';
+	foreach my $r ( @ignore_rules ){
+		next OUTSIDE if $ifname =~ $r;
+	}
+
+	$d{"link[$ifname]-rx-bytes-cnt"}   = nc $ibytes;
+	$d{"link[$ifname]-rx-packets-cnt"} = nc $ipkts;
+	$d{"link[$ifname]-rx-errors-cnt"}  = nc $ierrs;
+	$d{"link[$ifname]-tx-bytes-cnt"}   = nc $obytes;
+	$d{"link[$ifname]-tx-packets-cnt"} = nc $opkts;
+	$d{"link[$ifname]-tx-errors-cnt"}  = nc $oerrs;
+	$d{"link[$ifname]-tx-dropped-cnt"} = nc $drop;
+	$d{"link[$ifname]-tx-collsns-cnt"} = nc $coll;
+}
+close $h;
+
+my $longterm = sprintf "%dH", $LONGTERM_H;
+
+my ($shortd, $longd) = calc_delta "$WORKDIR/networktraffic.history", $LONGTERM_H, %d;
+foreach my $k ( keys %$shortd ){
+	my $shortv = $shortd->{$k};
+	my $longv = $longd->{$k};
+	die unless $k =~ m"-(\w+)-cnt$";
+	if( $1 eq 'bytes' ){
+		$d{"$`-throughput-mbps"} = n $shortv / 1000000 * 8;
+		$d{"longtermavg-of-$`-throughput-mbps"} = n $longv / 1000000 * 8;
+	}else{
+		$d{"$`-$1-ppm"} = n $shortv * 60;
+		$d{"longtermavg-of-$`-$1-ppm"} = n $longv * 60;
+	}
+}
+
+# output
+foreach my $k ( sort keys %d ){
+	my $v = $d{$k};
+	print "$k=$v\n";
+}
+
+exit 0;
+
+

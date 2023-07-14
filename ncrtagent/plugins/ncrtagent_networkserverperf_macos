@@ -1,0 +1,98 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 5 ){
+	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $MEASURE = $ARGV[2];
+our $HOST = $ARGV[3];
+our $SERVICE = $ARGV[4];
+
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+
+# data
+my %d;
+
+# netstats conf
+my %rules;
+my $f = "$CONFDIR/agent/networkserverperf.rules.$MEASURE.$HOST";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die "$f:$.: illegal format, stopped" unless m"^(\d+(?:,\d+)*)/(\w+)$";
+	my $ports = $1;
+	my $proto = $2;
+	die "$f:$.: unknown protocol, stopped" unless $proto =~ m"^(tcp|udp)$";
+	foreach my $port ( split ",", $ports ){
+		$rules{"$port/$proto"} = 1;
+	}
+}
+close $h;
+
+# netstat
+my %listen;
+my %connections;
+my %sendq;
+my %recvq;
+open my $h, '-|', "LANG=C netstat -anf inet" or do {
+	die "netstat: cannot execute, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^Active Internet connections \(including servers\)";
+	next if m"^Proto Recv-Q Send-Q  Local Address          Foreign Address        \(state\)";
+	next if m"^Active Multipath Internet connections";
+	next if m"^Proto/ID  Flags      Local Address          Foreign Address        \(state\)";
+
+	die "illegal format:$_, stopped" unless m"^(\S+)\s+(\d+)\s+(\d+)\s+(\S+)\.(\d+|\*)\s+(\S+)\.(\d+|\*)(?:\s+(\w+))?\s*$";
+	my $proto = $1;
+	my $recvq = $2;
+	my $sendq = $3;
+	my $localaddr = $4;
+	my $localport = $5;
+	my $foreignaddr = $6;
+	my $foreignport = $7;
+	my $state = $8;
+
+	$proto = 'tcp' if $proto eq 'tcp4';
+	$proto = 'tcp' if $proto eq 'tcp6';
+	$proto = 'tcp' if $proto eq 'tcp46';
+	$proto = 'udp' if $proto eq 'udp4';
+	$proto = 'udp' if $proto eq 'udp6';
+	$proto = 'udp' if $proto eq 'udp46';
+
+	my $p = "$localport/$proto";
+	next unless $rules{$p};
+	if( $foreignport eq '*' ){ $listen{$p}++; }
+	elsif( $state eq 'ESTABLISHED' ){ $connections{$p}++; }
+	$sendq{$p} += $sendq;
+	$recvq{$p} += $recvq;
+}
+close $h;
+
+#
+foreach my $port ( sort keys %rules ){
+	my $listen = $listen{$port};
+	my $connections = $connections{$port};
+	my $sendq = int $sendq{$port};
+	my $recvq = int $recvq{$port};
+
+	my $n = int $connections;
+	$n = -1 unless $listen;
+	print "port[$port]-conns=$n\n";
+	print "port[$port]-sendq=$sendq\n";
+	print "port[$port]-recvq=$recvq\n";
+}
+
+exit 0;
+

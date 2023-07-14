@@ -22,6 +22,8 @@
         ansible_become_user: ncrtagent
         ansible_become_method: sudo
         ansible_become_flags: -H -E
+      environment:
+        ALL_PROXY: "{{ansible_brew_proxy}}"
       loop:
         - cpanminus
         - rsync
@@ -55,11 +57,6 @@
         name: "{{item}}"
         installdeps: true
         locallib: "{{NCRTAGENTHOME}}"
-      vars:
-        #ansible_become: true
-        #ansible_become_user: ncrtagent
-        #ansible_become_method: sudo
-        #ansible_become_flags: -H -E
       environment:
         http_proxy: "{{ansible_cpanm_proxy}}"
       loop:
@@ -77,6 +74,8 @@
         rsync_opts: [ "-OJ", "--chown=root:wheel" ]
         src: "{{WORKDIR}}/ncrtagent/{{inventory_hostname}}/"
         dest: "{{NCRTAGENTHOME}}/conf/"
+      environment:
+        #PATH: /opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/X11/bin:/Library/Apple/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/homebrew/bin:/opt/homebrew/sbin
       notify: restart ncrtagent
       tags: [ common ]
 
