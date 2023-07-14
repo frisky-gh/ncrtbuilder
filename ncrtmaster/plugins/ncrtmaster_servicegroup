@@ -1570,10 +1570,12 @@ sub generate_html_of_page ($$$$$$){
 	write_plain "$d/index.html", $html;
 }
 
-sub download_panel_png_from_grafana ($) {
-	my ($url) = @_;
+sub download_panel_png_from_grafana ($$) {
+	my ($url, $param) = @_;
+	my $timespan = $$param{GRAPH_TIMESPAN}+0;
+	my $timeout  = $$param{GRAPH_TIMEOUT}+0;
 	my $ua = LWP::UserAgent->new;
-	my $req = HTTP::Request->new('GET' => "$url&from=now-6h&to=now");
+	my $req = HTTP::Request->new('GET' => "${url}&timeout=${timeout}&from=now-${timeout}m&to=now");
 	$req->header( Authorization => "Bearer $GRAFANAAPIKEY" );
 	debuglog "grafana: url=%s, requesting...", $url;
 	my $res = $ua->request($req);
@@ -1632,8 +1634,8 @@ sub update_perf2graphs_cache ($$) {
 	}
 }
 
-sub generate_graphs_of_page ($$$) {
-	my ($session, $perf2graphs_cache, $hilighted_perfnames) = @_;
+sub generate_graphs_of_page ($$$$) {
+	my ($session, $perf2graphs_cache, $hilighted_perfnames, $param) = @_;
 	my $d = "$SESSIONDIR/sess_$session";
 
 	my $t = time;
@@ -1651,7 +1653,7 @@ sub generate_graphs_of_page ($$$) {
 			my $url = $$graph{url} or next;
 			debuglog "    panel_id:%d", $id;
 			debuglog "    performance name in NG: %s.", $name;
-			my $png = download_panel_png_from_grafana $url;
+			my $png = download_panel_png_from_grafana $url, $param;
 			my $f = "$host_encoded,$service_encoded,$id.png";
 			write_plain "$d/$f", $png;
 		}
@@ -1905,7 +1907,7 @@ if $last_session ne '' || $session ne '';
 		$sessionupdatetime = $now;
 		output_to_pageupdatequeue $session, [
 			$sg, $session,
-			$highlighted_services, $highlighted_perfs
+			$highlighted_services, $highlighted_perfs, {}
 		];
 		$sgstate_has_been_updated = 1;
 
@@ -1917,7 +1919,7 @@ if $last_session ne '' || $session ne '';
 			$last_session, undef, $expire_timespan;
 		output_to_pageupdatequeue $session, [
 			$sg, $session,
-			$highlighted_services, $highlighted_perfs
+			$highlighted_services, $highlighted_perfs, {}
 		];
 		$sgstate_has_been_updated = 1;
 		$trashbox_has_been_updated = 1;
@@ -1929,7 +1931,7 @@ if $last_session ne '' || $session ne '';
 		$sessionupdatetime = $now;
 		output_to_pageupdatequeue $session, [
 			$sg, $session,
-			$highlighted_services, $highlighted_perfs
+			$highlighted_services, $highlighted_perfs, {}
 		];
 		$sgstate_has_been_updated = 1;
 
@@ -1942,7 +1944,7 @@ if $last_session ne '' || $session ne '';
 			$last_session, $session, $expire_timespan;
 		output_to_pageupdatequeue $session, [
 			$sg, $session,
-			$highlighted_services, $highlighted_perfs
+			$highlighted_services, $highlighted_perfs, {}
 		];
 		$sgstate_has_been_updated = 1;
 		$trashbox_has_been_updated = 1;
@@ -2065,11 +2067,20 @@ while( 1 ){
 my $now = time;
 my $perf2graphs_cache = {};
 
+my $confrules = load_confrules;
+
 while( 1 ){
 	my ($session, $qid, $entry) = hold_in_pageupdatequeue;
 	last unless defined $session;
 	next if fork;
-	my ($sg, $session, $highlighted_services, $highlighted_perfs) = @$entry;
+	my (
+		$sg, $session, $highlighted_services, $highlighted_perfs,
+		$param
+	) = @$entry;
+
+	my ($src_param, undef, undef) = apply_confrules $confrules, $sg;
+	$$param{GRAPH_TIMESPAN} //= $$src_param{GRAPH_TIMESPAN} // 360;
+	$$param{GRAPH_TIMEOUT}  //= $$src_param{GRAPH_TIMEOUT}  // 5;
 
 	# Typically, session pages are refreshed every five minutes.
 	# However, pages are not always refreshed.
@@ -2091,7 +2102,7 @@ while( 1 ){
 		my $r = 1;
 		update_perf2graphs_cache $perf2graphs_cache, $highlighted_perfs;
 		generate_graphs_of_page $session,
-			$perf2graphs_cache, $highlighted_perfs;
+			$perf2graphs_cache, $highlighted_perfs, $param;
 		generate_html_of_page $sg, $session,
 			$highlighted_services, $highlighted_perfs,
 			$perf2graphs_cache, $now;
