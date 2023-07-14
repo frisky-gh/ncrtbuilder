@@ -29,6 +29,7 @@ our $MASTERCONFDIR = "$TOOLHOME/ncrtmaster/conf";
 my $workdir;
 my $master_only;
 my $agent_only;
+my $target_agent = qr"^.*$";
 my $threshold_only;
 my $dryrun;
 my $quick;
@@ -37,6 +38,7 @@ GetOptions (
 	'workdir=s' => \$workdir,
 	'master-only' => \$master_only,
 	'agent-only' => \$agent_only,
+	'target-agent=s' => sub { my $re = $_[1]; $target_agent = qr"^$re$"; },
 	'threshold-only' => \$threshold_only,
 	'no-cleanup' => \$no_cleanup,
 	'dryrun' => \$dryrun,
@@ -1540,8 +1542,8 @@ sub hash2yaml ($) {
 	return "{" . join(", ", @params) . "}";
 }
 
-sub generate_hosts_yml ($$$) {
-	my ($name, $hosttype2hosts, $host2params) = @_;
+sub generate_hosts_yml ($$$$) {
+	my ($name, $hosttype2hosts, $host2params, $regexp) = @_;
 
 	my $hosts_yml = "$WORKDIR/$name.yml";
 	open my $h, '>', $hosts_yml or do {
@@ -1561,6 +1563,7 @@ sub generate_hosts_yml ($$$) {
 			"    $hosttype.__HOSTTYPE__:\n",
 			"      hosts:\n";
 		foreach my $host ( sort @$hosts ){
+			next unless $host =~ $regexp;
 			my $yaml_hash = hash2yaml $$host2params{$host};
 			print $h "        $host: $yaml_hash\n";
 		}
@@ -1667,7 +1670,8 @@ unless( $quick ){
 }
 
 #### run ansible for nagios master
-generate_hosts_yml 'master_hosts', {'linux'=>[@ncrtmasters]}, {};
+generate_hosts_yml 'master_hosts', {'linux'=>[@ncrtmasters]}, {},
+	qr"^.*$";
 generate_playbook 'build_ncrtmaster', ['linux'];
 
 my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -t \"%s\"",
@@ -1687,7 +1691,8 @@ my @agenttypes;
 foreach my $i ( @agenttype_plugins ){
 	push @agenttypes, $1 if $i =~ m"^ncrtbuild_agenttype_(\w+)$";
 }
-generate_hosts_yml 'agent_hosts', \%agenttype2hosts, \%host2params;
+generate_hosts_yml 'agent_hosts', \%agenttype2hosts, \%host2params,
+	$target_agent;
 generate_playbook 'build_ncrtagent', \@agenttypes;
 
 my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -t \"%s\"",
