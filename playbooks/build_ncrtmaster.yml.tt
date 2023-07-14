@@ -3,7 +3,7 @@
 - hosts: all
   vars:
     repository:
-      Debian: "deb http://labs.consol.de/repo/stable/debian {{ansible_distribution_release}} main"
+      Debian: "deb http://labs.consol.de/repo/stable/debian {{ansible_distribution_release if ansible_distribution_release != 'bookworm' else 'bullseye' }} main"
       Ubuntu: "deb http://labs.consol.de/repo/stable/ubuntu {{ansible_distribution_release}} main"
 
   tasks:
