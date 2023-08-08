@@ -1575,7 +1575,7 @@ sub download_panel_png_from_grafana ($$) {
 	my $timespan = $$param{GRAPH_TIMESPAN}+0;
 	my $timeout  = $$param{GRAPH_TIMEOUT}+0;
 	my $ua = LWP::UserAgent->new;
-	my $req = HTTP::Request->new('GET' => "${url}&timeout=${timeout}&from=now-${timeout}m&to=now");
+	my $req = HTTP::Request->new('GET' => "${url}&timeout=${timeout}&from=now-${timespan}m&to=now");
 	$req->header( Authorization => "Bearer $GRAFANAAPIKEY" );
 	debuglog "grafana: url=%s, requesting...", $url;
 	my $res = $ua->request($req);
