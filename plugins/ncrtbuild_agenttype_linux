@@ -77,7 +77,7 @@ my $f = "$WORKDIR/agenttypes";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "linux	display_name=Linux:%hostname% address=%hostname%\n";
+print $h "linux	display_name=Linux:%hostname% address=%hostname% check_command=ncrtmaster_ping\n";
 close $h;
 
 #### generate ncrtagent.conf
