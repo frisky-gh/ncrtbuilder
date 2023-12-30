@@ -6,6 +6,10 @@
       debug:
         msg: ncrtbuild_agenttype_windows.yml...
 
+    - name: set ExecutionPolicy
+      win_shell: try { Set-ExecutionPolicy -Scope CurrentUser Bypass -force } catch { if ($_.FullyQualifiedErrorId -ne 'ExecutionPolicyOverride,Microsoft.PowerShell.Commands.SetExecutionPolicyCommand') { throw } }; exit 0
+      tags: [ commoninstall ]
+
     - name: install NsClient++
       win_chocolatey:
         name: nscp
@@ -166,6 +170,14 @@
       win_copy:
         src:  "{{TOOLHOME}}/conf/agenttype/windows.dh2048.pem"
         dest: 'C:\Program Files\NSClient++\security\nrpe_dh_2048.pem'
+      tags: [ commoninstall ]
+
+    - name: store cert
+      ansible.windows.win_certificate_store:
+        file_type:   pem
+        key_storage: user
+        store_name:  AuthRoot
+        path:        'C:\opt\ncrtagent\conf\windows.cert.pem'
       tags: [ commoninstall ]
 
   handlers:

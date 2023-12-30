@@ -213,7 +213,7 @@ sub ping_by_ncrtprotocol ($$) {
 	my ($host, $param) = @_;
 
 	####
-	my $timeout = $$param{timeout}       // 50;
+	my $timeout = $$param{timeout}       // 20;
 	my $address = $$param{agent_address} // $host;
 	my $port    = $$param{agent_port}    // "46848";
 
@@ -233,7 +233,7 @@ sub ping_by_nrpeprotocol ($$) {
 	my ($host, $param) = @_;
 
 	####
-	my $timeout = $$param{timeout}       // 50;
+	my $timeout = $$param{timeout}       // 20;
 	my $address = $$param{agent_address} // $host;
 	my $port    = $$param{agent_port}    // "5666";
 	my $nrpever = $$param{agent_nrpever} // 2;

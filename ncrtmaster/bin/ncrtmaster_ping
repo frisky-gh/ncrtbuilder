@@ -39,7 +39,7 @@ my $param = $$host2param{$host};
 
 unless( ping_to_agent $host, $param ){
 	print "NG\n";
-	exit 1;
+	exit 2;
 }
 
 print "OK\n";

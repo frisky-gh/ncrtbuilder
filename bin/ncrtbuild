@@ -605,6 +605,7 @@ foreach my $h ( @ncrtagents ){
 my %agenttype2opts         = ( 'virtual' => {
 	'display_name' => 'Virtual:%hostname%',
 	'address' => '127.0.0.1',
+	'check_command' => 'ncrtmaster_do_nothing',
 } );
 my %agenttype2templateopts = ( 'virtual' => {
 } );
@@ -1336,7 +1337,6 @@ if( $plan{step7} ){
 		"define host {\n",
 		"	name			ncrt-agenttype-$agenttype\n",
 		"	use			ncrt-generic-host\n",
-		"	check_command		ncrtmaster_ping\n",
 		@settings,
 		"	register		0\n",
 		"}\n";

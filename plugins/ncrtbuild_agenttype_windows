@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
+use Cwd 'abs_path';
 
 if( @ARGV < 2 ){
 	print "usage: % $0 CONFDIR WORKDIR\n";
@@ -9,6 +10,40 @@ if( @ARGV < 2 ){
 
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
+
+$0 =~ m"^(.*)/";
+our $TOOLHOME = abs_path "$1/..";
+while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+$TOOLHOME =~ s{/$}{};
+our $AGENTCONFDIR   = "$TOOLHOME/ncrtagent/conf";
+our $AGENTPLUGINDIR = "$TOOLHOME/ncrtagent/plugin";
+
+####
+sub system_or_die ($) {
+	my ($cmd) = @_;
+	my $r = system $cmd;
+	if   ($? == -1){
+		die sprintf "%s: failed to execute: %d, stopped",
+			$cmd, $!;
+	}elsif($? & 127){
+		die sprintf "%s: child died with signal %d, %s coredump, stopped",
+			$cmd, ($? & 127), ($? & 128) ? 'with' : 'without';
+	}elsif( ($?>>8) != 0){
+		die sprintf "%s: child exited with value %d, stopped",
+			$cmd, $? >> 8;
+	}
+}
+
+sub original_is_newer_than_signed ($$) {
+	my ($orig, $signed) = @_;
+	return undef unless -f "$TOOLHOME/$orig";
+	return 1     unless -f "$TOOLHOME/$signed";
+	my @orig_stat    = stat "$TOOLHOME/$orig";
+	my $orig_mtime   = $orig_stat[9];
+	my @signed_stat  = stat "$TOOLHOME/$signed";
+	my $signed_mtime = $signed_stat[9];
+	return $orig_mtime > $signed_mtime;
+}
 
 #### load global conf.
 my %ncrtconf;
@@ -79,7 +114,7 @@ my $f = "$WORKDIR/agenttypes";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "windows	display_name=Windows:%hostname% address=%hostname%\n";
+print $h "windows	display_name=Windows:%hostname% address=%hostname% check_command=ncrtmaster_ping\n";
 close $h;
 
 #### generate ncrtagent.conf
@@ -89,7 +124,7 @@ my $conf = "$CONFDIR/agenttype/windows.openssl.conf";
 my $cert = "$CONFDIR/agenttype/windows.cert.pem";
 my $key  = "$CONFDIR/agenttype/windows.key.pem";
 if( -f $conf && ! -f $cert && ! -f $key ){
-	system "openssl req -x509 -nodes -days 3650 -newkey rsa:2048"
+	system_or_die "openssl req -x509 -nodes -days 3650 -newkey rsa:2048"
 		. " -config $conf"
 		. " -subj '/CN=ncrtagent_windows'"
 		. " -outform PEM -out $cert -keyout $key";
@@ -98,6 +133,32 @@ if( -f $conf && ! -f $cert && ! -f $key ){
 #### generate dhparam file.
 my $dhparam = "$CONFDIR/agenttype/windows.dh2048.pem";
 if( ! -f $dhparam ){
-	system "openssl dhparam -out $dhparam -outform PEM 2048";
+	system_or_die "openssl dhparam -out $dhparam -outform PEM 2048";
 }
+
+#### copy selfsigned cert into Windows
+
+system_or_die "cp $cert $AGENTCONFDIR/windows.cert.pem";
+
+
+#### sign plugin ps1 scripts
+#my $d = "$TOOLHOME/ncrtagent/plugins";
+#opendir my $h, $d or do {
+#	die "$d: cannot open, stopped";
+#};
+#while( my $e = readdir $h ){
+#	next unless $e =~ m"^ncrtagent_(\w+)_windows\.ps1$";
+#	my $f = "ncrtagent_${1}_windows_signed.ps1";
+#	next unless original_is_newer_than_signed $e, $f;
+#	system_or_die "cp $d/$e $d/$f";
+#	open my $i, ">>", "$d/$f" or do {
+#		die "$d/$f: cannot open, stopped";
+#	};
+#	print $i "# SIG # Begin signature block\n";
+#	# TODO: sign a target script.
+#	print $i "# SIG # End signature block\n";
+#	close $i;
+#}
+#close $h;
+
 
