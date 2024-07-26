@@ -3,7 +3,7 @@
 - hosts: all
   vars:
     repository:
-      Debian: "deb http://labs.consol.de/repo/stable/debian {{ansible_distribution_release if ansible_distribution_release != 'bookworm' else 'bullseye' }} main"
+      Debian: "deb [signed-by=/etc/apt/keyrings/naemon.asc] https://download.opensuse.org/repositories/home:/naemon/Debian_{{ansible_distribution_major_version}}/ ./"
       Ubuntu: "deb http://labs.consol.de/repo/stable/ubuntu {{ansible_distribution_release}} main"
 
   tasks:
@@ -34,18 +34,18 @@
 
     ## Grafana (install)
     - name: add repository key for grafana
-      apt_key:
-        data: "{{ lookup('file', '[%=TOOLHOME _ "/playbooks/grafana.asc"%]') }}"
-        keyring: /etc/apt/trusted.gpg.d/grafana.gpg
+      copy:
+        src:     "{{TOOLHOME}}/playbooks/grafana.asc"
+        dest:    /etc/apt/keyrings/grafana.asc
+        owner:   root
+        group:   root
       when: "ansible_os_family == 'Debian'"
-      no_log: True
       tags: [ commoninstall ]
 
     - name: add repository for grafana
       apt_repository:
-        repo: deb https://apt.grafana.com stable main
+        repo: "deb [signed-by=/etc/apt/keyrings/grafana.asc] https://apt.grafana.com stable main"
       when: "ansible_os_family == 'Debian'"
-      no_log: True
       tags: [ commoninstall ]
 
     - name: install packages for grafana
@@ -56,11 +56,12 @@
 
     ## Naemon (install)
     - name: add repository key
-      apt_key:
-        data: "{{ lookup('file','[%=TOOLHOME _ "/playbooks/naemon.asc"%]') }}"
-        keyring: /etc/apt/trusted.gpg.d/naemon.gpg
+      copy:
+        src:     "{{TOOLHOME}}/playbooks/naemon.asc"
+        dest:    /etc/apt/keyrings/naemon.asc
+        owner:   root
+        group:   root
       when: "ansible_os_family == 'Debian'"
-      no_log: True
       tags: [ commoninstall ]
 
     - name: add naemon repository
@@ -130,9 +131,9 @@
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
-    - name: install packages required by naemon2influx
+    - name: install packages required by naemon2influx / grafana-dashboard-helper
       apt:
-        name: [ libwww-perl ]
+        name: [ libhttp-daemon-perl , libwww-perl ]
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
