@@ -55,7 +55,7 @@
       tags: [ commoninstall ]
 
     ## Naemon (install)
-    - name: add repository key
+    - name: add Naemon repository key
       copy:
         src:     "{{TOOLHOME}}/playbooks/naemon.asc"
         dest:    /etc/apt/keyrings/naemon.asc
@@ -64,13 +64,13 @@
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
-    - name: add naemon repository
+    - name: add Naemon repository
       apt_repository:
         repo: "{{ repository[ansible_distribution] }}"
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
-    - name: install naemon and dependancies
+    - name: install Naemon and dependancies
       apt:
         name:
           - naemon
@@ -295,7 +295,7 @@
         - key:   password
           value: "{{INFLUXDBPASSWD}}"
         - key:   perfformat
-          value: "time	label	label	tag=state	data"
+          value: "time	label	label	blank	data"
       tags: [ common ]
 
     - name: setup grafana-dashboard-helper settings

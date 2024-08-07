@@ -21,13 +21,7 @@
     - name: install EPEL repository
       yum:
         name:
-          - oracle-epel-release-el7
-          - perl-HTTP-Daemon
-          - perl-LWP-Protocol-https
-          - perl-Template-Toolkit
-          - perl-Time-Piece
-          - perl-JSON-PP
-          - nagios-plugins-nrpe
+          - oracle-epel-release-el9
       when: "ansible_os_family == 'RedHat' and ansible_distribution == 'OracleLinux'"
       tags: [ commoninstall ]
 
@@ -36,19 +30,42 @@
       yum:
         name:
           - epel-release
+      when: "ansible_os_family == 'RedHat' and ansible_distribution != 'OracleLinux'"
+      tags: [ commoninstall ]
+
+    #### for RedHat families
+    - name: enable EPEL repositories
+      yum_repository:
+        name:    "{{item}}"
+        enabled: true
+      with_items:
+        - epel
+        - crb
+      when: ansible_os_family == 'RedHat'
+
+    - name: install packages for nrpe plugins
+      yum:
+        name:
+          - initscripts
           - perl-HTTP-Daemon
           - perl-LWP-Protocol-https
           - perl-Template-Toolkit
           - perl-Time-Piece
           - perl-JSON-PP
-      when: "ansible_os_family == 'RedHat' and ansible_distribution != 'OracleLinux'"
+          - nagios-plugins-nrpe
+          - nagios-plugins-nrpe
+          - perl-Template-Toolkit
+      when:
+        - ansible_os_family == 'RedHat'
       tags: [ commoninstall ]
 
-    - name: install packages for nrpe plugins
+    - name: install packages for nrpe plugins (RHEL9)
       yum:
-        name: [ nagios-plugins-nrpe ]
-        enablerepo: epel
-      when: "ansible_os_family == 'RedHat' and ansible_distribution != 'OracleLinux'"
+        name:
+          - perl-English
+      when:
+        - ansible_os_family == 'RedHat'
+        - ansible_distribution_major_version == "9"
       tags: [ commoninstall ]
 
     #### for All Distros
@@ -108,6 +125,16 @@
         state: started
       when: "ansible_os_family in ['Debian', 'RedHat']"
       tags: [ commoninstall ]
+
+    - name: open port
+      firewalld:
+        port:      "{{AGENTTYPE_LINUX_FIREWALLD_PORT}}/tcp"
+        immediate: true
+        permanent: true
+        state:     enabled
+      when: "AGENTTYPE_LINUX_FIREWALLD_PORT is defined and AGENTTYPE_LINUX_FIREWALLD_PORT != ''"
+      tags: [ commoninstall ]
+
 
   handlers:
     - name: reload systemd settings
