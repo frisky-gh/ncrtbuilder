@@ -114,7 +114,7 @@ my $f = "$WORKDIR/agenttypes";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "windows	display_name=Windows:%hostname% address=%hostname% check_command=ncrtmaster_ping\n";
+print $h "windows	display_name=Windows:<hostname> address=<hostname> check_command=ncrtmaster_ping\n";
 close $h;
 
 #### generate ncrtagent.conf
@@ -138,7 +138,7 @@ if( ! -f $dhparam ){
 
 #### copy selfsigned cert into Windows
 
-system_or_die "cp $cert $AGENTCONFDIR/windows.cert.pem";
+system_or_die "cp $cert $AGENTCONFDIR/windows.cert.pem" if -f $cert;
 
 
 #### sign plugin ps1 scripts

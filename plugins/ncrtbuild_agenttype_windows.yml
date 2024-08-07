@@ -172,13 +172,13 @@
         dest: 'C:\Program Files\NSClient++\security\nrpe_dh_2048.pem'
       tags: [ commoninstall ]
 
-    - name: store cert
-      ansible.windows.win_certificate_store:
-        file_type:   pem
-        key_storage: user
-        store_name:  AuthRoot
-        path:        'C:\opt\ncrtagent\conf\windows.cert.pem'
-      tags: [ commoninstall ]
+#    - name: store cert
+#      ansible.windows.win_certificate_store:
+#        file_type:   pem
+#        key_storage: user
+#        store_name:  AuthRoot
+#        path:        'C:\opt\ncrtagent\conf\windows.cert.pem'
+#      tags: [ commoninstall ]
 
   handlers:
     - name: restart nsclient
