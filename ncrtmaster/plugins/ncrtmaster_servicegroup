@@ -81,11 +81,13 @@ our $GRAFANAORGID = $conf{GRAFANAORGID} // 1;
 
 # grafana-dashboard-helper url
 our $HELPERURL = $conf{HELPERURL} // "http://example.com/grafana-dashboard-helper";
+our $HELPERURL_JUMP_TO_DASHBOARD = $conf{HELPERURL_JUMP_TO_DASHBOARD} //
+	"http://example.com/grafana-dashboard-helper/jump_to_dashboard.html?dashboard=<hostname>,<servicedesc>";
+our $HELPERURL_SEARCH_PANELS = $conf{HELPERURL_SEARCH_PANELS} //
+	"http://example.com/grafana-dashboard-helper/search_panels.json?retention_policy=autogen&measurement=<hostname>.<servicedesc>&field_key=<performancename>";
 
 # semaphore is expired after 30 min.
 our $SEMAPHORETIMESPAN = $conf{SEMAPHORETIMESPAN} // 30*60;
-
-
 
 ####
 sub ns ($) {
@@ -198,6 +200,16 @@ sub path_decode ($) {
 	my ($text) = @_;
 	$text =~ s{%([0-9a-fA-F]{2})}{pack('H2', $1);}eg;
 	return $text;
+}
+
+sub expand_named_placeholders ($%) {
+	my ($string, %params) = @_;
+	$string =~ s{
+		(?: < (\w+) > )
+	}{
+		if   ( $1 ne '' ){ $params{$1}; }
+	}egx;
+	return $string;
 }
 
 #### load conf rules for each servicegroups.
@@ -1584,20 +1596,21 @@ sub download_panel_png_from_grafana ($$) {
 	return $res->content;
 }
 
-sub query_panels_to_grafana_dashboard_helper ($$) {
-	my ($host, $service ) = @_;
+sub query_panels_to_grafana_dashboard_helper ($$$) {
+	my ($host, $service, $performancename) = @_;
 	my $ua = LWP::UserAgent->new;
-	my $server_endpoint = sprintf
-		'%s/dashboard_info.js?hostname=%s&servicedesc=%s',
-		$HELPERURL, $host, $service;
+	my $server_endpoint = expand_named_placeholders $HELPERURL_SEARCH_PANELS,
+		'hostname'        => $host,
+		'servicedesc'     => $service,
+		'performancename' => $performancename;
 	my $req = HTTP::Request->new('GET' => $server_endpoint);
 	debuglog "grafana-dashboard-helper: url=%s, requesting...", $server_endpoint;
 	my $res = $ua->request($req);
 	return undef unless $res->code eq '200';
-	my $obj;
-	eval { $obj = decode_json $res->content; };
+	my $objs;
+	eval { $objs = decode_json $res->content; };
 	return undef if $@;
-	return $$obj{panels};
+	return $objs;
 }
 
 sub update_perf2graphs_cache ($$) {
@@ -1609,23 +1622,25 @@ sub update_perf2graphs_cache ($$) {
 			die "$name: stopped";
 		}
 		my ($measure, $host, $service, $perfname) = ($1, $2, $3, $4);
-		my $host_encoded    = path_encode $host;
-		my $service_encoded = path_encode $service;
+		my $host_encoded     = path_encode $host;
+		my $service_encoded  = path_encode $service;
+		my $perfname_encoded = path_encode $perfname;
 		my $panels = query_panels_to_grafana_dashboard_helper
-			$host_encoded, $service_encoded;
-		foreach my $panel ( @{$panels // []} ){
-			my $id = $$panel{id};
+			$host_encoded, $service_encoded, $perfname_encoded;
+		foreach my $panel ( @$panels ){
+			my $panel_name  = $$panel{panel_name};
+			my $field_names = $$panel{field_names};
+			my ($dashboard_name, $panel_id) = split m"\x1c", $panel_name;
 			my $i = {
-				title => $$panel{title},
-				id    => $id,
-				url   => $$panel{url},
+				title => $$panel{panel_title},
+				id    => $$panel{panel_id},
+				url   => $$panel{panel_url},
 				perfs => $$panel{performancenames},
-				name  => "$host_encoded,$service_encoded,$id",
+				name  => "$host_encoded,$service_encoded,$panel_id",
+
+				dashboard_name  => $dashboard_name,
 			};
-			foreach my $p ( @{$$panel{performancenames} // []} ){
-				my $k = "$measure:$host:$service:$p";
-				push @{$$perf2graphs_cache{$k}}, $i;
-			}
+			push @{$$perf2graphs_cache{$name}}, $i;
 		}
 
 		unless( defined $$perf2graphs_cache{$name} ){
