@@ -31,3 +31,8 @@ INFLUXDBADMINPASSWD=XXXXXXXX
 INFLUXDBUSER=ncrt
 INFLUXDBPASSWD=XXXXXXXX
 
+#### Grafana Dashboard Helper settings
+HELPERURL=https://example.com/grafana-dashboard-helper
+HELPERURL_JUMP_TO_DASHBOARD=https://example.com/grafana-dashboard-helper/jump_to_dashboard.html?dashboard=<hostname>,<servicedesc>
+HELPERURL_SEARCH_PANELS=https://example.com/grafana-dashboard-helper/search_panels.json?retention_policy=autogen&measurement=<hostname>.<servicedesc>&field_key=<performancename>
+
