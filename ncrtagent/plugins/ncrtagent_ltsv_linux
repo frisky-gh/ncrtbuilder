@@ -121,7 +121,7 @@ foreach my $rule ( @rules ){
 		my $format = $$option{timestamp_record_format};
 		my $t = 0;
 		eval {
-			$t = Time::Piece
+			$t = localtime
 				->strptime($var{$key}, $format)
 				->strftime("%s");
 		};
