@@ -22,7 +22,24 @@
       yum:
         name:
           - oracle-epel-release-el9
-      when: "ansible_os_family == 'RedHat' and ansible_distribution == 'OracleLinux'"
+        enablerepo:
+          - ol9_baseos_latest
+      when:
+        - "ansible_os_family == 'RedHat'"
+        - "ansible_distribution == 'OracleLinux'"
+        - "ansible_distribution_major_version == '9'"
+      tags: [ commoninstall ]
+
+    - name: install EPEL repository
+      yum:
+        name:
+          - oracle-epel-release-el8
+        enablerepo:
+          - ol8_baseos_latest
+      when:
+        - "ansible_os_family == 'RedHat'"
+        - "ansible_distribution == 'OracleLinux'"
+        - "ansible_distribution_major_version == '8'"
       tags: [ commoninstall ]
 
     #### for RedHat / CentOS
@@ -30,18 +47,40 @@
       yum:
         name:
           - epel-release
-      when: "ansible_os_family == 'RedHat' and ansible_distribution != 'OracleLinux'"
+      when:
+        - "ansible_os_family == 'RedHat'"
+        - "ansible_distribution != 'OracleLinux'"
       tags: [ commoninstall ]
 
     #### for RedHat families
-    - name: enable EPEL repositories
-      yum_repository:
-        name:    "{{item}}"
-        enabled: true
+#    - name: enable EPEL repositories
+#      yum_repository:
+#        name:    "{{item}}"
+#        enabled: true
+#      with_items:
+#        - epel
+#        - crb
+#      when: ansible_os_family == 'RedHat'
+#      tags: [ commoninstall ]
+
+    - name: enable EPEL repositories (for RHEL7/8 family)
+      shell: "yum-config-manager --enable {{item}}"
       with_items:
         - epel
+      when:
+        - "ansible_os_family == 'RedHat'"
+        - "ansible_distribution != 'OracleLinux'"
+      tags: [ commoninstall ]
+
+    - name: enable EPEL repositories (for RHEL9 family)
+      shell: "yum-config-manager --enable {{item}}"
+      with_items:
         - crb
-      when: ansible_os_family == 'RedHat'
+      when:
+        - "ansible_os_family == 'RedHat'"
+        - "ansible_distribution != 'OracleLinux'"
+        - "ansible_distribution_major_version == '9'"
+      tags: [ commoninstall ]
 
     - name: install packages for nrpe plugins
       yum:
@@ -55,6 +94,7 @@
           - nagios-plugins-nrpe
           - nagios-plugins-nrpe
           - perl-Template-Toolkit
+          - net-tools
       when:
         - ansible_os_family == 'RedHat'
       tags: [ commoninstall ]
@@ -88,7 +128,7 @@
         rsync_opts: [ "-OJ", "--chown=root:root", "--exclude=/filters/" ]
         src: "{{TOOLHOME}}/ncrtagent/"
         dest: "{{NCRTAGENTHOME}}/"
-      tags: [ common ]
+      tags: [ commoninstall, common ]
 
     - name: setup filters
       synchronize:
@@ -96,7 +136,7 @@
         rsync_opts: [ "-OJ", "--chown=root:root" ]
         src: "{{TOOLHOME}}/filters/"
         dest: "{{NCRTAGENTHOME}}/filters/"
-      tags: [ common ]
+      tags: [ commoninstall, common ]
 
     - name: setup settings in ncrt agent
       synchronize:
@@ -106,7 +146,7 @@
         src: "{{WORKDIR}}/ncrtagent/{{inventory_hostname}}/"
         dest: "{{NCRTAGENTHOME}}/conf/"
       notify: restart ncrtagent
-      tags: [ common ]
+      tags: [ commoninstall, common ]
 
     - name: setup ncrtagent_linux
       file:
@@ -126,13 +166,21 @@
       when: "ansible_os_family in ['Debian', 'RedHat']"
       tags: [ commoninstall ]
 
-    - name: open port
+    - name: inspect firewalld service status
+      ansible.posix.firewalld_info:
+        active_zones: true
+      failed_when: false
+      register: firewalld_info
+
+    - name: open port (if firewalld is enabled)
       firewalld:
         port:      "{{AGENTTYPE_LINUX_FIREWALLD_PORT}}/tcp"
         immediate: true
         permanent: true
         state:     enabled
-      when: "AGENTTYPE_LINUX_FIREWALLD_PORT is defined and AGENTTYPE_LINUX_FIREWALLD_PORT != ''"
+      when:
+        - "firewalld_info is defined"
+        - "AGENTTYPE_LINUX_FIREWALLD_PORT is defined and AGENTTYPE_LINUX_FIREWALLD_PORT != ''"
       tags: [ commoninstall ]
 
 
