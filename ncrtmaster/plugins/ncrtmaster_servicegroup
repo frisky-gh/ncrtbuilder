@@ -292,7 +292,7 @@ sub write_plain ($$) {
 	open my $h, '>', $f or do {
 		die "$f: cannot open, stopped";
 	};
-	print $h $html;
+	print $h encode_utf8($html);
 	close $h;
 }
 
@@ -2084,6 +2084,7 @@ my $perf2graphs_cache = {};
 
 my $confrules = load_confrules;
 
+$SIG{CHLD} = 'IGNORE';
 while( 1 ){
 	my ($session, $qid, $entry) = hold_in_pageupdatequeue;
 	last unless defined $session;
@@ -2106,6 +2107,7 @@ while( 1 ){
 	# allowed.
 
 	unless( start_criticalsection_of_page $session ){
+		sleep 10;
 		errorlog "page_update: ERROR: cannot start criticalsection, " .
 			"session=%s", $session;
 		unhold_in_pageupdatequeue $qid;
