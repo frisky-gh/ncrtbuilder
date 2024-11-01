@@ -59,7 +59,7 @@ while( <$h> ){
 close $h;
 
 #### append hosts info.
-my $f = "$WORKDIR/hosts";
+my $f = "$WORKDIR/agenthosts";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };

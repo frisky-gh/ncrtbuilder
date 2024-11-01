@@ -1,0 +1,193 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+#### load global conf.
+my %ncrtconf;
+my $f = "$CONFDIR/ncrtbuild.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\w+)=(.*)$";
+	$ncrtconf{$1} = $2;
+}
+close $h;
+my $masterhome = $ncrtcpmf{NCRTMASTERHOME} // "/opt/ncrtmaster";
+
+#### load docker conf.
+my %targets;
+my %default = (
+);
+my $f = "$CONFDIR/mastertype/docker.hosts";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\*|[-.\w]+)((\s+\w+=\S*)*)$";
+	my $host = $1;
+	my %param;
+	foreach my $kv ( split m"\s+", $2 ){
+		next unless $kv =~ m"^(\w+)=(.*)$";
+		$param{$1} = $2;
+	}
+
+	if( $host eq "*" ){
+		%default = %param;
+	}else{
+		$targets{$host} = { %default, %param };
+	}
+}
+close $h;
+
+my %server_settings = (
+#	'GRAFANA_ADMIN'       => 'ncrt_gfadmin',
+#	'GRAFANA_ADMINPASSWD' => 'XXXXSECRETXXXX',
+	'GRAFANA_ADMINEMAIL'  => 'ncrt_gfadmin@example.com',
+#	'GRAFANA_USER'        => 'ncrt_gfuser',
+#	'GRAFANA_USERPASSWD'  => 'XXXXSECRETXXXX',
+	'GRAFANA_USEREMAIL'   => 'ncrt_gfuser@example.com',
+#	'GRAFANA_ORG'         => 'ncrt_gforg',
+#	'GRAFANA_ORGID'       => '1',
+#	'GRAFANA_TOKEN'       => '',
+#	'GRAFANA_DATASOURCE'  => 'influxdb',
+#	'GRAFANA_DB'          => 'ncrt_gfdb',
+
+#	'INFLUXDB_USER'       => 'ncrt_ifxuser',
+#	'INFLUXDB_PASSWD'     => 'XXXXSECRETXXXX',
+#	'INFLUXDB_ORG'        => 'ncrt_ifxorg',
+#	'INFLUXDB_BUCKET'     => 'ncrt_bucket',
+#	'INFLUXDB_OPTIONALBUCKET' => 'ncrt_optional',
+#	'INFLUXDB_ARCHIVEBUCKET'  => 'ncrt_archive',
+#	'INFLUXDB_TOKEN'      => 'ncrt_ifxtoken',
+
+	'DATADIR'            => "$masterhome/containerdata",
+	'MANAGE_GRAFANA'     => '1',
+	'MANAGE_INFLUXDB'    => '1',
+	'OUTSIDE_PREFIX'     => 'http://example.com/',
+	'OUTSIDE_PORT'       => '80',
+	'APACHE_PREFIX'      => '/',
+	'PROXY'              => '',
+);
+my $f = "$CONFDIR/mastertype/docker.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die "$f:$.: illegal format, stopped"  unless m"^(\w+)=(.*)$";
+	die "$f:$.: unknown setting, stopped" unless exists $server_settings{$1};
+	$server_settings{$1} = $2;
+}
+close $h;
+
+my %users;
+my $f = "$WORKDIR/users";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die "$f:$.: illegal format, stopped"  unless m"^(\S+)((\s+(\w+)=(\S*))*)\s*$";
+	my $user = $1;
+	my %profiles;
+	foreach my $k_v ( split m"\s+", $2 ){
+		next unless $k_v =~ m"^(\w+)=(\S*)$";
+		$profiles{$1} = $2;
+	}
+	unless( defined $profiles{password} ){
+		$profiles{password} = `head -c 9 /dev/urandom | base64`;
+		chomp $profiles{password};
+	}
+	unless( defined $profiles{email} ){
+		$profiles{email} = "grafana-user+$user\@example.com";
+	}
+	$users{$user} = \%profiles;
+}
+close $h;
+
+#### append masterhosts info.
+my $f = "$WORKDIR/masterhosts";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($k, $v) = each %targets ){
+	my @param;
+	while( my ($k, $v) = each %$v ){
+		push @param, "$k=$v";
+	}
+	print $h "$k	docker	", join("\t", @param), "\n";
+}
+close $h;
+
+#### append mastertype info.
+my $f = "$WORKDIR/mastertypes";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "docker	\n";
+close $h;
+
+#### append mastertype setting files
+my $f = "$WORKDIR/mastertype2conf";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "docker	docker.htpasswd\n";
+close $h;
+
+####
+my $f = "$WORKDIR/plugin_mastertype_docker_vars.yml";
+open my $h, '>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($k, $v) = each %server_settings ){
+	print $h "  '$k' : '$v'\n";
+}
+close $h;
+
+####
+my $f = "$WORKDIR/plugin_mastertype_docker_users.yml";
+open my $h, '>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "USERS:\n";
+foreach my $user ( sort keys %users ){
+	my $profiles = $users{$user};
+	print $h "  - user : '$user'\n";
+	foreach my $k ( sort keys %$profiles ){
+		my $v = $$profiles{$k};
+		print $h "    '$k' : '$v'\n";
+	}
+}
+close $h;
+
+my $f = "$WORKDIR/plugin_mastertype_docker_users.htpasswd";
+open my $h, '>', $f or do {
+	die "$f: cannot open, stopped";
+};
+foreach my $user ( sort keys %users ){
+	my $profiles = $users{$user};
+	my $password = $$profiles{password};
+	my $user_password = `htpasswd -nb "$user" "$password"`;
+	chomp $user_password;
+	print $h "$user_password";
+}
+close $h;
+
+exit 0;
+

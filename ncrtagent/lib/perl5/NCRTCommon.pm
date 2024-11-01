@@ -23,7 +23,7 @@ our @EXPORT = (
 );
 
 sub load_hosts () {
-	my $f = "$main::CONFDIR/hosts";
+	my $f = "$main::CONFDIR/agenthosts";
 	open my $h, '<', $f or do {
 		die "$f: cannot open, stopped";
 	};

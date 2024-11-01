@@ -26,8 +26,8 @@ close $h;
 
 #### load linuxhosts.
 my %targets;
-my $f = "$WORKDIR/hosts";
-open my $h, '<', "$WORKDIR/hosts" or do {
+my $f = "$WORKDIR/agenthosts";
+open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
 while( <$h> ){

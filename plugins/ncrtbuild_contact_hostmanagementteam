@@ -50,21 +50,28 @@ open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
 my $teamname;
+my $userprofilename;
 while( <$h> ){
 	chomp;
 	next if m"^\s*(#|$)";
 	die "$f:$.: illegal format, stopped" unless m"^\s*(?:
 		team \s+ (?<teamname>\S+) |
 		host \s+ (?<hostname>\S+) |
-		user \s+ (?<username>[-\w]+)
+		user \s+ (?<username>[-\w]+) |
+		profile_of_user \s+ (?<userprofilename>[-\w]+) |
+		password \s+ (?<password>\S+)
 	)\s*$"x;
-	if( $+{teamname} ){
+	if    ( $+{teamname} ne "" ){
 		$teamname = $+{teamname};
-	}elsif( $+{hostname} ){
+	}elsif( $+{hostname} ne "" ){
 		push @{ $host2team{$+{hostname}} }, $teamname;
-	}elsif( $+{username} ){
+	}elsif( $+{username} ne "" ){
 		push @{$team2user{$teamname}}, $+{username};
-		$users{$+{username}}++;
+		$users{$+{username}} = {} unless exists $users{$+{username}};
+	}elsif( $+{userprofilename} ne "" ){
+		$userprofilename = $+{userprofilename};
+	}elsif( $+{password} ne "" ){
+		$users{$userprofilename}{password} = $+{password};
 	}else{
 		die "$f:$.: illegal format, stopped";
 	}
@@ -128,7 +135,14 @@ my $f = "$WORKDIR/users";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-while( my ($user) = each %users ){ print $h "$user\n"; }
+while( my ($user, $profiles) = each %users ){
+	my @profiles;
+	foreach my $k ( sort keys %$profiles ){
+		my $v = $$profiles{$k};
+		push @profiles, "$k=$v";
+	}
+	print $h "$user\t", join("\t", @profiles), "\n";
+}
 close $h;
 
 

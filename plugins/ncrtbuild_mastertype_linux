@@ -1,0 +1,121 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+#### load global conf.
+my %ncrtconf;
+my $f = "$CONFDIR/ncrtbuild.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\w+)=(.*)$";
+	$ncrtconf{$1} = $2;
+}
+close $h;
+
+#### load linux conf.
+my %targets;
+my %default = (
+);
+my $f = "$CONFDIR/mastertype/linux.hosts";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die unless m"^(\*|[-.\w]+)((\s+\w+=\S*)*)$";
+	my $host = $1;
+	my %param;
+	foreach my $kv ( split m"\s+", $2 ){
+		next unless $kv =~ m"^(\w+)=(.*)$";
+		$param{$1} = $2;
+	}
+
+	if( $host eq "*" ){
+		%default = %param;
+	}else{
+		$targets{$host} = { %default, %param };
+	}
+}
+close $h;
+
+my %server_settings = (
+	'GRAFANAURL'          => "http://example.com/grafana",
+	'GRAFANADATASOURCE'   => "influxdb",
+	'GRAFANAADMINUSER'    => "ncrtadmin",
+	'GRAFANAADMINPASSWD'  => "ncrtadminpassword",
+	'GRAFANADB'           => "ncrtdb",
+	'GRAFANAUSER'         => "ncrtuser",
+	'GRAFANAPASSWD'       => "ncrtuserpassword",
+	'GRAFANAAPIKEY'       => "XXXXXXXX",
+	'GRAFANAORGID'        => "2",
+
+	'INFLUXDBHOST'        => "localhost",
+	'INFLUXDBPORT'        => "8086",
+	'INFLUXDBPREFIX'      => "ncrt",
+	'INFLUXDBDATABASE'    => "ncrt",
+	'INFLUXDBADMINUSER'   => "ncrtadmin",
+	'INFLUXDBADMINPASSWD' => "ncrtadminpassword",
+	'INFLUXDBUSER'        => "ncrtuser",
+	'INFLUXDBPASSWD'      => "ncrtuserpassword",
+);
+my $f = "$CONFDIR/mastertype/linux.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die "$f:$.: illegal format, stopped"  unless m"^(\w+)=(.*)$";
+	die "$f:$.: unknown setting, stopped" unless exists $server_settings{$1};
+	$server_settings{$1} = $2;
+}
+close $h;
+
+#### append masterhosts info.
+my $f = "$WORKDIR/masterhosts";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($k, $v) = each %targets ){
+	my @param;
+	while( my ($k, $v) = each %$v ){
+		push @param, "$k=$v";
+	}
+	print $h "$k	linux	", join("\t", @param), "\n";
+}
+close $h;
+
+#### append mastertype info.
+my $f = "$WORKDIR/mastertypes";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "linux	\n";
+close $h;
+
+####
+my $f = "$WORKDIR/plugin_mastertype_linux_vars.yml";
+open my $h, '>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($k, $v) = each %server_settings ){
+	print $h "  '$k' : '$v'\n";
+}
+close $h;
+
+####
+exit 0;
+
