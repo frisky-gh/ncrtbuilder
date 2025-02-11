@@ -34,6 +34,8 @@ if( @ARGV < 2 ){
 $CONFDIR = $ARGV[0];
 $WORKDIR = $ARGV[1];
 
+our $JSON_CODEC = JSON::XS->new->utf8;
+
 #### load global conf.
 
 sub read_conffile (\%$) {
@@ -283,8 +285,8 @@ sub mkdir_or_die ($) {
 	mkdir $d or die "$d: cannot create, stopped";
 }
 
-sub write_plain ($$) {
-	my ($f, $html) = @_;
+sub write_binary ($$) {
+	my ($f, $binary) = @_;
 	if( !defined $f ){
 		unlink $f if -f $f;
 		return;
@@ -292,12 +294,25 @@ sub write_plain ($$) {
 	open my $h, '>', $f or do {
 		die "$f: cannot open, stopped";
 	};
-	print $h encode_utf8($html);
+	print $h $binary;
+	close $h;
+}
+
+sub write_plain ($$) {
+	my ($f, $text) = @_;
+	unless( defined $f ){
+		unlink $f if -f $f;
+		return;
+	}
+	open my $h, '>', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	print $h encode_utf8($text);
 	close $h;
 }
 
 sub read_plain ($) {
-	my ($f, $html) = @_;
+	my ($f) = @_;
 	unless( -f $f ){
 		return undef;
 	}
@@ -353,7 +368,7 @@ sub tmplfunc_localtime {
 
 sub tmplfunc_obj2json {
 	my ($obj) = @_;
-	my $json = encode_json $obj;
+	my $json = $JSON_CODEC->encode( $obj );
 	return $json;
 }
 
@@ -397,7 +412,8 @@ sub req_unix ($) {
 	my %servicename2perfnames;
 	my %servicedetails;
 	my %perfdetails;
-	while( <$h> ){
+	while( my $i = <$h> ){
+       		$_ = decode_utf8( $i );
 		chomp;
 		unless( m"^([^;]*);([^;]+);([^;]+);([^;]+);(\d*);(\d*);(\d*);(.*)$" ){
 			return 1;
@@ -654,7 +670,7 @@ sub load_servicedetails () {
 	my $json = read_plain "$WORKDIR/servicegroup_servicedetails.json";
 	return {} if $json eq '';
 	return eval {
-		my $obj = decode_json $json;
+		my $obj = $JSON_CODEC->decode( $json );
 		return $obj;
 	};
 }
@@ -663,8 +679,8 @@ sub store_servicedetails ($) {
 	my ($servicedetails) = @_;
 	return unless criticalsection_has_been_kept;
 	eval {
-		my $json = encode_json $servicedetails;
-		write_plain "$WORKDIR/servicegroup_servicedetails.json", $json;
+		my $json = $JSON_CODEC->encode( $servicedetails );
+		write_binary "$WORKDIR/servicegroup_servicedetails.json", $json;
 	};
 }
 
@@ -672,7 +688,7 @@ sub load_perfdetails () {
 	my $json = read_plain "$WORKDIR/servicegroup_perfdetails.json";
 	return {} if $json eq '';
 	return eval {
-		my $obj = decode_json $json;
+		my $obj = $JSON_CODEC->decode( $json );
 		return $obj;
 	};
 }
@@ -681,8 +697,8 @@ sub store_perfdetails ($) {
 	my ($perfdetails) = @_;
 	return unless criticalsection_has_been_kept;
 	eval {
-		my $json = encode_json $perfdetails;
-		write_plain "$WORKDIR/servicegroup_perfdetails.json", $json;
+		my $json = $JSON_CODEC->encode( $perfdetails );
+		write_binary "$WORKDIR/servicegroup_perfdetails.json", $json;
 	};
 }
 
@@ -855,7 +871,7 @@ sub load_trashbox () {
 	my $json = read_plain "$WORKDIR/servicegroup_trashbox.json";
 	return {} if $json eq '';
 	return eval {
-		return decode_json $json;
+		return $JSON_CODEC->decode( $json );
 	};
 }
 
@@ -863,8 +879,8 @@ sub store_trashbox ($) {
 	my ($trashbox) = @_;
 	return unless criticalsection_has_been_kept;
 	eval {
-		my $json = encode_json $trashbox;
-		write_plain "$WORKDIR/servicegroup_trashbox.json", $json;
+		my $json = $JSON_CODEC->encode( $trashbox );
+		write_binary "$WORKDIR/servicegroup_trashbox.json", $json;
 	};
 }
 
@@ -926,7 +942,7 @@ sub load_sgstate ($) {
 	my $json = read_plain "$WORKDIR/servicegroup_sg_$service_group.json";
 	return {} if $json eq '';
 	return eval {
-		my $obj = decode_json $json;
+		my $obj = $JSON_CODEC->decode( $json );
 		return $obj;
 	};
 }
@@ -935,8 +951,8 @@ sub store_sgstate ($$) {
 	my ($service_group, $sgstate) = @_;
 	return unless criticalsection_has_been_kept;
 	eval {
-		my $json = encode_json $sgstate;
-		write_plain "$WORKDIR/servicegroup_sg_$service_group.json", $json;
+		my $json = $JSON_CODEC->encode( $sgstate );
+		write_binary "$WORKDIR/servicegroup_sg_$service_group.json", $json;
 	};
 }
 
@@ -1670,7 +1686,7 @@ sub generate_graphs_of_page ($$$$) {
 			debuglog "    performance name in NG: %s.", $name;
 			my $png = download_panel_png_from_grafana $url, $param;
 			my $f = "$host_encoded,$service_encoded,$id.png";
-			write_plain "$d/$f", $png;
+			write_binary "$d/$f", $png;
 		}
 	}
 }
@@ -1747,6 +1763,7 @@ if( $e ){
 }
 
 #### 1.
+errorlog "DEBUG: STEP1: pid=%i", $$;
 my $last_servicedetails = load_servicedetails;
 my $last_perfdetails    = load_perfdetails;
 my ($servicedetail_ng, $servicedetail_changes, $servicedetail_events) =
@@ -1776,6 +1793,7 @@ foreach my $sg ( sort keys %$sgname2servicenames ){
 	my ($param, $emails, $slackurls) = apply_confrules $confrules, $sg;
 
 	#### 2. get last service states
+	errorlog "DEBUG: STEP2: pid=%i", $$;
 
 	my $last_servicestates = get_servicestates_from_sgstate $last_sgstate;
 	my $last_perfstates    = get_perfstates_from_sgstate    $last_sgstate;
@@ -1803,6 +1821,7 @@ foreach my $sg ( sort keys %$sgname2servicenames ){
 	set_reporttime_into_sgstate $sgstate, 'slack', $last_reporttime_slack;
 
 	#### 3. get current service states
+	errorlog "DEBUG: STEP3: pid=%i", $$;
 
 	my $servicenames = $$sgname2servicenames{$sg};
 	my $servicestates = get_servicestates
@@ -1814,6 +1833,7 @@ foreach my $sg ( sort keys %$sgname2servicenames ){
 	set_perfstates_into_sgstate    $sgstate, $perfstates;
 
 	#### 4. calculate changes of service states
+	errorlog "DEBUG: STEP4: pid=%i", $$;
 
 	my ($num_of_service_ng, $servicestate_changes, $servicestate_events) =
 		cmp_servicestates $last_servicestates, $servicestates;
@@ -1837,6 +1857,7 @@ debuglog "DEBUG: STORE_SGSTATE $sg: num of ng changed: $last_num_of_service_ng->
 	my $num_of_ng = $num_of_service_ng + $num_of_perf_ng;
 
 	#### 5. calculate histories and highlited
+	errorlog "DEBUG: STEP5: pid=%i", $$;
 
 	my $servicestate_history = $last_servicestate_history;
 	my $highlighted_servicenames = $last_highlighted_servicenames;
@@ -1863,6 +1884,7 @@ debuglog "DEBUG: STORE_SGSTATE $sg: num of ng changed: $last_num_of_service_ng->
 	set_highlighted_perfnames    $sgstate, $highlighted_perfnames;
 
 	#### 6. make plan of session
+	errorlog "DEBUG: STEP6: pid=%i", $$;
 	my $update_timespan = $$param{UPDATE_TIMESPAN} // 5;
 	my $resend_timespan = $$param{RESEND_TIMESPAN} // 30;
 	my $close_timespan  = $$param{CLOSE_TIMESPAN}  // 30;
@@ -1905,6 +1927,7 @@ debuglog "DEBUG: STORE_SGSTATE $sg: num of ng changed: $last_num_of_service_ng->
 	}
 
 	#### 7. update session
+	errorlog "DEBUG: STEP7: pid=%i", $$;
 debuglog "DEBUG: SERVICEGROUP %s: target:%s id:%s->%s",
 $sg, $session_plan, $last_session, $session
 if $last_session ne '' || $session ne '';
@@ -1983,12 +2006,14 @@ if $last_session ne '' || $session ne '';
        		$sessioncreatetime, $sessionupdatetime;
 
 	#### 8. report planning
+	errorlog "DEBUG: STEP8: pid=%i, sg=%s", $$, $sg;
 
 	my $curr_reporttime = time;
 	my $reporting_plan = create_reporting_plan_of_mail
 		$param, $sg, $session, $session_plan,
 		$servicestate_history, $perfstate_history,
 		$last_reporttime_mail, $curr_reporttime;
+	errorlog "DEBUG: STEP8-1: pid=%i", $$;
 	if( defined $reporting_plan ){
 		output_report_specification_of_mail
 			$param, $sg, $session, $reporting_plan,
@@ -1998,9 +2023,11 @@ if $last_session ne '' || $session ne '';
 		set_reporttime_into_sgstate $sgstate, "mail", $curr_reporttime;
 		$sgstate_has_been_updated = 1;
 	}
+	errorlog "DEBUG: STEP8-2: pid=%i", $$;
 	my $reporting_plan = create_reporting_plan_of_slack
 		$param, $sg, $session, $session_plan,
 		$last_reporttime_slack, $curr_reporttime;
+	errorlog "DEBUG: STEP8-3: pid=%i", $$;
 	if( defined $reporting_plan ){
 		output_report_specification_of_slack
 			$param, $sg, $session, $reporting_plan,
@@ -2008,14 +2035,17 @@ if $last_session ne '' || $session ne '';
 		set_reporttime_into_sgstate $sgstate, "slack", $curr_reporttime;
 		$sgstate_has_been_updated = 1;
 	}
+	errorlog "DEBUG: STEP8-4: pid=%i", $$;
 
 	# store servicegroup state
 	if( $sgstate_has_been_updated ){
 		store_sgstate $sg, $sgstate;
 	}
+	errorlog "DEBUG: STEP8-5: pid=%i", $$;
 }
 
 #### 9. trashbox
+errorlog "DEBUG: STEP9: pid=%i", $$;
 
 my $expired = get_expired_from_trashbox $trashbox;
 if( $expired ){
@@ -2031,6 +2061,7 @@ if( $trashbox_has_been_updated ){
 };
 if( $@ ){ errorlog "main: ERROR: caused=%s", $@; }
 end_criticalsection;
+errorlog "DEBUG: END: pid=%i", $$;
 
 eval {
 
@@ -2042,6 +2073,7 @@ while( 1 ){
 	my ($reporttype, $servicegroup, $qid, $entry) = hold_in_reportqueue;
 	last unless defined $reporttype;
 	next if fork;
+	errorlog "DEBUG: fork in reporting: pid=%d", $$;
 
 	unless( start_criticalsection_for_report $servicegroup, $reporttype ){
 		errorlog "reporting: ERROR: cannot start criticalsection, " .
@@ -2089,6 +2121,7 @@ while( 1 ){
 	my ($session, $qid, $entry) = hold_in_pageupdatequeue;
 	last unless defined $session;
 	next if fork;
+	errorlog "DEBUG: fork in updating: pid=%d", $$;
 	my (
 		$sg, $session, $highlighted_services, $highlighted_perfs,
 		$param
