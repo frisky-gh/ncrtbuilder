@@ -1,1 +1,8 @@
+#  In this hosts file, you can specify the hostname of the NCRT master servers.
+#  It also allows you to specify communication settings to their hosts.
+#
+#  You can change default settings.
+* ansible_become=yes ansible_user=opc ansible_become_user=root ansible_become_method=sudo
+
+#  You can put multiple monitoring master servers.
 ncrtmaster01.localdomain

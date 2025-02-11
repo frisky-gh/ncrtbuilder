@@ -1,3 +1,5 @@
+#  In this hosts file, you can specify the hostname of the NCRT agents.
+#  It also allows you to specify communication settings to their hosts / agents.
 #
 #  "agenttype_linux" assumes ncrtagent daemon as the agent, and uses ncrtagent
 #  protocol for its communication.

@@ -1,3 +1,6 @@
+#  In this hosts file, you can specify the hostname of the NCRT agents.
+#  It also allows you to specify communication settings to their hosts / agents.
+#
 # AVAILABLE OPTIONS:
 #	home_dir=
 #	daemon_user=

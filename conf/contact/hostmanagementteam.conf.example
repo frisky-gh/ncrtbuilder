@@ -6,4 +6,6 @@ team	SampleTeam
 	user	user01
 	user	user02
 	
+profile_of_user	user01
+	password	xxxSECRETxxx
 

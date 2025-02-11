@@ -1,1 +1,4 @@
+#  In this hosts file, you can specify the hostname of the NCRT master servers.
+#  It also allows you to specify communication settings to their hosts.
+
 ncrtmaster01.localdomain

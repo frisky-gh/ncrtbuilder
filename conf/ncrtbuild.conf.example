@@ -11,26 +11,6 @@ NCRTMASTERHOME=/opt/ncrtmaster
 #### grafana-dashboard-helper settings
 HELPERURL=http://example.com/grafana-dashboard-helper
 
-#### Grafana settings
-GRAFANAURL=https://example.com/grafana
-GRAFANAADMINUSER=still_making
-GRAFANAADMINPASSWD=still_making
-GRAFANADATASOURCE=InfluxDB
-GRAFANAAPIKEY=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
-GRAFANAORGID=3
-
-#### InfluxDB settings
-INFLUXDBHOST=localhost
-INFLUXDBPORT=8086
-INFLUXDBPREFIX=ncrt
-INFLUXDBDATABASE=ncrt
-# account for database creation, user creation, grafana-dashboard-helper
-INFLUXDBADMINUSER=ncrtadmin
-INFLUXDBADMINPASSWD=XXXXXXXX
-# account for naemon2influx
-INFLUXDBUSER=ncrt
-INFLUXDBPASSWD=XXXXXXXX
-
 #### Grafana Dashboard Helper settings
 HELPERURL=https://example.com/grafana-dashboard-helper
 HELPERURL_JUMP_TO_DASHBOARD=https://example.com/grafana-dashboard-helper/jump_to_dashboard.html?dashboard=<hostname>,<servicedesc>
