@@ -548,7 +548,7 @@ if( $plan{Step6} ){
 
 #### read agent type related work files
 my %host2agenttype;
-my %agenttype2hosts;
+my %agenttype2agenthosts;
 my $agenttype_has_collision;
 my @ncrtagents;
 do {
@@ -561,7 +561,7 @@ do {
 		my ($host, $agenttype) = split m"\s+";
 		if( not defined $host2agenttype{$host} ){
 			$host2agenttype{$host} = $agenttype;
-			push @{$agenttype2hosts{$agenttype}}, $host;
+			push @{$agenttype2agenthosts{$agenttype}}, $host;
 		}elsif( $host2agenttype{$host} ne $agenttype ){
 			print "ERROR: host $host has multiple agenttypes.\n";
 			$agenttype_has_collision = 1;
@@ -599,7 +599,7 @@ do {
 
 #### read master type related work files
 my %host2mastertype;
-my %mastertype2hosts;
+my %mastertype2masterhosts;
 my $mastertype_has_collision;
 my @ncrtmasters;
 my @ncrtmasteraddrs;
@@ -613,7 +613,7 @@ do {
 		my ($host, $mastertype) = split m"\s+";
 		if( not defined $host2mastertype{$host} ){
 			$host2mastertype{$host} = $mastertype;
-			push @{$mastertype2hosts{$mastertype}}, $host;
+			push @{$mastertype2masterhosts{$mastertype}}, $host;
 		}elsif( $host2mastertype{$host} ne $mastertype ){
 			print "ERROR: host $host has multiple mastertypes.\n";
 			$mastertype_has_collision = 1;
@@ -1073,7 +1073,7 @@ if( $plan{Step11} ){
 
 ######## Step12. ########
 if( $plan{Step12} ){
-	while( my ($mastertype, $hosts) = each %mastertype2hosts ){
+	while( my ($mastertype, $hosts) = each %mastertype2masterhosts ){
 		my $conf = $mastertype2conf{$mastertype};
 		foreach my $h ( @$hosts ){
 			foreach my $i ( @$conf ){
@@ -1366,7 +1366,7 @@ if( $plan{Step14} ){
 
 ######## Step15. ########
 
-my %host2params;
+my %agenthost2agentparams;
 if( $plan{Step15} ){
 
 	#### agent conf
@@ -1387,7 +1387,7 @@ if( $plan{Step15} ){
 			die unless $p =~ m"^(\w+)=(.*)$";
 			my $k = $1;
 			my $v = $2;
-			$host2params{$host}->{$k} = $v;
+			$agenthost2agentparams{$host}->{$k} = $v;
 		}
 		close $i;
 	}
@@ -1646,7 +1646,33 @@ if( $plan{Step16} ){
 
 ######## Step17. ########
 
+my %masterhost2masterparams;
 if( $plan{Step17} ){
+	#### masterhosts conf
+	my $f = "$WORKDIR/masterhosts";
+	open my $h, "<", $f or do {
+		die "$f: cannot open, stopped";
+	};
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		my ($host, $mastertype, @param) = split m"\s+";
+		my $g = "$WORKDIR/ncrtmaster/$host/ncrtmaster_$mastertype.conf";
+		open my $i, ">", $g or do {
+			die "$g: cannot open, stopped";
+		};
+		foreach my $p ( @param ){
+			print $i "$p\n";
+			die unless $p =~ m"^(\w+)=(.*)$";
+			my $k = $1;
+			my $v = $2;
+			$masterhost2masterparams{$host}->{$k} = $v;
+		}
+		close $i;
+	}
+	close $h;
+
+	####
 	my @masterconfs;
 	my $f = "$WORKDIR/masterconfs";
 	open my $h, '<', $f or do {
@@ -1659,6 +1685,7 @@ if( $plan{Step17} ){
 	}
 	close $h;
 
+	####
 	my $f = "$WORKDIR/reporters";
 	open my $h, '>', $f or do {
 		die "$f: cannot open, stopped";
@@ -1782,7 +1809,7 @@ unless( $quick ){
 }
 
 #### run ansible for nagios master
-generate_hosts_yml 'master_hosts', \%mastertype2hosts, {},
+generate_hosts_yml 'master_hosts', \%mastertype2masterhosts, \%masterhost2masterparams,
 	$target_master;
 generate_playbook 'build_ncrtmaster', \@mastertypes;
 
@@ -1800,7 +1827,7 @@ if( $plan{Step19} ){
 ######## Step20. ########
 
 #### run ansible for nrpe agent
-generate_hosts_yml 'agent_hosts', \%agenttype2hosts, \%host2params,
+generate_hosts_yml 'agent_hosts', \%agenttype2agenthosts, \%agenthost2agentparams,
 	$target_agent;
 generate_playbook 'build_ncrtagent', \@agenttypes;
 
