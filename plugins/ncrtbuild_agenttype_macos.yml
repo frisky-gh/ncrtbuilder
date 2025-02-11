@@ -76,22 +76,22 @@
         dest: "{{NCRTAGENTHOME}}/conf/"
       environment:
         #PATH: /opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/X11/bin:/Library/Apple/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/opt/homebrew/bin:/opt/homebrew/sbin
-      notify: restart ncrtagent
+      notify: restart ncrtagentdaemon
       tags: [ common ]
 
-    - name: generate ncrtagent_macos.plist
+    - name: generate ncrtagentdaemon_macos.plist
       template:
         src: ncrtbuild_agenttype_macos.plist.tmpl
-        dest: /Library/LaunchDaemons/com.github.frisky-gh.ncrtagent_macos.plist
-      notify: restart ncrtagent
+        dest: /Library/LaunchDaemons/com.github.frisky-gh.ncrtagentdaemon_macos.plist
+      notify: restart ncrtagentdaemon
       tags: [ common ]
 
   handlers:
-    - name: restart ncrtagent service
+    - name: restart ncrtagentdaemon service
       community.general.launchd:
-        name: com.github.frisky-gh.ncrtagent_macos
+        name: com.github.frisky-gh.ncrtagentdaemon_macos
         enabled: true
         state: restarted
-      listen: restart ncrtagent
+      listen: restart ncrtagentdaemon
 
 

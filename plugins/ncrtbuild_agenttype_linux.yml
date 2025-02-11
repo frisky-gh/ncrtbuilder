@@ -2,6 +2,11 @@
 
 - hosts: linux.__HOSTTYPE__
   tasks:
+
+    - name: include plugin-specific variables
+      include_vars: "{{WORKDIR}}/plugin_agenttype_linux_vars.yml"
+      tags: [ common ]
+
     #### for Debian / Ubuntu
     - name: install packages for nrpe plugins
       apt:
@@ -145,22 +150,22 @@
         rsync_opts: [ "-OJ", "--chown=root:root" ]
         src: "{{WORKDIR}}/ncrtagent/{{inventory_hostname}}/"
         dest: "{{NCRTAGENTHOME}}/conf/"
-      notify: restart ncrtagent
+      notify: restart ncrtagentdaemon
       tags: [ commoninstall, common ]
 
-    - name: setup ncrtagent_linux
+    - name: setup ncrtagentdaemon_linux
       file:
-        src:  "{{NCRTAGENTHOME}}/bin/ncrtagent_linux_rc"
-        path: "/etc/init.d/ncrtagent_linux_rc"
+        src:  "{{NCRTAGENTHOME}}/bin/ncrtagentdaemon_linux_rc"
+        path: "/etc/init.d/ncrtagentdaemon_linux_rc"
         state: link
         owner: root
         group: root
       when: "ansible_os_family in ['Debian', 'RedHat']"
       tags: [ commoninstall ]
 
-    - name: enable ncrtagent_linux
+    - name: enable ncrtagentdaemon_linux
       service:
-        name: ncrtagent_linux_rc
+        name: ncrtagentdaemon_linux_rc
         enabled: yes
         state: started
       when: "ansible_os_family in ['Debian', 'RedHat']"
@@ -174,13 +179,13 @@
 
     - name: open port (if firewalld is enabled)
       firewalld:
-        port:      "{{AGENTTYPE_LINUX_FIREWALLD_PORT}}/tcp"
+        port:      "{{firewalld_port}}/tcp"
         immediate: true
         permanent: true
         state:     enabled
       when:
         - "firewalld_info is defined"
-        - "AGENTTYPE_LINUX_FIREWALLD_PORT is defined and AGENTTYPE_LINUX_FIREWALLD_PORT != ''"
+        - "firewalld_port is defined and firewalld_port != ''"
       tags: [ commoninstall ]
 
 
@@ -188,13 +193,13 @@
     - name: reload systemd settings
       shell: "systemctl daemon-reload"
       when: "ansible_os_family in ['Debian', 'RedHat']"
-      listen: restart ncrtagent
+      listen: restart ncrtagentdaemon
 
-    - name: restart ncrtagent service
+    - name: restart ncrtagentdaemon service
       service:
-        name:  ncrtagent_linux
+        name:  ncrtagentdaemon_linux
         state: restarted
       when: "ansible_os_family in ['Debian', 'RedHat']"
-      listen: restart ncrtagent
+      listen: restart ncrtagentdaemon
 
 

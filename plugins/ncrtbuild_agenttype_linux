@@ -25,7 +25,7 @@ while( <$h> ){
 close $h;
 
 #### load linux conf.
-my %targets;
+my %host2params;
 my %default = (
 	listen_address => "0.0.0.0",
 	listen_port => 46848,
@@ -35,6 +35,7 @@ my %default = (
 	agent_address => undef,
 	agent_port => 46848,
 );
+
 my $f = "$CONFDIR/agenttype/linux.hosts";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
@@ -53,22 +54,34 @@ while( <$h> ){
 	if( $host eq "*" ){
 		%default = %param;
 	}else{
-		$targets{$host} = { %default, %param };
+		$host2params{$host} = { %default, %param };
 	}
 }
 close $h;
+
+my %global_settings = ();
+my $f = "$CONFDIR/agenttype/linux.conf";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$f:$.: illegal format, stopped"  unless m"^(\w+)=(.*)$";
+		$global_settings{$1} = $2;
+	}
+	close $h;
+}
 
 #### append hosts info.
 my $f = "$WORKDIR/agenthosts";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-while( my ($k, $v) = each %targets ){
-	my @param;
-	while( my ($k, $v) = each %$v ){
-		push @param, "$k=$v";
+while( my ($host, $params) = each %host2params ){
+	my @params;
+	while( my ($k, $v) = each %$params ){
+		push @params, "$k=$v";
 	}
-	print $h "$k	linux	", join("\t", @param), "\n";
+	print $h "$host	linux	", join("\t", @params), "\n";
 }
 close $h;
 
@@ -80,5 +93,26 @@ open my $h, '>>', $f or do {
 print $h "linux	display_name=Linux:<hostname> address=<hostname> check_command=ncrtmaster_ping\n";
 close $h;
 
-#### generate ncrtagent.conf
+#### Playbooks typically cannot read setting files (KEY=VALUE format).
+#### Plugin scripts may convert settings to YAML-formatted files.
+#### You can place YAML-formatted configuration files in ncrtbuild working dir and name them "plugin_PLUGINNAME_XXX.yml" to prevent conflicts between each configuration file.
+
+#### pass settings to the playbook of this plugin
+my $f = "$WORKDIR/plugin_agenttype_linux_vars.yml";
+open my $h, '>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($k, $v) = each %global_settings ){
+	print $h "  '$k' : '$v'\n";
+}
+print $h "  'host' :\n";
+foreach my $host ( sort keys %host2params ){
+	my %params = %{ $host2params{$host} };
+	foreach my $k ( sort keys %params ){
+		my $v = $params{$k};
+		print $h "    '$k' : '$v'\n";
+	}
+}
+close $h;
+
 
