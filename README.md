@@ -30,6 +30,45 @@ You can write plugins by your favorite language on NCRT framework. Since NCRT ne
 ## Usage
 
 
+## for Users
+
+The NCRT framework consists of three departments:
+  * NCRT Builder — Manages all masters, agents, and settings.
+  * NCRT Agents — Monitors the hosts themselves and measures the performance of each host.
+  * NCRT Masters — Takes performance values from (typically) the NCRT Agent to determine and report on service health.
+
+NCRT has 3 monitoring method:
+  * by agent,
+  * by agentless, and
+  * by indirect.
+
+Monitoring by agent is intended to monitor VMs such as Linux, Windows, and macOS.
+Monitoring by agentless is intended to monitor Internet services, such as HTTP, SMTP, and SNMP.
+Monitoring by indirect is intended to monitor  ystem state, such as tasks, jobs, and cluster state, which can be retrieved by commands on the VM.
+
+You may modify setting files in ./conf/ dir.
+  * ./conf/agenttype/
+  * ./conf/mastertype/
+  * ./conf/agent/
+  * ./conf/agentless/
+  * ./conf/indirect/
+  * ./conf/threshold/
+  * ./conf/contact/
+  * ./conf/reporter/
+
+If you use additional plugins, you put ncrtbuild_* files into ./plugins/ dir, ncrtagent_* files into ./ncrtagent/plugins/ dir, ncrtagentdaemon_* files into ./ncrtagent/bin/ dir, and ncrtmaster_* files into ./ncrtmaster/plugins/ dir.
+
+## for Plug-in Developpers
+
+NCRT has 7 plugin types. All plugins require  their own builder module and also can have optional modules.
+  * agenttype : may have agent module.
+  * mastertype : may have master module.
+  * agent : may have agent module.
+  * agentless : may have master module.
+  * indirect :may have master and agent module.
+  * contact : can not have any other modules. 
+  * reporter : may have master module.
+
 ## Licence
 
 [MIT](https://github.com/frisky-gh/panopticd/blob/master/LICENSE)

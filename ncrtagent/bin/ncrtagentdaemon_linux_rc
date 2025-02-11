@@ -1,30 +1,30 @@
 #!/bin/bash
 #
-# ncrtagent_linux_rc      Startup script for ncrtagent_linux
+# ncrtagentdaemon_linux_rc      Startup script for ncrtagentdaemon_linux
 #
 # chkconfig: - 90 10
-# description: start and stop ncrtagent_linux
-# processname: ncrtagent_linux
-# pidfile: /home/ncrtagent/.ncrt/ncrtagent_linux.pid
+# description: start and stop ncrtagentdaemon_linux
+# processname: ncrtagentdaemon_linux
+# pidfile: /home/ncrtagent/.ncrt/ncrtagentdaemon_linux.pid
 
 ### BEGIN INIT INFO
-# Provides: ncrtagent_linux
+# Provides: ncrtagentdaemon_linux
 # Required-Start: $network $local_fs $remote_fs
 # Required-Stop: $network $local_fs $remote_fs
 # Should-Start: $syslog $named
 # Should-Stop: $syslog $named
 # Default-Start: 2 3 4 5
 # Default-Stop: 0 1 6
-# Short-Description: start and stop ncrtagent_linux
-# Description:  start and stop ncrtagent_linux
+# Short-Description: start and stop ncrtagentdaemon_linux
+# Description:  start and stop ncrtagentdaemon_linux
 ### END INIT INFO
 
 set -e
 
 NAME=ncrtagent_linux
-DESC="start and stop ncrtagent_linux"
-DAEMON=/opt/ncrtagent/bin/ncrtagent_linux
-PIDFILE=~ncrtagent/.ncrt/ncrtagent_linux.pid
+DESC="start and stop ncrtagentdaemon_linux"
+DAEMON=/opt/ncrtagent/bin/ncrtagentdaemon_linux
+PIDFILE=~ncrtagent/.ncrt/ncrtagentdaemon_linux.pid
 
 export SYSTEMCTL_SKIP_REDIRECT=1
 if [ -f /etc/init.d/functions ]; then
@@ -35,8 +35,8 @@ fi
 if [ -f /lib/lsb/init-functions ]; then
 	. /lib/lsb/init-functions
 fi
-if [ -f /etc/defaults/ncrtagent_linux ] ; then
-	. /etc/defaults/ncrtagent_linux
+if [ -f /etc/defaults/ncrtagentdaemon_linux ] ; then
+	. /etc/defaults/ncrtagentdaemon_linux
 fi
 
 if type log_daemon_msg > /dev/null 2>&1 ; then
