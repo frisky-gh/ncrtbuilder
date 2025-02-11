@@ -106,11 +106,11 @@
       failed_when: false
       tags: [ commoninstall ]
 
-    - name: set fact INFLUXDB_IS_NOT_YET_SETUP / GRAFANA_IS_NOT_YET_SETUP / GRAFANATOKEN
+    - name: set fact INFLUXDB_IS_NOT_YET_SETUP / GRAFANA_IS_NOT_YET_SETUP / GRAFANA_TOKEN
       set_fact:
         INFLUXDB_IS_NOT_YET_SETUP: "{{ influxdb_has_been_setup.content is undefined or (influxdb_has_been_setup.content | b64decode | regex_replace('\n', '')) != '1' }}"
         GRAFANA_IS_NOT_YET_SETUP: "{{ grafana_has_been_setup.content is undefined or (grafana_has_been_setup.content | b64decode | regex_replace('\n', '')) != '1' }}"
-        GRAFANATOKEN: "{{ GRAFANATOKEN is defined and GRAFANATOKEN != '' and GRAFANATOKEN or grafana_service_account_token.content is defined and (grafana_service_account_token.content | b64decode) }}"
+        GRAFANA_TOKEN: "{{ GRAFANA_TOKEN is defined and GRAFANA_TOKEN != '' and GRAFANA_TOKEN or grafana_service_account_token.content is defined and (grafana_service_account_token.content | b64decode) }}"
       tags: [ commoninstall, common ]
 
     ## setup container settings
@@ -186,7 +186,7 @@
 #      tags: [ commoninstall ]
 
     - name: start docker-compose
-      shell: "cd {{NCRTMASTERHOME}}/containers ; docker compose down ; docker compose build ; docker compose up -d"
+      shell: "cd {{NCRTMASTERHOME}}/containers ; docker compose down ; docker compose build ; docker compose up -d ; sleep 10"
       environment:
         https_proxy: "{{PROXY}}"
       tags: [ commoninstall ]
@@ -196,8 +196,8 @@
 
     - name: setup influxdb
       community.docker.docker_container_exec:
-        container: influxdb
-        argv: [ "influx", "setup", "-f", "-o", "{{INFLUXDBORG}}", "-r", "52w", "-b", "{{INFLUXDBBUCKET}}", "-u", "{{INFLUXDBUSER}}", "-p", "{{INFLUXDBPASSWD}}", "-t", "{{INFLUXDBTOKEN}}" ]
+        container: ncrt-influxdb
+        argv: [ "influx", "setup", "-f", "-o", "{{INFLUXDB_ORG}}", "-r", "52w", "-b", "{{INFLUXDB_BUCKET}}", "-u", "{{INFLUXDB_USER}}", "-p", "{{INFLUXDB_PASSWD}}", "-t", "{{INFLUXDB_TOKEN}}", "--name", "default" ]
       register: r
       when:
         - "MANAGE_INFLUXDB is defined and MANAGE_INFLUXDB != 0"
@@ -206,8 +206,8 @@
 
     - name: setup influxdb optional bucket
       community.docker.docker_container_exec:
-        container: influxdb
-        argv: [ "influx", "bucket", "create", "-o", "{{INFLUXDBORG}}", "-r", "4w", "-n", "{{INFLUXDBOPTIONALBUCKET}}" ]
+        container: ncrt-influxdb
+        argv: [ "influx", "bucket", "create", "-o", "{{INFLUXDB_ORG}}", "-r", "4w", "-n", "{{INFLUXDB_OPTIONALBUCKET}}" ]
       when:
         - "MANAGE_INFLUXDB is defined and MANAGE_INFLUXDB != 0"
         - "INFLUXDB_IS_NOT_YET_SETUP"
@@ -215,8 +215,8 @@
 
     - name: setup influxdb archive bucket
       community.docker.docker_container_exec:
-        container: influxdb
-        argv: [ "influx", "bucket", "create", "-o", "{{INFLUXDBORG}}", "-r", "520w", "-n", "{{INFLUXDBARCHIVEBUCKET}}" ]
+        container: ncrt-influxdb
+        argv: [ "influx", "bucket", "create", "-o", "{{INFLUXDB_ORG}}", "-r", "520w", "-n", "{{INFLUXDB_ARCHIVEBUCKET}}" ]
       when:
         - "MANAGE_INFLUXDB is defined and MANAGE_INFLUXDB != 0"
         - "INFLUXDB_IS_NOT_YET_SETUP"
@@ -238,11 +238,11 @@
 
     - name: setup grafana admin user
       community.grafana.grafana_user:
-        url: http://localhost:{{APACHE_PORT}}{{APACHE_PREFIX}}grafana/
-        login:    "{{GRAFANAADMIN}}"
-        password: "{{GRAFANAADMINPASSWD}}"
-        name:     "{{GRAFANAADMIN}}"
-        email:    "{{GRAFANAADMINEMAIL}}"
+        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
+        login:    "{{GRAFANA_ADMIN}}"
+        password: "{{GRAFANA_ADMINPASSWD}}"
+        name:     "{{GRAFANA_ADMIN}}"
+        email:    "{{GRAFANA_ADMINEMAIL}}"
         is_admin: true
       when:
         - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
@@ -259,9 +259,9 @@
 
     - name: change grafana admin password to dummy password
       community.grafana.grafana_user:
-        url: http://localhost:{{APACHE_PORT}}{{APACHE_PREFIX}}grafana/
-        url_username: "{{GRAFANAADMIN}}"
-        url_password: "{{GRAFANAADMINPASSWD}}"
+        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
+        url_username: "{{GRAFANA_ADMIN}}"
+        url_password: "{{GRAFANA_ADMINPASSWD}}"
         login:    "admin"
         password: "{{dummy_password.stdout}}"
         name:     "admin"
@@ -292,13 +292,13 @@
 
     - name: setup grafana user
       community.grafana.grafana_user:
-        url: http://localhost:{{APACHE_PORT}}{{APACHE_PREFIX}}grafana/
-        url_username: "{{GRAFANAADMIN}}"
-        url_password: "{{GRAFANAADMINPASSWD}}"
-        login:    "{{GRAFANAUSER}}"
-        password: "{{GRAFANAUSERPASSWD}}"
-        name:     "{{GRAFANAUSER}}"
-        email:    "{{GRAFANAUSEREMAIL}}"
+        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
+        url_username: "{{GRAFANA_ADMIN}}"
+        url_password: "{{GRAFANA_ADMINPASSWD}}"
+        login:    "{{GRAFANA_USER}}"
+        password: "{{GRAFANA_USERPASSWD}}"
+        name:     "{{GRAFANA_USER}}"
+        email:    "{{GRAFANA_USEREMAIL}}"
         is_admin: false
       register: grafana_user_status
       when:
@@ -307,10 +307,10 @@
 
     - name: setup grafana organization
       community.grafana.grafana_organization:
-        url: http://localhost:{{APACHE_PORT}}{{APACHE_PREFIX}}grafana/
-        url_username: "{{GRAFANAADMIN}}"
-        url_password: "{{GRAFANAADMINPASSWD}}"
-        name:     "{{GRAFANAORG}}"
+        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
+        url_username: "{{GRAFANA_ADMIN}}"
+        url_password: "{{GRAFANA_ADMINPASSWD}}"
+        name:     "{{GRAFANA_ORG}}"
       register: grafana_org_status
       when:
         - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
@@ -326,11 +326,11 @@
 
     - name: setup grafana organization member
       community.grafana.grafana_organization_user:
-        url: http://localhost:{{APACHE_PORT}}{{APACHE_PREFIX}}grafana/
-        url_username: "{{GRAFANAADMIN}}"
-        url_password: "{{GRAFANAADMINPASSWD}}"
-        org_name:     "{{GRAFANAORG}}"
-        login:        "{{GRAFANAUSER}}"
+        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
+        url_username: "{{GRAFANA_ADMIN}}"
+        url_password: "{{GRAFANA_ADMINPASSWD}}"
+        org_name:     "{{GRAFANA_ORG}}"
+        login:        "{{GRAFANA_USER}}"
         role:         admin
       when:
         - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
@@ -338,13 +338,12 @@
 
     - name: switch user context of grafana user
       uri:
-        url: "http://localhost:{{APACHE_PORT}}{{APACHE_PREFIX}}grafana/api/user/using/{{grafana_org_status.org.id}}"
-        user:             "{{GRAFANAUSER}}"
-        password:         "{{GRAFANAUSERPASSWD}}"
+        url: "http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/api/user/using/{{grafana_org_status.org.id}}"
+        user:             "{{GRAFANA_USER}}"
+        password:         "{{GRAFANA_USERPASSWD}}"
         force_basic_auth: true
         method:           POST
         body_format:      json
-        #body:             '{ "apikeys":"create" }'
         body:             "{}"
       when:
         - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
@@ -354,9 +353,9 @@
 
     - name: setup grafana user for viewer
       community.grafana.grafana_user:
-        url: http://localhost:{{APACHE_PORT}}{{APACHE_PREFIX}}grafana/
-        url_username: "{{GRAFANAADMIN}}"
-        url_password: "{{GRAFANAADMINPASSWD}}"
+        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
+        url_username: "{{GRAFANA_ADMIN}}"
+        url_password: "{{GRAFANA_ADMINPASSWD}}"
         login:    "{{item.user}}"
         password: "{{item.password}}"
         name:     "{{item.user}}"
@@ -369,10 +368,10 @@
 
     - name: setup grafana organization member
       community.grafana.grafana_organization_user:
-        url: http://localhost:{{APACHE_PORT}}{{APACHE_PREFIX}}grafana/
-        url_username: "{{GRAFANAADMIN}}"
-        url_password: "{{GRAFANAADMINPASSWD}}"
-        org_name:     "{{GRAFANAORG}}"
+        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
+        url_username: "{{GRAFANA_ADMIN}}"
+        url_password: "{{GRAFANA_ADMINPASSWD}}"
+        org_name:     "{{GRAFANA_ORG}}"
         login:        "{{item.user}}"
         role:         viewer
       with_items: "{{ USERS }}"
@@ -380,9 +379,17 @@
         - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
       tags: [ common ]
 
-    - name: switch user context of grafana user
+    - name: switch user context of end users (DEBUG)
+      debug:
+        msg: "DEBUG: user={{item.user}} password={{item.password}}"
+      with_items: "{{ USERS }}"
+      when:
+        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
+      tags: [ common ]
+
+    - name: switch user context of end users
       uri:
-        url: "http://localhost:{{APACHE_PORT}}{{APACHE_PREFIX}}grafana/api/user/using/{{grafana_org_status.org.id}}"
+        url: "http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/api/user/using/{{grafana_org_status.org.id}}"
         user:             "{{item.user}}"
         password:         "{{item.password}}"
         force_basic_auth: true
@@ -398,13 +405,13 @@
 
     - name: Create service account
       uri:
-        url: "http://localhost:{{APACHE_PORT}}{{APACHE_PREFIX}}grafana/api/serviceaccounts"
-        user:             "{{GRAFANAUSER}}"
-        password:         "{{GRAFANAUSERPASSWD}}"
+        url: "http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/api/serviceaccounts"
+        user:             "{{GRAFANA_USER}}"
+        password:         "{{GRAFANA_USERPASSWD}}"
         force_basic_auth: true
         method:           POST
         body_format:      json
-        body:             '{ "name":"{{GRAFANAUSER}}_sa", "role":"Admin", "isDisabled":false }'
+        body:             '{ "name":"{{GRAFANA_USER}}_sa", "role":"Admin", "isDisabled":false }'
       register: grafana_sa_status
       failed_when: "grafana_sa_status.status != 201 and grafana_sa_status.json.messageId != 'serviceaccounts.ErrAlreadyExists' "
       when:
@@ -414,13 +421,13 @@
 
     - name: Create service account token
       uri:
-        url: "http://localhost:{{APACHE_PORT}}{{APACHE_PREFIX}}grafana/api/serviceaccounts/{{grafana_sa_status.json.id}}/tokens"
-        user:             "{{GRAFANAUSER}}"
-        password:         "{{GRAFANAUSERPASSWD}}"
+        url: "http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/api/serviceaccounts/{{grafana_sa_status.json.id}}/tokens"
+        user:             "{{GRAFANA_USER}}"
+        password:         "{{GRAFANA_USERPASSWD}}"
         force_basic_auth: true
         method:           POST
         body_format:      json
-        body:             '{ "name":"{{GRAFANAUSER}}_token" }'
+        body:             '{ "name":"{{GRAFANA_USER}}_token" }'
       register: grafana_new_sa_token
       when:
         - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
@@ -438,7 +445,7 @@
 
     - name: set fact GRAFANATOKEN
       set_fact:
-        GRAFANATOKEN: "{{ grafana_new_sa_token.json.key }}"
+        GRAFANA_TOKEN: "{{ grafana_new_sa_token.json.key }}"
       when:
         - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
         - "grafana_service_account_token.content is undefined or grafana_service_account_token.content == ''"
@@ -456,20 +463,20 @@
     - name: create datasource
       community.grafana.grafana_datasource:
         name: "influxdb"
-        grafana_url:  http://localhost:{{APACHE_PORT}}{{APACHE_PREFIX}}grafana/
-        url_username: "{{GRAFANAUSER}}"
-        url_password: "{{GRAFANAUSERPASSWD}}"
-        org_name:     "{{GRAFANAORG}}"
+        grafana_url:  http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
+        url_username: "{{GRAFANA_USER}}"
+        url_password: "{{GRAFANA_USERPASSWD}}"
+        org_name:     "{{GRAFANA_ORG}}"
         ds_type: "influxdb"
         ds_url:  "http://ncrt-influxdb:8086"
         is_default: true
         additional_json_data:
           version:       "Flux"
-          organization:  "{{INFLUXDBORG}}"
-          defaultBucket: "{{INFLUXDBBUCKET}}"
+          organization:  "{{INFLUXDB_ORG}}"
+          defaultBucket: "{{INFLUXDB_BUCKET}}"
           tlsSkipVerify: false
         additional_secure_json_data:
-          token:         "{{INFLUXDBTOKEN}}"
+          token:         "{{INFLUXDB_TOKEN}}"
       tags: [ commoninstall ]
 
     #- name:

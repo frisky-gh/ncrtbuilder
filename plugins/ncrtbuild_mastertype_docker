@@ -23,7 +23,7 @@ while( <$h> ){
 	$ncrtconf{$1} = $2;
 }
 close $h;
-my $masterhome = $ncrtcpmf{NCRTMASTERHOME} // "/opt/ncrtmaster";
+my $masterhome = $ncrtconf{NCRTMASTERHOME} // "/opt/ncrtmaster";
 
 #### load docker conf.
 my %targets;
@@ -53,34 +53,43 @@ while( <$h> ){
 close $h;
 
 my %server_settings = (
-#	'GRAFANA_ADMIN'       => 'ncrt_gfadmin',
-#	'GRAFANA_ADMINPASSWD' => 'XXXXSECRETXXXX',
-	'GRAFANA_ADMINEMAIL'  => 'ncrt_gfadmin@example.com',
-#	'GRAFANA_USER'        => 'ncrt_gfuser',
-#	'GRAFANA_USERPASSWD'  => 'XXXXSECRETXXXX',
-	'GRAFANA_USEREMAIL'   => 'ncrt_gfuser@example.com',
-#	'GRAFANA_ORG'         => 'ncrt_gforg',
-#	'GRAFANA_ORGID'       => '1',
-#	'GRAFANA_TOKEN'       => '',
-#	'GRAFANA_DATASOURCE'  => 'influxdb',
-#	'GRAFANA_DB'          => 'ncrt_gfdb',
+	'GRAFANA_ADMIN'           => 'ncrt_gfadmin',
+	'GRAFANA_ADMINPASSWD'     => 'XXXXSECRETXXXX',
+	'GRAFANA_ADMINEMAIL'      => 'ncrt_gfadmin@example.com',
+	'GRAFANA_USER'            => 'ncrt_gfuser',
+	'GRAFANA_USERPASSWD'      => 'XXXXSECRETXXXX',
+	'GRAFANA_USEREMAIL'       => 'ncrt_gfuser@example.com',
+	'GRAFANA_ORG'             => 'ncrt_gforg',
+	'GRAFANA_ORGID'           => '1',
+	'GRAFANA_TOKEN'           => '',
+	'GRAFANA_DATASOURCE'      => 'influxdb',
+	'GRAFANA_DB'              => 'ncrt_gfdb',
 
-#	'INFLUXDB_USER'       => 'ncrt_ifxuser',
-#	'INFLUXDB_PASSWD'     => 'XXXXSECRETXXXX',
-#	'INFLUXDB_ORG'        => 'ncrt_ifxorg',
-#	'INFLUXDB_BUCKET'     => 'ncrt_bucket',
-#	'INFLUXDB_OPTIONALBUCKET' => 'ncrt_optional',
-#	'INFLUXDB_ARCHIVEBUCKET'  => 'ncrt_archive',
-#	'INFLUXDB_TOKEN'      => 'ncrt_ifxtoken',
+	'INFLUXDB_USER'           => 'ncrt_ifxuser',
+	'INFLUXDB_PASSWD'         => 'XXXXSECRETXXXX',
+	'INFLUXDB_ORG'            => 'ncrt_ifxorg',
+	'INFLUXDB_BUCKET'         => 'ncrt_ifxbucket',
+	'INFLUXDB_OPTIONALBUCKET' => 'ncrt_ifxoptional',
+	'INFLUXDB_ARCHIVEBUCKET'  => 'ncrt_ifxarchive',
+	'INFLUXDB_TOKEN'          => 'ncrt_ifxtoken',
 
-	'DATADIR'            => "$masterhome/containerdata",
-	'MANAGE_GRAFANA'     => '1',
-	'MANAGE_INFLUXDB'    => '1',
-	'OUTSIDE_PREFIX'     => 'http://example.com/',
-	'OUTSIDE_PORT'       => '80',
-	'APACHE_PREFIX'      => '/',
-	'PROXY'              => '',
+	'DATADIR'                 => "$masterhome/containerdata",
+	'MANAGE_GRAFANA'          => '1',
+	'MANAGE_INFLUXDB'         => '1',
+
+	'BROWSERSIDE_URL_PREFIX'  => 'http://example.com/',
+	'SERVERSIDE_PORT'         => '80',
+	'SERVERSIDE_PATH_PREFIX'  => '/',
+	'PROXY'                   => '',
 );
+my %server_settings_which_must_be_specified_by_user = (
+	'GRAFANA_ADMINEMAIL'  => 1,
+	'GRAFANA_ADMINPASSWD' => 1,
+	'GRAFANA_USEREMAIL'   => 1,
+	'GRAFANA_USERPASSWD'  => 1,
+	'BROWSERSIDE_URL_PREFIX' => 1,
+);
+
 my $f = "$CONFDIR/mastertype/docker.conf";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
@@ -91,8 +100,13 @@ while( <$h> ){
 	die "$f:$.: illegal format, stopped"  unless m"^(\w+)=(.*)$";
 	die "$f:$.: unknown setting, stopped" unless exists $server_settings{$1};
 	$server_settings{$1} = $2;
+	delete $server_settings_which_must_be_specified_by_user{$1};
 }
 close $h;
+if( %server_settings_which_must_be_specified_by_user ){
+	my $s = join(" ", keys %server_settings_which_must_be_specified_by_user);
+	die "$f: following settings must be specified: $s, stopped";
+}
 
 my %users;
 my $f = "$WORKDIR/users";
@@ -143,12 +157,12 @@ print $h "docker	\n";
 close $h;
 
 #### append mastertype setting files
-my $f = "$WORKDIR/mastertype2conf";
-open my $h, '>>', $f or do {
-	die "$f: cannot open, stopped";
-};
-print $h "docker	docker.htpasswd\n";
-close $h;
+#my $f = "$WORKDIR/mastertype2conf";
+#open my $h, '>>', $f or do {
+#	die "$f: cannot open, stopped";
+#};
+#print $h "docker	docker.htpasswd\n";
+#close $h;
 
 ####
 my $f = "$WORKDIR/plugin_mastertype_docker_vars.yml";
@@ -183,7 +197,7 @@ open my $h, '>', $f or do {
 foreach my $user ( sort keys %users ){
 	my $profiles = $users{$user};
 	my $password = $$profiles{password};
-	my $user_password = `htpasswd -nb "$user" "$password"`;
+	my $user_password = ` echo "$password" | htpasswd -ni "$user" `;
 	chomp $user_password;
 	print $h "$user_password";
 }

@@ -4,14 +4,14 @@ env > /tmp/startup.env
 
 ##
 
-if [ "$APACHE_PORT" = "" ] ; then
-	APACHE_PORT=80
+if [ "$SERVERSIDE_PORT" = "" ] ; then
+	SERVERSIDE_PORT=80
 fi
 
-if [ "$APACHE_PREFIX" = "" ] ; then
-	APACHE_PREFIX=/
+if [ "$SERVERSIDE_PATH_PREFIX" = "" ] ; then
+	SERVERSIDE_PATH_PREFIX=/
 fi
-test "${APACHE_PREFIX##*/}" != "" && APACHE_PREFIX=$APACHE_PREFIX/
+test "${SERVERSIDE_PATH_PREFIX##*/}" != "" && SERVERSIDE_PATH_PREFIX=$SERVERSIDE_PATH_PREFIX/
 
 if [ "$NAEMON2INFLUX_OUTPUT" = "" ] ; then
 	NAEMON2INFLUX_OUTPUT=http://ncrt-influxdb:8086/
@@ -53,22 +53,22 @@ fi
 # setup apache2
 rsync -aSvx /etc/apache2_orig/ /etc/apache2/
 
-sed -i	-e "s|^Listen 80|Listen ${APACHE_PORT}|" \
+sed -i	-e "s|^Listen 80|Listen ${SERVERSIDE_PORT}|" \
 	/etc/apache2/ports.conf
-sed -i  -e "s|^  Alias /thruk|  Alias ${APACHE_PREFIX}thruk|" \
-	-e "s|^  AliasMatch \\^/thruk|  AliasMatch ^${APACHE_PREFIX}thruk|" \
-	-e "s|^  <Location /thruk|  <Location ${APACHE_PREFIX}thruk|" \
+sed -i  -e "s|^  Alias /thruk|  Alias ${SERVERSIDE_PATH_PREFIX}thruk|" \
+	-e "s|^  AliasMatch \\^/thruk|  AliasMatch ^${SERVERSIDE_PATH_PREFIX}thruk|" \
+	-e "s|^  <Location /thruk|  <Location ${SERVERSIDE_PATH_PREFIX}thruk|" \
 	/etc/apache2/conf-available/thruk.conf
 
 a2enmod proxy_http
 cat >> /etc/apache2/sites-enabled/000-default.conf <<EOF
 
 ProxyPreserveHost On
-ProxyPass        ${APACHE_PREFIX}grafana/ $GDH_GRAFANAURL
-ProxyPassReverse ${APACHE_PREFIX}grafana/ $GDH_GRAFANAURL
+ProxyPass        ${SERVERSIDE_PATH_PREFIX}grafana/ $GDH_GRAFANAURL
+ProxyPassReverse ${SERVERSIDE_PATH_PREFIX}grafana/ $GDH_GRAFANAURL
 
-ProxyPass	 ${APACHE_PREFIX}grafana-dashboard-helper/ http://localhost:46846/
-ProxyPassReverse ${APACHE_PREFIX}grafana-dashboard-helper/ http://localhost:46846/
+ProxyPass	 ${SERVERSIDE_PATH_PREFIX}grafana-dashboard-helper/ http://localhost:46846/
+ProxyPassReverse ${SERVERSIDE_PATH_PREFIX}grafana-dashboard-helper/ http://localhost:46846/
 EOF
 
 # setup naemon
@@ -109,7 +109,7 @@ EOF
 
 # setup thruk
 rsync -aSvx /etc/thruk_orig/ /etc/thruk/
-sed -i	-e "s|^url_prefix = /|url_prefix = ${APACHE_PREFIX}|" \
+sed -i	-e "s|^url_prefix = /|url_prefix = ${SERVERSIDE_PATH_PREFIX}|" \
 	/etc/thruk/thruk.conf
 rsync -aSvx /opt/ncrtmaster/containersettings/thruk_conf/htpasswd /etc/thruk/htpasswd
 

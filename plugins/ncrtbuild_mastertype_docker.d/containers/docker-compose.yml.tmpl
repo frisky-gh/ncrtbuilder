@@ -2,14 +2,16 @@
 services:
 
   ncrt-influxdb:
+    container_name: ncrt-influxdb
     image: influxdb:2
     volumes:
-      - {{DATADIR}}../containerdata/influxdb2_data:/var/lib/influxdb2
+      - {{DATADIR}}/../containerdata/influxdb2_data:/var/lib/influxdb2
       - ../containerdata/influxdb2_config:/etc/influxdb2
     ports:
       - "8086:8086"
 
   ncrt-grafana:
+    container_name: ncrt-grafana
     image: grafana/grafana-oss
     user: "0"
     volumes:
@@ -18,7 +20,7 @@ services:
       - "3000:3000"
     environment:
       - GF_LOG_LEVEL=debug
-      - GF_SERVER_ROOT_URL={{URL_PREFIX}}grafana/
+      - GF_SERVER_ROOT_URL={{BROWSERSIDE_URL_PREFIX}}grafana/
       - GF_RENDERING_SERVER_URL=http://ncrt-renderer:8081/render
       - GF_RENDERING_CALLBACK_URL=http://ncrt-grafana:3000/
       - GF_LOG_FILTERS=rendering:debug
@@ -28,6 +30,7 @@ services:
       - "https_proxy="
 
   ncrt-renderer:
+    container_name: ncrt-renderer
     image: grafana/grafana-image-renderer:latest
     ports:
       - "8081:8081"
@@ -38,26 +41,18 @@ services:
       - "https_proxy="
 
   ncrt-naemon:
+    container_name: ncrt-naemon
     build:
       context: ./ncrt-naemon
       args:
         - APT_PROXY={{PROXY}}
-    container_name: ncrt-naemon
     hostname:       ncrt-naemon
     privileged:     true
     ports:
-      - "{{APACHE_OUTSIDEPORT}}:80"
+      - "{{SERVERSIDE_PORT}}:80"
     environment:
-      - "URL_PREFIX={{URL_PREFIX}}"
-      - "APACHE_PREFIX={{APACHE_PREFIX}}"
-      #- "GDH_LISTENPORT=46849"
-      #- "GDH_GRAFANAURL=46849"
-      - "INFLUXDB_ORG={{INFLUXDB_ORG}}"
-      - "INFLUXDB_BUCKET={{INFLUXDB_BUCKET}}"
-      - "INFLUXDB_OPTIONALBUCKET={{INFLUXDB_OPTIONALBUCKET}}"
-      - "INFLUXDB_ARCHIVEBUCKET={{INFLUXDB_ARCHIVEBUCKET}}"
-      - "INFLUXDB_TOKEN={{INFLUXDB_TOKEN}}"
-      - "GRAFANA_TOKEN={{GRAFANA_TOKEN}}"
+      - "BROWSERSIDE_URL_PREFIX={{BROWSERSIDE_URL_PREFIX}}"
+      - "SERVERSIDE_PATH_PREFIX={{SERVERSIDE_PATH_PREFIX}}"
     volumes:
       - ..:/opt/ncrtmaster
 
