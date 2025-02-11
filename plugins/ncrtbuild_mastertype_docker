@@ -156,6 +156,10 @@ open my $h, '>>', $f or do {
 print $h "docker	\n";
 close $h;
 
+#### Playbooks typically cannot read setting files (KEY=VALUE format).
+#### Plugin scripts may convert settings to YAML-formatted files.
+#### You can place YAML-formatted configuration files in ncrtbuild working dir and name them "plugin_PLUGINNAME_XXX.yml" to prevent conflicts between each configuration file.
+
 #### append mastertype setting files
 #my $f = "$WORKDIR/mastertype2conf";
 #open my $h, '>>', $f or do {
@@ -164,7 +168,7 @@ close $h;
 #print $h "docker	docker.htpasswd\n";
 #close $h;
 
-####
+#### pass settings to the playbook of this plugin
 my $f = "$WORKDIR/plugin_mastertype_docker_vars.yml";
 open my $h, '>', $f or do {
 	die "$f: cannot open, stopped";
@@ -174,7 +178,7 @@ while( my ($k, $v) = each %server_settings ){
 }
 close $h;
 
-####
+#### pass users' infomation to the playbook of this plugin
 my $f = "$WORKDIR/plugin_mastertype_docker_users.yml";
 open my $h, '>', $f or do {
 	die "$f: cannot open, stopped";

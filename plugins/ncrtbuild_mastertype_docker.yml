@@ -1,3 +1,6 @@
+# This playbook runs on ncrtmaster hosts at build-time.
+# You can refer the settings in conf/mastertype/docker.conf as {{SETTING_NAME}}.
+
 ---
 
 - hosts: docker.__HOSTTYPE__
@@ -314,7 +317,7 @@
       register: grafana_org_status
       when:
         - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-      tags: [ commoninstall ]
+      tags: [ common, commoninstall ]
 
     - name: store organization id
       copy:
@@ -379,13 +382,13 @@
         - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
       tags: [ common ]
 
-    - name: switch user context of end users (DEBUG)
-      debug:
-        msg: "DEBUG: user={{item.user}} password={{item.password}}"
-      with_items: "{{ USERS }}"
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-      tags: [ common ]
+#    - name: switch user context of end users (DEBUG)
+#      debug:
+#        msg: "DEBUG: user={{item.user}} password={{item.password}} grafana_org_status={{grafana_org_status}}"
+#      with_items: "{{ USERS }}"
+#      when:
+#        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
+#      tags: [ common ]
 
     - name: switch user context of end users
       uri:

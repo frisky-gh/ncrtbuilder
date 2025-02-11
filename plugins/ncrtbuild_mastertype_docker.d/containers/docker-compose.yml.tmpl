@@ -7,8 +7,8 @@ services:
     volumes:
       - {{DATADIR}}/../containerdata/influxdb2_data:/var/lib/influxdb2
       - ../containerdata/influxdb2_config:/etc/influxdb2
-    ports:
-      - "8086:8086"
+#    ports:
+#      - "8086:8086"
 
   ncrt-grafana:
     container_name: ncrt-grafana
@@ -16,8 +16,8 @@ services:
     user: "0"
     volumes:
       - ../containerdata/grafana_data:/var/lib/grafana
-    ports:
-      - "3000:3000"
+#    ports:
+#      - "3000:3000"
     environment:
       - GF_LOG_LEVEL=debug
       - GF_SERVER_ROOT_URL={{BROWSERSIDE_URL_PREFIX}}grafana/
@@ -32,8 +32,8 @@ services:
   ncrt-renderer:
     container_name: ncrt-renderer
     image: grafana/grafana-image-renderer:latest
-    ports:
-      - "8081:8081"
+#    ports:
+#      - "8081:8081"
     environment:
       - "HTTP_PROXY="
       - "HTTPS_PROXY="
