@@ -11,13 +11,14 @@
 #          daemon_user			(not used)
 #          listen_address
 #          listen_port
-#          allow
+#          allow			list of IP addr, ex: x.x.x.x,y.y.y.y,...
+#          firewalld_port		(defalut:empty string, not permit to operate firewalld)
 #
 #      Master Side Options:
 #          timeout
 #          agent_address		(default:0.0.0.0)
 #          agent_port			(default:46848)
-#          agent_protocol		(default:ncrtagent)
+#          agent_protocol		ncrtagent / npre (default:ncrtagent)
 #
 #      Builder Side Options:
 #          ansible_become
@@ -25,7 +26,11 @@
 #          ansible_become_user
 #          ansible_become_method
 #
-*		home_dir=/opt/ncrtagent	daemon_user=ncrtagent	listen_address=0.0.0.0	listen_port=46848	timeout=50	agent_address=	agent_port=46848	allow=127.0.0.0/8,10.5.3.0/24,172.18.65.0/24	ansible_become=yes	ansible_user=opc	ansible_become_user=root	ansible_become_method=sudo
+*	home_dir=/opt/ncrtagent	daemon_user=ncrtagent	listen_address=0.0.0.0	listen_port=46848
+*	allow=127.0.0.0/8,10.5.3.0/24,172.18.65.0/24
+*	firewalld_port=46848
+*	timeout=50	agent_address=	agent_port=46848	agent_protocol=ncrtagent
+*	ansible_become=yes	ansible_user=opc	ansible_become_user=root	ansible_become_method=sudo
 
 mppfclstwa01nc
 mppfclstwa02nc
