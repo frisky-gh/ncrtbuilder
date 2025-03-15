@@ -10,6 +10,24 @@ if( @ARGV < 2 ){
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
 
+#### functions.
+
+sub system_or_die ($) {
+	my ($cmd) = @_;
+	my $r = system $cmd;
+	if   ($? == -1){
+		die sprintf "%s: failed to execute: %d, stopped",
+			$cmd, $!;
+	}elsif($? & 127){
+		die sprintf
+			"%s: child died with signal %d, %s coredump, stopped",
+			$cmd, ($? & 127), ($? & 128) ? 'with' : 'without';
+	}elsif( ($?>>8) != 0){
+		 die sprintf "%s: child exited with value %d, stopped",
+			$cmd, $? >> 8;
+	}
+}
+
 #### load global conf.
 my %ncrtconf;
 my $f = "$CONFDIR/ncrtbuild.conf";
@@ -92,6 +110,13 @@ open my $h, '>>', $f or do {
 };
 print $h "linux	display_name=Linux:<hostname> address=<hostname> check_command=ncrtmaster_ping\n";
 close $h;
+
+#### create agent base directories.
+
+while( my ($host, $params) = each %host2params ){
+	system_or_die "rsync -aJUSvx $0.d/ $WORKDIR/ncrtmaster/$h/";
+	system_or_die "rsync -aJUSvx $CONFDIR/../lib/ $WORKDIR/ncrtmaster/$h/lib/";
+}
 
 #### Playbooks typically cannot read setting files (KEY=VALUE format).
 #### Plugin scripts may convert settings to YAML-formatted files.

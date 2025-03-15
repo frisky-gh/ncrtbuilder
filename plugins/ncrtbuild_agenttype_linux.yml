@@ -127,18 +127,34 @@
         group: root
       tags: [ commoninstall ]
 
-    - name: setup modules in ncrt agent
+    - name: setup core modules
       synchronize:
         checksum: yes
-        rsync_opts: [ "-OJ", "--chown=root:root", "--exclude=/filters/" ]
-        src: "{{TOOLHOME}}/ncrtagent/"
+        rsync_opts: [ "-cOJ", "--chown=root:root" ]
+        src: "{{TOOLHOME}}/resources/ncrtagent/"
+        dest: "{{NCRTAGENTHOME}}/"
+      tags: [ commoninstall, common ]
+
+    - name: setup all agent plugins
+      synchronize:
+        checksum: yes
+        rsync_opts: [ "-cOJ", "--chown=root:root", "--include=ncrtagent_*", "--exclude=*" ]
+        src: "{{TOOLHOME}}/plugins/"
+        dest: "{{NCRTAGENTHOME}}/"
+      tags: [ commoninstall, common ]
+
+    - name: setup optional modules of this plugin
+      synchronize:
+        checksum: yes
+        rsync_opts: [ "-cOJ", "--chown=root:root" ]
+        src: "{{TOOLHOME}}/plugins/ncrtbuild_agenttype_linux.d/"
         dest: "{{NCRTAGENTHOME}}/"
       tags: [ commoninstall, common ]
 
     - name: setup filters
       synchronize:
         checksum: yes
-        rsync_opts: [ "-OJ", "--chown=root:root" ]
+        rsync_opts: [ "-cOJ", "--chown=root:root" ]
         src: "{{TOOLHOME}}/filters/"
         dest: "{{NCRTAGENTHOME}}/filters/"
       tags: [ commoninstall, common ]
@@ -147,25 +163,25 @@
       synchronize:
         checksum: yes
         delete: yes
-        rsync_opts: [ "-OJ", "--chown=root:root" ]
+        rsync_opts: [ "-cOJ", "--chown=root:root" ]
         src: "{{WORKDIR}}/ncrtagent/{{inventory_hostname}}/"
         dest: "{{NCRTAGENTHOME}}/conf/"
-      notify: restart ncrtagentdaemon
+      notify: restart ncrtagent
       tags: [ commoninstall, common ]
 
-    - name: setup ncrtagentdaemon_linux
+    - name: setup ncrtagent_linux
       file:
-        src:  "{{NCRTAGENTHOME}}/bin/ncrtagentdaemon_linux_rc"
-        path: "/etc/init.d/ncrtagentdaemon_linux_rc"
+        src:  "{{NCRTAGENTHOME}}/plugins/ncrtagent_linux_rc"
+        path: "/etc/init.d/ncrtagent_linux_rc"
         state: link
         owner: root
         group: root
       when: "ansible_os_family in ['Debian', 'RedHat']"
       tags: [ commoninstall ]
 
-    - name: enable ncrtagentdaemon_linux
+    - name: enable ncrtagent_linux
       service:
-        name: ncrtagentdaemon_linux_rc
+        name: ncrtagent_linux_rc
         enabled: yes
         state: started
       when: "ansible_os_family in ['Debian', 'RedHat']"
@@ -193,13 +209,13 @@
     - name: reload systemd settings
       shell: "systemctl daemon-reload"
       when: "ansible_os_family in ['Debian', 'RedHat']"
-      listen: restart ncrtagentdaemon
+      listen: restart ncrtagent
 
-    - name: restart ncrtagentdaemon service
+    - name: restart ncrtagent service
       service:
-        name:  ncrtagentdaemon_linux
+        name:  ncrtagent_linux
         state: restarted
       when: "ansible_os_family in ['Debian', 'RedHat']"
-      listen: restart ncrtagentdaemon
+      listen: restart ncrtagent
 
 

@@ -162,7 +162,7 @@
 
     - name: setup agent files
       win_copy:
-        src:  "{{TOOLHOME}}/ncrtagent/"
+        src:  "{{TOOLHOME}}/resources/ncrtagent/"
         dest: 'C:\opt\ncrtagent'
       tags: [ commoninstall ]
 
