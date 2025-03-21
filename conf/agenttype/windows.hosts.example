@@ -11,7 +11,7 @@
 #          chocolatey_proxy
 #
 #      Master Side Options:
-#          agent_address	(default:0.0.0.0)
+#          agent_address	(default:follow the instructions in resolv.conf)
 #          agent_port		(default:5666)
 #          agent_client		(default:/usr/lib/nagios/plugins/check_nrpe)
 #          agent_protocol	(default:nrpe)

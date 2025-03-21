@@ -1,9 +1,2 @@
-* Grafana ユーザの自動セットアップ
-* Grafana Oraganizationの自動セットアップ
-* Grafana データソースへの influxDB の自動セットアップ
-* Grafana API Keyの自動セットアップ
-* Grafana Oraganization名からGrafana Organization ID の取得
-* naemon2influx / naemon2influx-grafana-helper の ncrtmaster 環境でのビルド
-* ncrtmaster のCentOSサポートの追加
-* naemon2influx / naemon2influx-grafana-helper の CentOSサポートの追加
-* 
+* Add an function that allows the normal_check_interval / retry_check_interval / max_check_attempts value to be modified by host/service.
+* Move management function of critical section from plugins/ncrtmaster_servicegroup to ncrtmaster/bin/ncrtmactercmd_report.

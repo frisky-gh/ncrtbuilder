@@ -46,6 +46,32 @@ Monitoring by agent is intended to monitor VMs such as Linux, Windows, and macOS
 Monitoring by agentless is intended to monitor Internet services, such as HTTP, SMTP, and SNMP.
 Monitoring by indirect is intended to monitor  ystem state, such as tasks, jobs, and cluster state, which can be retrieved by commands on the VM.
 
+NCRT official reository contains following plugins:
+  * agenttype
+      * linux
+      * macos
+      * windows
+  * mastertype
+      * docker
+      * linux
+  * agent
+      * disk
+      * io
+      * logfile
+      * networkserverperf
+      * networktraffic
+      * osperf
+      * proc
+  * agentless
+      * livestatus
+      * webactivity
+  * indirect
+      * ltsv
+  * contact
+      * hostmanagementteam
+  * reporter
+      * servicegroup
+
 You may modify setting files in ./conf/ dir.
   * ./conf/agenttype/
   * ./conf/mastertype/
@@ -56,7 +82,7 @@ You may modify setting files in ./conf/ dir.
   * ./conf/contact/
   * ./conf/reporter/
 
-If you use additional plugins, you put ncrtbuild_* files into ./plugins/ dir, ncrtagent_* files into ./ncrtagent/plugins/ dir, ncrtagentdaemon_* files into ./ncrtagent/bin/ dir, and ncrtmaster_* files into ./ncrtmaster/plugins/ dir.
+If you use additional plugins, you put ncrtbuild_* files into ./plugins/ dir, ncrtagent_* files into ./ncrtagent/plugins/ dir, and ncrtmaster_* files into ./ncrtmaster/plugins/ dir.
 
 ## for Plug-in Developpers
 
