@@ -1,0 +1,179 @@
+#!/usr/bin/perl
+
+package NCRTBuild::Common;
+
+use Exporter import;
+our @EXPORT = (
+	'rm_r',
+	'mkdir_or_die',
+	'create_or_die',
+	'system_or_die',
+	'parse_itementry',
+	'parse_addressentry',
+	'parse_mapping',
+	'parse_3items_with_params',
+	'parse_host2item_mapping',
+	'parse_host2service2item_mapping',
+	'expand_importspec',
+	'expand_params',
+);
+
+use strict;
+
+####
+sub rm_r ($) {
+	my ($r) = @_;
+	return unless -d $r;
+	opendir my $d, $r or do {
+		die "$r: cannot open, stopped";
+	};
+	my @e = readdir $d;
+	foreach my $e ( @e ){
+		next if $e eq '..' || $e eq '.';
+		if( -d "$r/$e" ){
+			rm_r( "$r/$e" );
+		}else{
+			unlink "$r/$e" or die "$r/$e, stopped";
+		}
+	}
+	closedir $d;
+	rmdir $r or die "$r: cannot remove, stopped";
+}
+
+sub mkdir_or_die ($) {
+	my ($d) = @_;
+	return if -d $d;
+	mkdir $d or die "$d: cannot create, stopped";
+}
+
+sub create_or_die ($) {
+	my ($f) = @_;
+	open my $h, '>', $f or die "$f: cannot create, stopped";
+	close $h;
+}
+
+sub system_or_die ($) {
+	my ($cmd) = @_;
+	my $r = system $cmd;
+	if   ($? == -1){
+		die sprintf "%s: failed to execute: %d, stopped",
+			$cmd, $!;
+	}elsif($? & 127){
+		die sprintf
+			"%s: child died with signal %d, %s coredump, stopped",
+			$cmd, ($? & 127), ($? & 128) ? 'with' : 'without';
+	}elsif( ($?>>8) != 0){
+		 die sprintf "%s: child exited with value %d, stopped",
+			$cmd, $? >> 8;
+	}
+}
+
+sub _parse_params ($) {
+	( $_ ) = @_;
+	my %params;
+	my %templateparams;
+	while( m{\G
+		($|\s+
+			(\@)?(\w+)=
+			(?:
+				"([^\\"]*(?:(?:\\\\|\\")+[^\\"]*)*)"|
+				([\w\!\#-\&\(-\/\:-\@\[-\_\{-\~]+)
+			)
+		)
+	}gx ){
+		return \%params, \%templateparams if $1 eq '';
+
+		my $template = $2;
+		my $key = $3;
+		my $value = $4 ne '' ? $4 : $5;
+
+		if( $template ){ $templateparams{$key} = $value; }
+		else           { $params{$key} = $value; }
+	}
+	return undef;
+}
+
+sub parse_itementry ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef if m"^\s*(#|$)";
+	return undef, "illegal format" unless m"^(\w+)"g;
+	my $item = $1;
+	my ($opt, $topt) = _parse_params $';
+	return undef unless defined $opt;
+	return $item, $opt, $topt;
+}
+
+sub parse_addressentry ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef if m"^\s*(#|$)";
+	return undef, "illegal format" unless m"^(\S+\@[-.a-zA-Z0-9]+)"g;
+	my $item = $1;
+	my ($opt, $topt) = _parse_params $';
+	return undef unless defined $opt;
+	return $item, $opt, $topt;
+}
+
+sub parse_mapping ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef, undef if m"^\s*(#|$)";
+	return undef, undef, "illegal format" unless m"^(\S+)\s+([\w,]+)"g;
+	my $from = $1;
+	my $to = $2;
+	my ($opt, $topt) = _parse_params $';
+	return undef unless defined $opt;
+	return $from, $to, $opt, $topt;
+}
+
+sub parse_3items_with_params ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef, undef if m"^\s*(#|$)";
+	return undef, undef, "illegal format" unless m"^(\S+)\s+(\S+)\s+(\S+)";
+	my $first  = $1;
+	my $second = $2;
+	my $third  = $3;
+	my ($params, $tparams) = _parse_params $';
+	return undef unless defined $params;
+	return $first, $second, $third, $params, $tparams;
+}
+
+sub parse_host2item_mapping ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef, undef if m"^\s*(#|$)";
+	return undef, undef, "illegal format" unless m"^(\S+)\s+(\S+)$";
+	return $1, $2, undef;
+}
+
+sub parse_host2service2item_mapping ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef, undef, undef if m"^\s*(#|$)";
+	return undef, undef, undef, "illegal format" unless m"^(\S+)\s+([\w,]+)\s+(\S+)$";
+	return $1, $2, $3, undef;
+}
+
+sub expand_importspec (@){
+	my @importmacros;
+	foreach my $i ( @_ ){
+		my ($host, $service, $prefix) = @$i;
+
+		# TODO: check host / service
+
+		push @importmacros,
+			"$host:$service:$prefix \$SERVICEPERFDATA:$host:$service\$";
+	}
+	my $importmacro = join " ", @importmacros;
+	return $importmacro;
+}
+
+sub expand_params ($\%) {
+	my ($text, $params) = @_;
+	$text =~ s{ <(\w+)> }{ $params->{$1}; }egx;
+	return $text;
+}
+
+
