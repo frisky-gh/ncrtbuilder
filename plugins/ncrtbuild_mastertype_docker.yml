@@ -3,18 +3,18 @@
 
 ---
 
-- hosts: docker.__HOSTTYPE__
+- hosts: PLUGINTYPE_mastertype.HOSTTYPE_docker
   tasks:
     - name: include global variables
-      include_vars: "{{WORKDIR}}/vars.yml"
+      include_vars: "{{PLAYBOOKDIR}}/build_ncrtmasters_vars.yml"
       tags: [ common ]
 
     - name: include plugin-specific variables
-      include_vars: "{{WORKDIR}}/plugin_mastertype_docker_vars.yml"
+      include_vars: "{{PLAYBOOKDIR}}/plugin_mastertype_docker_vars.yml"
       tags: [ common ]
 
     - name: include user profiles
-      include_vars: "{{WORKDIR}}/plugin_mastertype_docker_users.yml"
+      include_vars: "{{PLAYBOOKDIR}}/plugin_mastertype_docker_users.yml"
       tags: [ common ]
 
     #### for Debian / Ubuntu
@@ -48,45 +48,13 @@
 
     - name: setup modules in ncrt master
       synchronize:
-        src:  "{{TOOLHOME}}/resources/ncrtmaster/"
+        src:  "{{DISTRIBUTEDDIR}}/{{inventory_hostname}}/"
         dest: "{{NCRTMASTERHOME}}/"
         checksum: yes
         rsync_opts: [ "-cOJ", "--chown=root:root" ]
       tags: [ common ]
 
-    - name: setup filters
-      synchronize:
-        src:  "{{TOOLHOME}}/filters/"
-        dest: "{{NCRTMASTERHOME}}/filters/"
-        checksum: yes
-        rsync_opts: [ "-cOJ", "--chown=root:root" ]
-      tags: [ common ]
-
-    - name: setup settings in ncrt master
-      synchronize:
-        src:  "{{WORKDIR}}/ncrtmaster/{{inventory_hostname}}/"
-        dest: "{{NCRTMASTERHOME}}/conf/"
-        checksum: yes
-        delete: yes
-        rsync_opts: [ "-cOJ", "--chown=root:root" ]
-      tags: [ common ]
-
-    - name: setup vars.yml
-      copy:
-        src:  "{{WORKDIR}}/vars.yml"
-        dest: "{{NCRTMASTERHOME}}/conf/vars.yml"
-      tags: [ common ]
-
     ## setup container data
-
-    - name: setup container data
-      synchronize:
-        src:  "{{TOOLHOME}}/plugins/ncrtbuild_mastertype_docker.d/containerdata/"
-        dest: "{{NCRTMASTERHOME}}/containerdata/"
-        checksum: yes
-        rsync_opts: [ "-cOJ", "--chown=root:root" ]
-      notify: restart docker-compose
-      tags: [ common ]
 
     - name: read influxdb_has_been_setup status
       slurp:
@@ -118,63 +86,17 @@
 
     ## setup container settings
 
-    - name: setup container settings
-      synchronize:
-        src:  "{{TOOLHOME}}/plugins/ncrtbuild_mastertype_docker.d/containersettings/"
-        dest: "{{NCRTMASTERHOME}}/containersettings/"
-        checksum: yes
-        rsync_opts: [ "-cOJ", "--chown=root:root" ]
-      notify: restart docker-compose
-      tags: [ common ]
-
     - name: setup htpasswd
       copy:
-        src:  "{{WORKDIR}}/plugin_mastertype_docker_users.htpasswd"
+        src:  "{{PLAYBOOKDIR}}/plugin_mastertype_docker_users.htpasswd"
         dest: "{{NCRTMASTERHOME}}/containersettings/thruk_conf/htpasswd"
-      tags: [ common ]
-
-    - name: setup static setting files (by NCRT) for Nagios / Naemon
-      template:
-        src:  "{{TOOLHOME}}/resources/naemon/{{item}}"
-        dest: "{{NCRTMASTERHOME}}/containersettings/naemon_conf/{{item}}"
-      with_items:
-        - ncrt_naemon2influx.cfg
-        - ncrt_naemon_commands.cfg
-        - ncrt_naemon_timeperiods.cfg
-      #notify: restart naemon
-      tags: [ common ]
-
-    - name: setup dynamic setting files (by NCRT) for Nagios / Naemon
-      template:
-        src:  "{{WORKDIR}}/{{item}}"
-        dest: "{{NCRTMASTERHOME}}/containersettings/naemon_conf/{{item}}"
-      with_items:
-        - ncrt_servicetemplates.cfg
-        - ncrt_services.cfg
-        - ncrt_hosttemplates.cfg
-        - ncrt_hosts.cfg
-        - ncrt_users.cfg
-        - ncrt_addresses.cfg
-        - ncrt_hostgroups.cfg
-        - ncrt_servicegroups.cfg
-      #notify: restart naemon
       tags: [ common ]
 
     ## setup containers
 
-    - name: setup containers configuration
-      synchronize:
-        src:  "{{TOOLHOME}}/plugins/ncrtbuild_mastertype_docker.d/containers/"
-        dest: "{{NCRTMASTERHOME}}/containers/"
-        checksum: yes
-        delete: yes
-        rsync_opts: [ "-cOJ", "--chown=root:root" ]
-      notify: restart docker-compose
-      tags: [ commoninstall ]
-
     - name: setup docker-compose.yml
       template:
-        src:  "{{TOOLHOME}}/plugins/ncrtbuild_mastertype_docker.d/containers/docker-compose.yml.tmpl"
+        src:  "ncrtbuild_mastertype_docker.docker-compose.yml.tmpl"
         dest: "{{NCRTMASTERHOME}}/containers/docker-compose.yml"
       notify: restart docker-compose
       tags: [ commoninstall ]
@@ -459,7 +381,7 @@
 
     - name: re-setup docker-compose.yml
       template:
-        src:  "{{TOOLHOME}}/plugins/ncrtbuild_mastertype_docker.d/containers/docker-compose.yml.tmpl"
+        src:  "ncrtbuild_mastertype_docker.docker-compose.yml.tmpl"
         dest: "{{NCRTMASTERHOME}}/containers/docker-compose.yml"
       notify: restart naemon
       tags: [ commoninstall ]

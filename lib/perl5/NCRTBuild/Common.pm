@@ -8,14 +8,18 @@ our @EXPORT = (
 	'mkdir_or_die',
 	'create_or_die',
 	'system_or_die',
-	'parse_itementry',
 	'parse_addressentry',
 	'parse_mapping',
+	'parse_item_with_params',
+	'parse_2items_with_params',
 	'parse_3items_with_params',
+	'parse_4items_with_params',
 	'parse_host2item_mapping',
 	'parse_host2service2item_mapping',
 	'expand_importspec',
 	'expand_params',
+	'generate_naemondirectiveline',
+	'generate_shortnamelist_or_nobody',
 );
 
 use strict;
@@ -72,16 +76,17 @@ sub _parse_params ($) {
 	( $_ ) = @_;
 	my %params;
 	my %templateparams;
+	return undef, \%params, \%templateparams if m"^\s*$";
 	while( m{\G
 		($|\s+
 			(\@)?(\w+)=
 			(?:
 				"([^\\"]*(?:(?:\\\\|\\")+[^\\"]*)*)"|
-				([\w\!\#-\&\(-\/\:-\@\[-\_\{-\~]+)
+				([\w\!\#-\&\(-\/\:-\@\[-\_\{-\~]*)
 			)
 		)
-	}gx ){
-		return \%params, \%templateparams if $1 eq '';
+	}cgx ){
+		return undef, \%params, \%templateparams if $1 eq '';
 
 		my $template = $2;
 		my $key = $3;
@@ -90,18 +95,9 @@ sub _parse_params ($) {
 		if( $template ){ $templateparams{$key} = $value; }
 		else           { $params{$key} = $value; }
 	}
-	return undef;
-}
-
-sub parse_itementry ($) {
-	( $_ ) = @_;
-	chomp;
-	return undef, undef if m"^\s*(#|$)";
-	return undef, "illegal format" unless m"^(\w+)"g;
-	my $item = $1;
-	my ($opt, $topt) = _parse_params $';
-	return undef unless defined $opt;
-	return $item, $opt, $topt;
+	
+	my $failed = substr $_, pos;
+	return "illegal format: starting with \"$failed\"";
 }
 
 sub parse_addressentry ($) {
@@ -127,17 +123,54 @@ sub parse_mapping ($) {
 	return $from, $to, $opt, $topt;
 }
 
+sub parse_item_with_params ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef if m"^\s*(#|$)";
+	return "illegal format: starting with \"$_\"", undef unless m"^(\S+)"g;
+	my $item = $1;
+	my ($err, $params, $special_params) = _parse_params $';
+	return $err, undef if $err;
+	return undef, $item, $params, $special_params;
+}
+
+sub parse_2items_with_params ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef if m"^\s*(#|$)";
+	return "illegal format", undef unless m"^(\S+)\s+(\S+)";
+	my $first  = $1;
+	my $second = $2;
+	my ($err, $params, $special_params) = _parse_params $';
+	return $err, undef if $err;
+	return undef, $first, $second, $params, $special_params;
+}
+
 sub parse_3items_with_params ($) {
 	( $_ ) = @_;
 	chomp;
 	return undef, undef, undef if m"^\s*(#|$)";
-	return undef, undef, "illegal format" unless m"^(\S+)\s+(\S+)\s+(\S+)";
+	return "illegal format", undef unless m"^(\S+)\s+(\S+)\s+(\S+)";
 	my $first  = $1;
 	my $second = $2;
 	my $third  = $3;
-	my ($params, $tparams) = _parse_params $';
-	return undef unless defined $params;
-	return $first, $second, $third, $params, $tparams;
+	my ($err, $params, $special_params) = _parse_params $';
+	return $err, undef if $err;
+	return undef, $first, $second, $third, $params, $special_params;
+}
+
+sub parse_4items_with_params ($) {
+	( $_ ) = @_;
+	chomp;
+	return undef, undef, undef if m"^\s*(#|$)";
+	return undef, undef, "illegal format" unless m"^(\S+)\s+(\S+)\s+(\S+)\s+(\S+)";
+	my $first  = $1;
+	my $second = $2;
+	my $third  = $3;
+	my $fourth = $4;
+	my ($err, $params, $special_params) = _parse_params $';
+	return $err, undef if $err;
+	return undef, $first, $second, $third, $fourth, $params, $special_params;
 }
 
 sub parse_host2item_mapping ($) {
@@ -176,4 +209,20 @@ sub expand_params ($\%) {
 	return $text;
 }
 
+sub generate_naemondirectiveline ($\%) {
+	my ($naemondirective, $params) = @_;
+	my @line;
+	foreach my $k ( sort keys %$naemondirective ){
+		my $v = $$naemondirective{$k};
+		push @line, sprintf "\t%-23s\t%s",
+			$k, expand_params $v, %$params;
+	}
+	return @line;
+}
+
+sub generate_shortnamelist_or_nobody (@) {
+	return 'nobody' unless @_;
+	return 'nobody' if @_ == 1 && !defined $_[0];
+	return join ',', @_;
+}
 

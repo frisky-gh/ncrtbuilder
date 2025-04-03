@@ -11,60 +11,67 @@ use NCRTBuild::Common;
 
 ####
 
-sub new ($$) {
+sub new ($) {
 	my ($class) = @_;
 	return bless {
-		'conf'		=> undef,
-		'workdir'	=> undef,
+		'confdir'	=> undef,
+		'validator'	=> undef,
 
-		'plugin2type2conffile2format' => undef,
+		'pluginconffiles' => undef,
 	};
 }
 
 ####
 
-sub load ($$$) {
-	my ($this, $conf, $workdir) = @_;
-	$$this{conf}    = $conf;
-	$$this{workdir} = $workdir;
+sub setPluginWorkFileValidator ($$) {
+	my ($this, $validator) = @_;
+	$$this{validator} = $validator;
+}
 
-	my %plugin2type2conffile2format = $workdir->loadPlugin2Type2ConfFile2Format;
+sub setInputDir ($$) {
+	my ($this, $confdir) = @_;
+	$$this{confdir} = $confdir;
+}
 
-	$$this{plugin2type2conffile2format} = \%plugin2type2conffile2format;
+sub load ($) {
+	my ($this) = @_;
+	my $confdir = $$this{confdir};
+	my $validator = $$this{validator};
+
+	my @pluginconffiles = $validator->listPluginConfigFiles;
+
+	$$this{pluginconffiles} = \@pluginconffiles;
 }
 
 ####
 
-sub loadPluginConfigOf ($$$$) {
-	my ($this, $type, $plugin, $target_format) = @_;
-	my $conf = $$this{conf};
+sub loadPluginConfigFileOf ($$$) {
+	my ($this, $target_type, $target_plugin) = @_;
+	my $confdir = $$this{confdir};
 	my $host_service = $$this{host_service};
-	my $plugin2type2conffile2format = $$this{plugin2type2conffile2format};
+	my $pluginconffiles = $$this{pluginconffiles};
 
-	my $conffile2format = $$plugin2type2conffile2format{$plugin}->{$type};
-	return () unless defined $conffile2format;
-
-	my %r;
-	while( my ($conffile, $format) = each %$conffile2format ){
-		next unless $format eq $target_format;
-
-		my @content = $conf->loadPluginConfig( $type, $plugin, $conffile );
-		$r{$conffile} = \@content;
+	my @r;
+	foreach( @$pluginconffiles ){
+		my $plugin     = $$_{plugin};
+		my $type       = $$_{type};
+		my $pluginconf = $$_{pluginconf};
+		my $format     = $$_{format};
+		next unless $plugin eq $target_plugin;
+		next unless $type   eq $target_type;
+		my @content = $confdir->read( "$type/$pluginconf" );
+		push @r, {
+			"pluginconf"    => $pluginconf,
+			"format"  => $format,
+			"content" => \@content,
+		};
 	}
 	
-	return %r;
+	return @r;
 }
 
 
 ####
-
-sub listNaemonDefinition ($) {
-	my ($this) = @_;
-	my $host_service = $$this{host_service};
-
-	return @{ $host_service };
-}
-
 
 1;
 

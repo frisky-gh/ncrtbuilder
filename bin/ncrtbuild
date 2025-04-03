@@ -11,32 +11,46 @@ BEGIN {
 use lib "$TOOLHOME/lib/perl5";
 
 use NCRTBuild::Common;
-use NCRTBuild::Configuration;
-use NCRTBuild::WorkDirectory;
-use NCRTBuild::HostServiceValidator;
+use NCRTBuild::PluginConfigDir;
+use NCRTBuild::NCRTConfigDir;
+use NCRTBuild::PluginWorkDir;
+use NCRTBuild::PackageBuilder;
+use NCRTBuild::PlaybookExecuter;
+use NCRTBuild::DistributedPluginConfigDir;
+use NCRTBuild::DistributedNaemonDefinitionDir;
+use NCRTBuild::DistributedNCRTConfigDir;
+use NCRTBuild::PluginExecuter;
+use NCRTBuild::PluginWorkFileValidator;
 use NCRTBuild::PluginConfigValidator;
-use NCRTBuild::MeasurementNaemonDirectiveValidator;
-use NCRTBuild::MonitoringGroupValidator;
-use NCRTBuild::ContactValidator;
-use NCRTBuild::NaemonDefinitionCollection;
-use NCRTBuild::ThresholdRuleCollection;
-use NCRTBuild::FilterRuleCollection;
-use NCRTBuild::SectionConfigCollection;
-
-exit 0;
+use NCRTBuild::ThresholdGenerator;
+use NCRTBuild::Generic::SimpleValueGenerator;
+use NCRTBuild::Generic::KeyValueGenerator;
+use NCRTBuild::NaemonDefinitionDistributor;
+use NCRTBuild::PluginConfigGenerator::Simple;
+use NCRTBuild::PluginConfigGenerator::HostService;
+use NCRTBuild::PluginConfigDistributor::Simple;
+use NCRTBuild::PluginConfigDistributor::HostServiceForAgent;
+use NCRTBuild::PluginConfigDistributor::HostServiceForAgentless;
+use NCRTBuild::PluginConfigDistributor::HostServiceForIndirect;
+use NCRTBuild::ThresholdRuleDistributor;
+use NCRTBuild::Generic::FilterRuleDistributor;
+use NCRTBuild::BackendHostServiceDistributor;
+use NCRTBuild::ResourceDistributor;
 
 use strict;
 use Getopt::Long;
 use URI::Escape;
 use Socket;
 use Template;
+use Carp::Always;
 
 our $TMPDIR = "/tmp";
 our $WORKDIR = "$TMPDIR/ncrt_work.$$";
 
-our $PLUGINSDIR = "$TOOLHOME/plugins";
-our $CONFDIR = "$TOOLHOME/conf";
-our $PLAYBOOKSDIR = "$TOOLHOME/playbooks";
+our $PLUGINDIR     = "$TOOLHOME/plugins";
+our $PLUGINCONFDIR = "$TOOLHOME/conf/plugins";
+our $NCRTCONFDIR   = "$TOOLHOME/conf/ncrt";
+our $FILTERDIR     = "$TOOLHOME/filters";
 our $SRCDIR = "$TOOLHOME/src";
  
 my $workdir;
@@ -89,424 +103,373 @@ my %plan = (
 	'Step21' => 1, # Step21. clean up work dir
 );
 
-if( $dryrun ){ $plan{Step20} = 0; $plan{Step19} = 0; }
+#if( $dryrun ){ $plan{Step20} = 0; $plan{Step19} = 0; }
 if( $master_only ){ $plan{Step20} = 0; }
 if( $agent_only ) { $plan{Step19} = 0; }
 if( $workdir ){ $WORKDIR = $workdir; }
 if( $no_cleanup ){ $plan{Step21} = 0; }
 
-######## Step0. ########
-
-my $conf = NCRTBuild::Configuration->new;
-if( $plan{Step0} ){
-	$conf->load( $CONFDIR, $PLUGINSDIR );
-}
+our $PLUGINWORKDIR            = "$WORKDIR/plugins";
+our $DISTRIBUTEDAGENTBASEDIR  = "$WORKDIR/ncrtagent";
+our $DISTRIBUTEDMASTERBASEDIR = "$WORKDIR/ncrtmaster";
+our $PLAYBOOKDIR              = "$WORKDIR/playbooks";
 
 ######## Step1. ########
 
+my $ncrtconfdir        = NCRTBuild::NCRTConfigDir->new;
+my $pluginconfdir      = NCRTBuild::PluginConfigDir->new;
+my $pluginworkdir      = NCRTBuild::PluginWorkDir->new;
+my $distapluginconfdir = NCRTBuild::DistributedPluginConfigDir->new;
+my $distmpluginconfdir = NCRTBuild::DistributedPluginConfigDir->new;
+my $distnaemondefdir   = NCRTBuild::DistributedNaemonDefinitionDir->new;
+my $distncrtconfdir    = NCRTBuild::DistributedNCRTConfigDir->new;
+my $builder    = NCRTBuild::PackageBuilder->new;
+my $pluginexec = NCRTBuild::PluginExecuter->new;
 if( $plan{Step1} ){
-	$conf->build( $SRCDIR );
+	$ncrtconfdir  ->setPath( $NCRTCONFDIR );
+	$pluginconfdir->setPath( $PLUGINCONFDIR );
+
+	$pluginworkdir     ->setPath( $PLUGINWORKDIR );
+	$distapluginconfdir->setBasePath( $DISTRIBUTEDAGENTBASEDIR );
+	$distmpluginconfdir->setBasePath( $DISTRIBUTEDMASTERBASEDIR );
+	$distncrtconfdir   ->setBasePath( $DISTRIBUTEDMASTERBASEDIR );
+	$distnaemondefdir  ->setBasePath( $DISTRIBUTEDMASTERBASEDIR );
+
+	$pluginexec->setPluginDirPath      ( $PLUGINDIR );
+	$pluginexec->setPluginConfigDirPath( $PLUGINCONFDIR );
+	$pluginexec->setPluginWorkDirPath  ( $PLUGINWORKDIR );
+	$pluginexec->setDistributedAgentBasePath ( $DISTRIBUTEDAGENTBASEDIR );
+	$pluginexec->setDistributedMasterBasePath( $DISTRIBUTEDMASTERBASEDIR );
+	$pluginexec->setPlaybookDirPath    ( $PLAYBOOKDIR );
 }
+
 
 ######## Step2. ########
 
-my $work = NCRTBuild::WorkDirectory->new;
 if( $plan{Step2} ){
-	$work->create( $WORKDIR );
+	$ncrtconfdir->load;
+	$pluginconfdir->load;
+
+	#$builder->buildSubModules();
 }
 
 ######## Step3. ########
 
 if( $plan{Step3} ){
-	#### run agenttype plugins
-	foreach my $e ( $conf->listAgentTypePlugins ){
-		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
-		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-	}
-	foreach my $h ( @ncrtagents ){
-		mkdir_or_die "$WORKDIR/ncrtagent/$h/plugins";
-		mkdir_or_die "$WORKDIR/ncrtagent/$h/conf";
-		mkdir_or_die "$WORKDIR/ncrtagent/$h/conf/agent";
-		mkdir_or_die "$WORKDIR/ncrtagent/$h/conf/indirect";
-		mkdir_or_die "$WORKDIR/ncrtagent/$h/conf/threshold";
-		mkdir_or_die "$WORKDIR/ncrtagent/$h/conf/metricfilter";
-		mkdir_or_die "$WORKDIR/ncrtagent/$h/conf/thresholdfilter";
-		mkdir_or_die "$WORKDIR/ncrtagent/$h/conf/agenttype";
-	}
+	mkdir_or_die $WORKDIR;
+	mkdir_or_die $DISTRIBUTEDAGENTBASEDIR;
+	mkdir_or_die $DISTRIBUTEDMASTERBASEDIR;
+	mkdir_or_die $PLAYBOOKDIR;
 
-	#### run mastertype plugins
-	foreach my $e ( $conf->listMasterTypePlugins ){
-		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
-		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-	}
-	foreach my $h ( @ncrtmasters ){
-		mkdir_or_die "$WORKDIR/ncrtmaster/$h/plugins";
-		mkdir_or_die "$WORKDIR/ncrtmaster/$h/conf";
-		mkdir_or_die "$WORKDIR/ncrtmaster/$h/conf/agentless";
-		mkdir_or_die "$WORKDIR/ncrtmaster/$h/conf/indirect";
-		mkdir_or_die "$WORKDIR/ncrtmaster/$h/conf/reporter";
-		mkdir_or_die "$WORKDIR/ncrtmaster/$h/conf/threshold";
-		mkdir_or_die "$WORKDIR/ncrtmaster/$h/conf/metricfilter";
-		mkdir_or_die "$WORKDIR/ncrtmaster/$h/conf/thresholdfilter";
-		mkdir_or_die "$WORKDIR/ncrtmaster/$h/conf/mastertype";
-	}
-
-	#### run measurement plugins
-	foreach my $e ( $conf->listAgentPlugins ){
-		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
-		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-	}
-	foreach my $e ( $conf->listAgentlessPlugins ){
-		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
-		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-	}
-	foreach my $e ( $conf->listIndirectPlugins ){
-		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
-		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-	}
-
-	#### run other plugins
-	foreach my $e ( $conf->listContactPlugins ){
-		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
-		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-	}
-	foreach my $e ( $conf->listReporterPlugins ){
-		print "$PLUGINSDIR/$e $CONFDIR $WORKDIR\n";
-		system_or_die "$PLUGINSDIR/$e $CONFDIR $WORKDIR";
-	}
+	$pluginworkdir->create;
 }
 
 ######## Step4. ########
 
-my $pcvalidator  = NCRTBuild::PluginConfigValidator->new;
-my $hsvalidator  = NCRTBuild::HostServiceValidator->new;
-my $mndvalidator = NCRTBuild::MeasurementNaemonDirectiveValidator->new;
-my $mgvalidator  = NCRTBuild::MonitoringGroupValidator->new;
-my $cvalidator   = NCRTBuild::ContactValidator->new;
+my @agentplugins;
+my @agentlessplugins;
+my @indirectplugins;
 if( $plan{Step4} ){
-	$work->load();
-	$pcvalidator ->load( $conf, $work );
-	$hsvalidator ->load( $conf, $work );
-	$mndvalidator->load( $conf, $work );
-	$mgvalidator ->load( $conf, $work );
-	$cvalidator  ->load( $conf, $work );
+	$pluginexec->load;
+	$pluginexec->execAgentTypePlugins;
+	$pluginexec->execMasterTypePlugins;
+	$pluginexec->execAgentPlugins;
+	$pluginexec->execAgentlessPlugins;
+	$pluginexec->execIndirectPlugins;
+	$pluginexec->execContactPlugins;
+	$pluginexec->execReporterPlugins;
+
+	@agentplugins     = $pluginexec->listAgentPlugins;
+	@agentlessplugins = $pluginexec->listAgentlessPlugins;
+	@indirectplugins  = $pluginexec->listIndirectPlugins;
 }
 
 ######## Step5. ########
 
-my $ndef = NCRTBuild::NaemonDefinitionCollection->new;
+my $workvalid    = NCRTBuild::PluginWorkFileValidator->new;
+my $pluginconfvalid = NCRTBuild::PluginConfigValidator->new;
+
+my $thrgen        = NCRTBuild::ThresholdGenerator->new;
+my $mfiltergen    = NCRTBuild::Generic::SimpleValueGenerator->new;
+my $tfiltergen    = NCRTBuild::Generic::SimpleValueGenerator->new;
+my $ndirectivegen = NCRTBuild::Generic::KeyValueGenerator->new;
+#my $backendgen    = NCRTBuild::BackendHostServiceGenerator->new;
+
+my $thrdist      = NCRTBuild::ThresholdRuleDistributor->new;
+my $ndefdist     = NCRTBuild::NaemonDefinitionDistributor->new;
+my $backenddist  = NCRTBuild::BackendHostServiceDistributor->new;
+my $filterdist   = NCRTBuild::Generic::FilterRuleDistributor->new;
+my $pluginconfdist4agent     = NCRTBuild::PluginConfigDistributor::HostServiceForAgent->new;
+my $pluginconfdist4agentless = NCRTBuild::PluginConfigDistributor::HostServiceForAgentless->new;
+my $pluginconfdist4indirect  = NCRTBuild::PluginConfigDistributor::HostServiceForIndirect->new;
+my $simplepluginconfdist4a   = NCRTBuild::PluginConfigDistributor::Simple->new;
+my $simplepluginconfdist4m   = NCRTBuild::PluginConfigDistributor::Simple->new;
 if( $plan{Step5} ){
-	my @rules = $conf->loadNaemonDirectiveRules;
+	$workvalid      ->setInputDir( $pluginworkdir );
+	$pluginconfvalid->setInputDir( $pluginconfdir );
 
-	my @agenttypetemplate   = $mndvalidator->listAgentTypeTemplate;
-	my @measurementtemplate = $mndvalidator->listMeasurementTemplate;
-	my @agenthost    = $ndvalidator->listAgentHost;
-	my @host_service = $ndvalidator->listHostService;
+	$pluginconfvalid->setPluginWorkFileValidator( $workvalid );
 
-	my @hostgroup    = $mgvalidator->listHostGroup;
-	my @servicegroup = $mgvalidator->listServiceGroup;
+	$thrdist        ->setGenerator( $thrgen );
+	$filterdist     ->setGenerator( "metricfilter",    "metricfilter",    $mfiltergen );
+	$filterdist     ->setGenerator( "thresholdfilter", "thresholdfilter", $tfiltergen );
+	#$backenddist    ->setGenerator( $backendgen );
 
-	my @contact      = $cvalidator->listContact;
+	$ndefdist       ->setOutputDir( $distnaemondefdir );
+	$thrdist        ->setOutputDir( $distncrtconfdir );
+	$filterdist     ->setOutputDir( $distncrtconfdir );
+	$backenddist    ->setOutputDir( $distncrtconfdir );
 
-	$ndef->setAgentTypeTemplate  ( @agenttypetemplate );
-	$ndef->setMeasurementTemplate( @measurementtemplate );
-	$ndef->setAgentHost          ( @agenthost );
-	$ndef->setHostService        ( @host_service );
-
-	$ndef->setWorkDirectory( $work );
-	$ndef->write;
+	$pluginconfdist4agent    ->setOutputDir( $distapluginconfdir );
+	$pluginconfdist4agentless->setOutputDir( $distmpluginconfdir );
+	$pluginconfdist4indirect ->setOutputDir( $distapluginconfdir );
+	$simplepluginconfdist4a  ->setOutputDir( $distapluginconfdir );
+	$simplepluginconfdist4m  ->setOutputDir( $distmpluginconfdir );
 }
-
 
 ######## Step6. ########
 
-my $thr = NCRTBuild::ThresholdRuleCollection->new;
+my @mastertype;
+my @masterhost;
+my @agenttype;
+my @measurement;
+my @agenthost;
+my @pseudohost;
+my @host_service;
+my @hostgroup;
+my @hostservicegroup;
+my @user;
+my @hostuser;
+my @hostserviceuser;
 if( $plan{Step6} ){
-	my @rules = $conf->loadThresholdRules;
+	$workvalid->load();
 
-	my @host_service = $hsvalidator->listHostService;
-	$thr->parse( \@host_service, @rules );
+	@mastertype       = $workvalid->listMasterTypes;
+	@masterhost       = $workvalid->listMasterHosts;
+	@agenttype        = $workvalid->listAgentTypes;
+	@measurement      = $workvalid->listMeasurements;
+	@agenthost        = $workvalid->listAgentHosts;
+	@pseudohost       = $workvalid->listPseudoHosts;
+	@host_service     = $workvalid->listMonitoredHostServices;
+	@hostgroup        = $workvalid->listMonitoredHostGroups;
+	@hostservicegroup = $workvalid->listMonitoredHostServiceGroups;
+	@user             = $workvalid->listUsers;
+	@hostuser         = $workvalid->listMonitoredHostUsers;
+	@hostserviceuser  = $workvalid->listMonitoredHostServiceUsers;
 
-	$thr->setWorkDirectory( $work );
-	$thr->write;
+	#$pluginworkdir4masters->setMasterHosts( @masterhost );
+	#$pluginworkdir4agents ->setAgentHosts ( @agenthost );
+
+	$pluginconfvalid->load();
 }
-
 
 ######## Step7. ########
 
-my $metfilter = NCRTBuild::FilterRuleCollection->new;
-my $thrfilter = NCRTBuild::FilterRule->new;
 if( $plan{Step7} ){
-	my @host_service = $hsvalidator->listHostService;
+	$distapluginconfdir->setHosts( @agenthost );
+	$distmpluginconfdir->setHosts( @masterhost );
+	$distncrtconfdir   ->setHosts( @masterhost );
+	$distnaemondefdir  ->setHosts( @masterhost );
 
-	my @filterrules = $conf->loadThreholdFilterRules;
-	$metfilter->parse( \@host_service, @filterrules );
-	$metfilter->setWorkDirectory( $work );
-	$metfilter->write( "metric" );
+	$distapluginconfdir->create;
+	$distmpluginconfdir->create;
+	$distncrtconfdir   ->create;
+	$distnaemondefdir  ->create;
 
-	my @filterrules = $conf->loadMetricFilterRules;
-	$thrfilter->parse( \@host_service, @filterrules );
-	$thrfilter->setWorkDirectory( $work );
-	$thrfilter->write( "threshold" );
+	my @rules = $ncrtconfdir->loadNaemonDirectiveRules;
+	$ndirectivegen->setValueName( "naemondirective" );
+	$ndirectivegen->setRules( @rules );
+	$ndirectivegen->prepare;
+
+	my @rules = $ncrtconfdir->loadThresholdRules;
+	$thrgen->setRules( @rules );
+	$thrgen->prepare;
+
+	my @rules = $ncrtconfdir->loadMetricFilterRules;
+	$mfiltergen->setValueName( "filter" );
+	$mfiltergen->setRules( @rules );
+	$mfiltergen->prepare;
+
+	my @rules = $ncrtconfdir->loadThresholdFilterRules;
+	$tfiltergen->setValueName( "filter" );
+	$tfiltergen->setRules( @rules );
+	$tfiltergen->prepare;
+
+	#my @rules = $ncrtconfdir->loadPseudoHost2Service2BackendHost;
+	#$backendgen->setRules( @rules );
+	#$backendgen->prepare;
 }
-
 
 ######## Step8. ########
 
+if( $plan{Step8} ){
+	my %generator_and_distributor = (
+		"default" => sub {
+			my $generator = NCRTBuild::PluginConfigGenerator::HostService->new;
+			return $generator, $pluginconfdist4agent;
+		},
+		"simple"  => sub {
+			my $generator = NCRTBuild::PluginConfigGenerator::Simple->new;
+			return $generator, $simplepluginconfdist4a;
+		},
+	);
+	foreach my $measurement ( @agentplugins ){
+		my @pluginconffile = $pluginconfvalid->loadPluginConfigFileOf( 'agent', $measurement );
+		foreach my $pluginconffile ( @pluginconffile ){
+			my $format     = $$pluginconffile{format};
+			my $pluginconf = $$pluginconffile{pluginconf};
+			my $content    = $$pluginconffile{content};
+			my ($generator, $dist) = &{ $generator_and_distributor{$format} };
+			$generator->setOriginConfig( @$content );
+			$dist->addGenerator( 'agent', $measurement, $pluginconf, $generator );
+		}
+	}
+}
 
 ######## Step9. ########
 
+if( $plan{Step9} ){
+	my %generator_and_distributor = (
+		"default" => sub {
+			my $generator = NCRTBuild::PluginConfigGenerator::HostService->new;
+			return $generator, $pluginconfdist4indirect;
+		},
+		"simple"  => sub {
+			my $generator = NCRTBuild::PluginConfigGenerator::Simple->new;
+			return $generator, $simplepluginconfdist4a;
+		},
+	);
+	foreach my $measurement ( @indirectplugins ){
+		my @pluginconffile = $pluginconfvalid->loadPluginConfigFileOf( 'indirect', $measurement );
+		foreach my $pluginconffile ( @pluginconffile ){
+			my $format     = $$pluginconffile{format};
+			my $pluginconf = $$pluginconffile{pluginconf};
+			my $content    = $$pluginconffile{content};
+			my ($generator, $dist) = &{ $generator_and_distributor{$format} };
+			$generator->setOriginConfig( @$content );
+			$dist->addGenerator( 'indirect', $measurement, $pluginconf, $generator );
+		}
+	}
+}
+
 ######## Step10. ########
 
-######## Step11. ########
-
 if( $plan{Step11} ){
-	my $sectionconfig = NCRTBuild::SectionConfigCollection->new;
-
-	my @measurement = $conf->listAgentPlugins;
-	foreach my $measurement ( @measurement ){
-		my @host_service = $hsvalidator->listHostServiceUsingBackend( $measurement );
-		my %pluginconfig = $pcvalidator->loadPluginConfigOf( 'agent', $measurement, 'section' );
-		$sectionconfig->parse( \@host_service, %pluginconfig );
+	my %generator_and_distributor = (
+		"default" => sub {
+			my $generator = NCRTBuild::PluginConfigGenerator::HostService->new;
+			return $generator, $pluginconfdist4agentless;
+		},
+		"simple"  => sub {
+			my $generator = NCRTBuild::PluginConfigGenerator::Simple->new;
+			return $generator, $simplepluginconfdist4m;
+		},
+	);
+	foreach my $measurement ( @agentlessplugins ){
+		my @pluginconffile = $pluginconfvalid->loadPluginConfigFileOf( 'agentless', $measurement );
+		foreach my $pluginconffile ( @pluginconffile ){
+			my $format     = $$pluginconffile{format};
+			my $pluginconf = $$pluginconffile{pluginconf};
+			my $content    = $$pluginconffile{content};
+			my ($generator, $dist) = &{ $generator_and_distributor{$format} };
+			$generator->setOriginConfig( @$content );
+			$dist->addGenerator( 'agentless', $measurement, $pluginconf, $generator );
+		}
 	}
-
-	$sectionconfig->setWorkDirectory( $work );
-	$sectionconfig->writeAsAgent;
 }
 
 
 ######## Step12. ########
 
 if( $plan{Step12} ){
-	my $sectionconfig = NCRTBuild::SectionConfigCollection->new;
+	$ndefdist->setMasterHosts               ( @masterhost );
+	$ndefdist->setAgentTypes                ( @agenttype );
+	$ndefdist->setMeasurements              ( @measurement );
+	$ndefdist->setAgentHosts                ( @agenthost );
+	$ndefdist->setPseudoHosts               ( @pseudohost );
+	$ndefdist->setMonitoredHostServices     ( @host_service );
+	$ndefdist->setMonitoredHostGroups       ( @hostgroup );
+	$ndefdist->setMonitoredHostServiceGroups( @hostservicegroup );
+	$ndefdist->setUsers                     ( @user );
+	$ndefdist->setMonitoredHostUsers        ( @hostuser );
+	$ndefdist->setMonitoredHostServiceUsers ( @hostserviceuser );
 
-	my @measurement = $conf->listAgentlessPlugins;
-	foreach my $measurement ( @measurement ){
-		my @host_service = $hsvalidator->listHostServiceUsingBackend( $measurement );
-		my %pluginconfig = $pcvalidator->loadPluginConfigOf( 'agentless', $measurement, 'section' );
-		$sectionconfig->parse( \@host_service, %pluginconfig );
-	}
+	my $action_url = $ncrtconfdir->getHELPERURL;
+	$ndefdist->setActionURL( $action_url );
+	$ndefdist->setNaemonDirectiveGenerator  ( $ndirectivegen );
+	$ndefdist->run;
 
-	my @masterhosts = $work->listMasterHosts;
-	$sectionconfig->setWorkDirectory( $work );
-	$sectionconfig->writeAsMaster( @masterhosts );
+	$backenddist->setMonitoredHostServices  ( @host_service );
+	$backenddist->run;
 }
 
 
 ######## Step13. ########
 
 if( $plan{Step13} ){
-	my $sectionconfig = NCRTBuild::SectionConfig->new;
-
-	my @measurement = $conf->listIndirectPlugins;
-	foreach my $measurement ( @measurement ){
-		my @host_service = $hsvalidator->listHostServiceUsingBackend( $measurement );
-		my %pluginconfig = $pcvalidator->loadPluginConfigOf( 'indirect', $measurement, 'section' );
-		$sectionconfig->parse( \@host_service, %pluginconfig );
-	}
-
-	my @masterhosts = $work->listMasterHosts;
-	$sectionconfig->setWorkDirectory( $work );
-	$sectionconfig->writeAsMaster( @masterhosts );
+	$pluginconfdist4agent    ->setMonitoredHostServices( @host_service );
+	$pluginconfdist4agent    ->run;
+	$pluginconfdist4agentless->setMonitoredHostServices( @host_service );
+	$pluginconfdist4agentless->run;
+	$pluginconfdist4indirect ->setMonitoredHostServices( @host_service );
+	$pluginconfdist4indirect ->run;
+	$simplepluginconfdist4a  ->setHosts( @agenthost );
+	$simplepluginconfdist4a  ->run;
+	$simplepluginconfdist4m  ->setHosts( @masterhost );
+	$simplepluginconfdist4m  ->run;
 }
+
 
 
 ######## Step14. ########
 
-my %masterhost2masterparams;
+my $resourcedist = NCRTBuild::ResourceDistributor->new;
 if( $plan{Step14} ){
-	#### masterhosts conf
-	my $f = "$WORKDIR/masterhosts";
-	open my $h, "<", $f or do {
-		die "$f: cannot open, stopped";
-	};
-	while( <$h> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		my ($host, $mastertype, @param) = split m"\s+";
-		my $g = "$WORKDIR/ncrtmaster/$host/ncrtmaster_$mastertype.conf";
-		open my $i, ">", $g or do {
-			die "$g: cannot open, stopped";
-		};
-		foreach my $p ( @param ){
-			print $i "$p\n";
-			die unless $p =~ m"^(\w+)=(.*)$";
-			my $k = $1;
-			my $v = $2;
-			$masterhost2masterparams{$host}->{$k} = $v;
-		}
-		close $i;
-	}
-	close $h;
-
-	####
-	my @masterconfs;
-	my $f = "$WORKDIR/masterconfs";
-	open my $h, '<', $f or do {
-		die "$f: cannot open, stopped";
-	};
-	while( <$h> ){
-		chomp;
-		die unless -f "$CONFDIR/$_";
-		push @masterconfs, $_;
-	}
-	close $h;
-
-	####
-	my $f = "$WORKDIR/reporters";
-	open my $h, '>', $f or do {
-		die "$f: cannot open, stopped";
-	};
-	foreach my $i ( @reporter_plugins ){
-		die unless $i =~ m"^ncrtbuild_reporter_(.*)$";
-		print $h "$1\n";
-	}
-	close $h;
-
-	####
-	foreach my $master ( @ncrtmasters ){
-		foreach my $f ( "reporters" ){
-			system_or_die "cp $WORKDIR/$f $WORKDIR/ncrtmaster/$master/$f";
-		}
-	
-		foreach my $f ( "ncrtbuild.conf", @masterconfs ){
-			system_or_die "cp $CONFDIR/$f $WORKDIR/ncrtmaster/$master/$f";
-		}
-	}
+	$resourcedist->setPluginDirPath               ( $PLUGINDIR );
+	$resourcedist->setFilterDirPath               ( $FILTERDIR );
+	$resourcedist->setDistributedDirPathForAgents ( $DISTRIBUTEDAGENTBASEDIR );
+	$resourcedist->setDistributedDirPathForMasters( $DISTRIBUTEDMASTERBASEDIR );
+	$resourcedist->setAgentHosts                  ( @agenthost );
+	$resourcedist->setMasterHosts                 ( @masterhost );
+	$resourcedist->run;
 }
-
-######## Step18. ########
-
-if( $plan{Step18} ){
-	####
-	my $ncrtmasterhosts = join( ',', @ncrtmasters );
-
-	my $f = "$WORKDIR/vars.yml";
-	open my $h, '>', $f or do {
-		die "$f: cannot open, stopped";
-	};
-	print $h <<"EOF";
----
-
- HELPERURL:           "$HELPERURL"
- HELPERURL_JUMP_TO_DASHBOARD: "$HELPERURL_JUMP_TO_DASHBOARD"
- HELPERURL_SEARCH_PANELS:     "$HELPERURL_SEARCH_PANELS"
- NCRTAGENTHOME:       "$NCRTAGENTHOME"
- NCRTMASTERHOME:      "$NCRTMASTERHOME"
- NAEMON2INFLUX_DEB:   "$NAEMON2INFLUX_DEB"
- GRAFANA_DASHBOARD_HELPER_DEB: "$GRAFANA_DASHBOARD_HELPER_DEB"
-
-EOF
-	while( my ($k, $v) = each %ncrtconf ){
-		next unless $k =~ m"^(AGENT|MASTER)TYPE_[A-Z]+_";
-		print $h " $k: \"$v\"\n";
-	}
-	close $h;
-}
-
-#exit 0;
 
 ######## Step19. ########
 
-sub hash2yaml ($) {
-	my ($params) = @_;
-	my @params;
-	foreach my $k ( sort keys %$params ){
-		my $v = $$params{$k};
-		push @params, "\"$k\":\"$v\"";
-	}
-	return "{" . join(", ", @params) . "}";
-}
-
-sub generate_hosts_yml ($$$$) {
-	my ($name, $hosttype2hosts, $host2params, $regexp) = @_;
-
-	my $hosts_yml = "$WORKDIR/$name.yml";
-	open my $h, '>', $hosts_yml or do {
-		die "$hosts_yml: cannot open, stopped";
-	};
-	print $h
-		"all:\n",
-		"  children:\n",
-		"    AllHosts:\n",
-		"      children:\n";
-	foreach my $hosttype ( sort keys %$hosttype2hosts ){
-		print $h "        $hosttype.__HOSTTYPE__:\n";
-	}
-	foreach my $hosttype ( sort keys %$hosttype2hosts ){
-		my $hosts = $$hosttype2hosts{$hosttype};
-		print $h
-			"    $hosttype.__HOSTTYPE__:\n",
-			"      hosts:\n";
-		foreach my $host ( sort @$hosts ){
-			next unless $host =~ $regexp;
-			my $yaml_hash = hash2yaml $$host2params{$host};
-			print $h "        $host: $yaml_hash\n";
-		}
-	}
-	close $h;
-}
-
-sub generate_playbook ($$) {
-	my ($playbookname, $hosttypes) = @_;
-
-	my $tt = Template->new({
-		INCLUDE_PATH => $PLAYBOOKSDIR,
-		OUTPUT_PATH  => $WORKDIR,
-	}) or do {
-		die "$playbookname.yml.tt: cannot read, stopped";
-	};
-
-	my $output;
-	my %vars = (
-		TOOLHOME    => $TOOLHOME,
-		WORKDIR     => $WORKDIR,
-		HOSTTYPES   => $hosttypes,
-		file_exists => sub { return -f $_[0]; },
-	);
-	$tt->process( "$playbookname.yml.tt", \%vars, "$playbookname.yml" ) or do {
-        	die "$playbookname.yml: " . $tt->error() . ", stopped";
-	};
-}
-
-####
-my $tags = 'common';
-unless( $quick ){
-	$tags .= ',commoninstall';
-}
-
-#### run ansible for nagios master
-generate_hosts_yml 'master_hosts', \%mastertype2masterhosts, \%masterhost2masterparams,
-	$target_master;
-generate_playbook 'build_ncrtmaster', \@mastertypes;
-
-my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -t \"%s\"",
-	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $tags;
-
 if( $plan{Step19} ){
-	my $cmd = "ansible-playbook -v" .
-		" -i $WORKDIR/master_hosts.yml" .
-		" $options $WORKDIR/build_ncrtmaster.yml";
-	print $cmd;
-	system_or_die $cmd;
+	my $playbookexec = NCRTBuild::PlaybookExecuter->new;
+	$playbookexec->setPlaybookDirPath    ( $PLAYBOOKDIR );
+	$playbookexec->setPluginDirPath      ( $PLUGINDIR );
+	$playbookexec->setPluginConfigDirPath( $PLUGINCONFDIR );
+	$playbookexec->setPluginWorkDirPath  ( $PLUGINWORKDIR );
+	$playbookexec->setDistributedDirPath ( $DISTRIBUTEDMASTERBASEDIR );
+	$playbookexec->setBaseName( "build_ncrtmasters" );
+	$playbookexec->setHosts( @masterhost );
+	$playbookexec->setTargetPattern( $target_master );
+	$playbookexec->setQuick if $quick;
+	$playbookexec->setDryRun if $dryrun;
+	my $ansibleoptions = $ncrtconfdir->getANSIBLEOPTIONS;
+	$playbookexec->setAnsibleOptions( $ansibleoptions );
+	$playbookexec->deploy;
 }
 
 ######## Step20. ########
 
-#### run ansible for nrpe agent
-generate_hosts_yml 'agent_hosts', \%agenttype2agenthosts, \%agenthost2agentparams,
-	$target_agent;
-generate_playbook 'build_ncrtagent', \@agenttypes;
-
-my $options = sprintf "%s -e WORKDIR=%s -e TOOLHOME=%s -t \"%s\"",
-	$ncrtconf{'ANSIBLEOPTIONS'}, $WORKDIR, $TOOLHOME, $tags;
-
 if( $plan{Step20} ){
-	my $cmd = "ansible-playbook -v" .
-		" -i $WORKDIR/agent_hosts.yml" .
-		" $options $WORKDIR/build_ncrtagent.yml";
-	print $cmd;
-	system_or_die $cmd;
+	my $playbookexec = NCRTBuild::PlaybookExecuter->new;
+	$playbookexec->setPlaybookDirPath    ( $PLAYBOOKDIR );
+	$playbookexec->setPluginDirPath      ( $PLUGINDIR );
+	$playbookexec->setPluginConfigDirPath( $PLUGINCONFDIR );
+	$playbookexec->setPluginWorkDirPath  ( $PLUGINWORKDIR );
+	$playbookexec->setDistributedDirPath ( $DISTRIBUTEDAGENTBASEDIR );
+	$playbookexec->setBaseName( "build_ncrtagents" );
+	$playbookexec->setHosts( @agenthost );
+	$playbookexec->setTargetPattern( $target_agent );
+	$playbookexec->setQuick if $quick;
+	$playbookexec->setDryRun if $dryrun;
+	my $ansibleoptions = $ncrtconfdir->getANSIBLEOPTIONS;
+	$playbookexec->setAnsibleOptions( $ansibleoptions );
+	$playbookexec->deploy;
 }
 
 ######## Step21. ########

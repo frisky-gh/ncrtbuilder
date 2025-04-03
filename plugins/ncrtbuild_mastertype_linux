@@ -2,27 +2,14 @@
 
 use strict;
 
-if( @ARGV < 2 ){
-	print "usage: % $0 CONFDIR WORKDIR\n";
+if( @ARGV < 3 ){
+	print "usage: % $0 CONFDIR WORKDIR TEMPLATEDIR\n";
 	exit 1;
 }
 
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
-
-#### load global conf.
-my %ncrtconf;
-my $f = "$CONFDIR/ncrtbuild.conf";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die unless m"^(\w+)=(.*)$";
-	$ncrtconf{$1} = $2;
-}
-close $h;
+our $TEMPLATEDIR = $ARGV[2];
 
 #### load linux conf.
 my %targets;

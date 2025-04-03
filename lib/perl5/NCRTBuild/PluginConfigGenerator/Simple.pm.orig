@@ -1,0 +1,61 @@
+#
+
+package NCRTBuild::PluginConfigGenerator::Simple;
+
+use Exporter import;
+our @EXPORT = (
+	"setName"
+);
+
+use strict;
+use NCRTBuild::Common;
+
+####
+
+sub new ($$) {
+	my ($class) = @_;
+	return bless {
+		'content' => undef,
+		'name'    => undef,
+		'category'    => undef,
+	};
+}
+
+####
+
+sub setName ($$) {
+	my ($this, $name) = @_;
+	$$this{name} = $name;
+}
+
+sub setCategory ($$) {
+	my ($this, $category) = @_;
+	$$this{category} = $category;
+}
+
+sub setContent ($@) {
+	my ($this, @content) = @_;
+	$$this{content} = \@content;
+}
+
+sub getName ($) {
+	my ($this) = @_;
+	return $$this{name};
+}
+
+sub getCategory ($) {
+	my ($this) = @_;
+	return $$this{category};
+}
+
+sub get ($$$) {
+	my ($this, $host, $service) = @_;
+	my $content = $$this{content};
+	return @$content;
+}
+
+
+####
+
+1;
+

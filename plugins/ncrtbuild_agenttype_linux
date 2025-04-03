@@ -2,13 +2,14 @@
 
 use strict;
 
-if( @ARGV < 2 ){
-	print "usage: % $0 CONFDIR WORKDIR\n";
+if( @ARGV < 3 ){
+	print "usage: % $0 CONFDIR WORKDIR TEMPLATEDIR\n";
 	exit 1;
 }
 
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
+our $TEMPLATEDIR = $ARGV[2];
 
 #### functions.
 
@@ -27,20 +28,6 @@ sub system_or_die ($) {
 			$cmd, $? >> 8;
 	}
 }
-
-#### load global conf.
-my %ncrtconf;
-my $f = "$CONFDIR/ncrtbuild.conf";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die unless m"^(\w+)=(.*)$";
-	$ncrtconf{$1} = $2;
-}
-close $h;
 
 #### load linux conf.
 my %host2params;
@@ -114,8 +101,7 @@ close $h;
 #### create agent base directories.
 
 while( my ($host, $params) = each %host2params ){
-	system_or_die "rsync -aJUSvx $0.d/ $WORKDIR/ncrtmaster/$h/";
-	system_or_die "rsync -aJUSvx $CONFDIR/../lib/ $WORKDIR/ncrtmaster/$h/lib/";
+	system_or_die "rsync -aJUSx $0.d/ $TEMPLATEDIR/$host/";
 }
 
 #### Playbooks typically cannot read setting files (KEY=VALUE format).

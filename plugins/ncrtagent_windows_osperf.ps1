@@ -1,7 +1,7 @@
 #!powershell
 
 $cpu = Get-WmiObject Win32_PerfFormattedData_PerfOS_Processor |
-    Select Name,PercentIdleTime,PercentInterruptTime,PercentPrivilegedTime,PercentUserTime,PercentProcessorTime　|
+    Select Name,PercentIdleTime,PercentInterruptTime,PercentPrivilegedTime,PercentUserTime,PercentProcessorTime |
     Where-Object {$_.Name -eq "_Total"} 
 $cpu_perf = ( "cpu-idle-pct={0} cpu-user-pct={1} cpu-system-pct={2}" -f $cpu[0].PercentIdleTime,
     $cpu[0].PercentUserTime, ($cpu[0].PercentInterruptTime + $cpu[0].PercentPrivilegedTime) )

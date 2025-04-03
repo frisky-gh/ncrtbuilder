@@ -10,53 +10,39 @@ if( @ARGV < 2 ){
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
 
-#### load global conf.
-my %ncrtconf;
-my $f = "$CONFDIR/ncrtbuild.conf";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die unless m"^(\w+)=(.*)$";
-	$ncrtconf{$1} = $2;
-}
-close $h;
-
 #### load service conf.
 my $f = "$CONFDIR/indirect/ltsv.conf";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
-my $vhost;
-my $vservice;
-my %vhost2vservice;
+my $curr_vhost;
+my $curr_vservice;
+my %vhost2vservices;
+my @backend;
 while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
-		$vhost = $1;
-		$vservice = $2;
-	}elsif( m"^(\w+=\S*)$" ){
-		#
-	}elsif( m"^
-		(\S+)\s+(/\S*)\s+(\S+)
-		(?: \s+((?:\S+=\S* \s+)* \S+=\S*) )?
-	$"x ){
-		my $host = $1;
-		my $path = $2;
-		my $fieldpattern = $3;
-		my $option = $4;
-		$vhost2vservice{$vhost}->{$vservice} = [split m"\s+", $option];
-	}else{
-		die "$f:$.: illegal format, stopped";
-	}
+        chomp;
+        next if m"^\s*(#|$)";
+        if    ( m"^===\s+([-\w]+)\s+([-\w]+)\s+===$" ){
+		$curr_vhost = $1;
+		$curr_vservice = $2;
+                $vhost2vservices{$curr_vhost}->{$curr_vservice} = 1;
+        }elsif( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+		$curr_vhost = undef;
+		$curr_vservice = undef;
+        }elsif( m"^backend=(.*)$" ){
+		next unless defined $curr_vhost;
+		next unless defined $curr_vservice;
+		push @backend, [$curr_vhost, $curr_vservice, $1];
+        }elsif( m"^\w+=.*$" ){
+                # nothing to do
+        }else{
+                die "$f:$.: illegal format, stopped";
+        }
 }
 close $h;
 
 #### append service info.
-my $f = "$WORKDIR/measures";
+my $f = "$WORKDIR/measurements";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -64,20 +50,20 @@ print $h "ltsv	indirect\n";
 close $h;
 
 #### append conf info.
-my $f = "$WORKDIR/measure2conf";
+my $f = "$WORKDIR/plugin2type2pluginconf2format";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "ltsv	indirect/ltsv.conf\n";
+print $h "ltsv	indirect	ltsv.conf	default\n";
 close $h;
 
 #### append service mapping
-my $f = "$WORKDIR/host2service2measure";
+my $f = "$WORKDIR/monitoredhost2service2measurement";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 
-while( my ($vhost, $vservices) = each %vhost2vservice ){
+while( my ($vhost, $vservices) = each %vhost2vservices ){
 	foreach my $vservice ( sort keys %$vservices ){
 		my $options = $$vservices{$vservice};
 		print $h "$vhost	$vservice	ltsv\n";
@@ -85,6 +71,17 @@ while( my ($vhost, $vservices) = each %vhost2vservice ){
 }
 close $h;
 
+#### append service mapping
+my $f = "$WORKDIR/pseudohost2service2backendhost";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+foreach my $i ( @backend ){
+	my ($pseudohost, $service, $backendhost) = @$i;
+	print $h "$pseudohost $service $backendhost\n";
+}
+close $h;
 
+exit 0;
 
 

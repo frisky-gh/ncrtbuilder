@@ -10,41 +10,21 @@ if( @ARGV < 2 ){
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
 
-#### load global conf.
-my %ncrtconf;
-my $f = "$CONFDIR/ncrtbuild.conf";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die unless m"^(\w+)=(.*)$";
-	$ncrtconf{$1} = $2;
-}
-close $h;
-
 #### load detector conf.
 my $f = "$CONFDIR/agentless/livestatus.conf";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
-my $vhost;
-my %vhost2vservice2info;
+my %vhost2vservices;
 while( <$h> ){
 	chomp;
 	next if m"^\s*(#|$)";
-	if( m"^===\s+(\S+)\s+===$" ){
-		$vhost = $1;
-	}elsif( m"^
-		(\S+)
-		\s+
-		(\S+)
-		(\s+ ([-\w]+),([-\w]+)(,\S+)?)+
-		\S*
-	$"x ){
-		my ($vservice, $socket, @host_desc) = split m"\s+";
-		push @{$vhost2vservice2info{$vhost}->{$vservice}}, [$socket, @host_desc];
+	if    ( m"^===\s+([-\w]+)\s+([-\w]+)\s+===$" ){
+		$vhost2vservices{$1}->{$2} = 1;
+	}elsif( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+		# nothing to do
+	}elsif( m"^\w+=.*$" ){
+		# nothing to do
 	}else{
 		die "$f:$.: illegal format, stopped";
 	}
@@ -52,7 +32,7 @@ while( <$h> ){
 close $h;
 
 #### append measure info.
-my $f = "$WORKDIR/measures";
+my $f = "$WORKDIR/measurements";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -60,20 +40,20 @@ print $h "livestatus	agentless\n";
 close $h;
 
 #### append conf info.
-my $f = "$WORKDIR/measure2conf";
+my $f = "$WORKDIR/plugin2type2pluginconf2format";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "livestatus	agentless/livestatus.conf\n";
+print $h "livestatus	agentless	livestatus.conf	default\n";
 close $h;
 
 #### append service mapping
-my $f = "$WORKDIR/host2service2measure";
+my $f = "$WORKDIR/monitoredhost2service2measurement";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-while( my ($vhost, $vservice2info) = each %vhost2vservice2info ){
-	while( my ($vservice, $info) = each %$vservice2info ){
+while( my ($vhost, $vservices) = each %vhost2vservices ){
+	while( my ($vservice, undef) = each %$vservices ){
 		print $h "$vhost	$vservice	livestatus\n";
 	}
 }

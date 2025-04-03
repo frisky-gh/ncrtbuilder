@@ -2,28 +2,33 @@
 
 use strict;
 
-if( @ARGV < 2 ){
-	print "usage: % $0 CONFDIR WORKDIR\n";
+if( @ARGV < 4 ){
+	print "usage: % $0 PLUGINCONFDIR PLUGINWORKDIR DISTRIBUTEDDIR PLAYBOOKDIR\n";
 	exit 1;
 }
 
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
+our $DISTRIBUTEDDIR = $ARGV[2];
+our $PLAYBOOKDIR = $ARGV[3];
 
-#### load global conf.
-my %ncrtconf;
-my $f = "$CONFDIR/ncrtbuild.conf";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die unless m"^(\w+)=(.*)$";
-	$ncrtconf{$1} = $2;
+#### functions.
+
+sub system_or_die ($) {
+	my ($cmd) = @_;
+	my $r = system $cmd;
+	if   ($? == -1){
+		die sprintf "%s: failed to execute: %d, stopped",
+			$cmd, $!;
+	}elsif($? & 127){
+		die sprintf
+			"%s: child died with signal %d, %s coredump, stopped",
+			$cmd, ($? & 127), ($? & 128) ? 'with' : 'without';
+	}elsif( ($?>>8) != 0){
+		 die sprintf "%s: child exited with value %d, stopped",
+			$cmd, $? >> 8;
+	}
 }
-close $h;
-my $masterhome = $ncrtconf{NCRTMASTERHOME} // "/opt/ncrtmaster";
 
 #### load docker conf.
 my %targets;
@@ -53,41 +58,41 @@ while( <$h> ){
 close $h;
 
 my %server_settings = (
-	'GRAFANA_ADMIN'           => 'ncrt_gfadmin',
-	'GRAFANA_ADMINPASSWD'     => 'XXXXSECRETXXXX',
-	'GRAFANA_ADMINEMAIL'      => 'ncrt_gfadmin@example.com',
-	'GRAFANA_USER'            => 'ncrt_gfuser',
-	'GRAFANA_USERPASSWD'      => 'XXXXSECRETXXXX',
-	'GRAFANA_USEREMAIL'       => 'ncrt_gfuser@example.com',
-	'GRAFANA_ORG'             => 'ncrt_gforg',
-	'GRAFANA_ORGID'           => '1',
-	'GRAFANA_TOKEN'           => '',
-	'GRAFANA_DATASOURCE'      => 'influxdb',
-	'GRAFANA_DB'              => 'ncrt_gfdb',
+	'GRAFANA_ADMIN' 		=> 'ncrt_gfadmin',
+	'GRAFANA_ADMINPASSWD'		=> 'XXXXSECRETXXXX',
+	'GRAFANA_ADMINEMAIL'		=> 'ncrt_gfadmin@example.com',
+	'GRAFANA_USER'			=> 'ncrt_gfuser',
+	'GRAFANA_USERPASSWD'		=> 'XXXXSECRETXXXX',
+	'GRAFANA_USEREMAIL'		=> 'ncrt_gfuser@example.com',
+	'GRAFANA_ORG'			=> 'ncrt_gforg',
+	'GRAFANA_ORGID' 		=> '1',
+	'GRAFANA_TOKEN' 		=> '',
+	'GRAFANA_DATASOURCE'		=> 'influxdb',
+	'GRAFANA_DB'			=> 'ncrt_gfdb',
 
-	'INFLUXDB_USER'           => 'ncrt_ifxuser',
-	'INFLUXDB_PASSWD'         => 'XXXXSECRETXXXX',
-	'INFLUXDB_ORG'            => 'ncrt_ifxorg',
-	'INFLUXDB_BUCKET'         => 'ncrt_ifxbucket',
-	'INFLUXDB_OPTIONALBUCKET' => 'ncrt_ifxoptional',
-	'INFLUXDB_ARCHIVEBUCKET'  => 'ncrt_ifxarchive',
-	'INFLUXDB_TOKEN'          => 'ncrt_ifxtoken',
+	'INFLUXDB_USER' 		=> 'ncrt_ifxuser',
+	'INFLUXDB_PASSWD'		=> 'XXXXSECRETXXXX',
+	'INFLUXDB_ORG'			=> 'ncrt_ifxorg',
+	'INFLUXDB_BUCKET'		=> 'ncrt_ifxbucket',
+	'INFLUXDB_OPTIONALBUCKET'	=> 'ncrt_ifxoptional',
+	'INFLUXDB_ARCHIVEBUCKET'	=> 'ncrt_ifxarchive',
+	'INFLUXDB_TOKEN'		=> 'ncrt_ifxtoken',
 
-	'DATADIR'                 => "$masterhome/containerdata",
-	'MANAGE_GRAFANA'          => '1',
-	'MANAGE_INFLUXDB'         => '1',
+	'DATADIR'			=> "/opt/ncrtmaster/containerdata",
+	'MANAGE_GRAFANA'		=> '1',
+	'MANAGE_INFLUXDB'		=> '1',
 
-	'BROWSERSIDE_URL_PREFIX'  => 'http://example.com/',
-	'SERVERSIDE_PORT'         => '80',
-	'SERVERSIDE_PATH_PREFIX'  => '/',
-	'PROXY'                   => '',
+	'BROWSERSIDE_URL_PREFIX'	=> 'http://example.com/',
+	'SERVERSIDE_PORT'		=> '80',
+	'SERVERSIDE_PATH_PREFIX'	=> '/',
+	'PROXY'				=> '',
 );
 my %server_settings_which_must_be_specified_by_user = (
-	'GRAFANA_ADMINEMAIL'  => 1,
-	'GRAFANA_ADMINPASSWD' => 1,
-	'GRAFANA_USEREMAIL'   => 1,
-	'GRAFANA_USERPASSWD'  => 1,
-	'BROWSERSIDE_URL_PREFIX' => 1,
+	'GRAFANA_ADMINEMAIL'		=> 1,
+	'GRAFANA_ADMINPASSWD'		=> 1,
+	'GRAFANA_USEREMAIL'		=> 1,
+	'GRAFANA_USERPASSWD'		=> 1,
+	'BROWSERSIDE_URL_PREFIX'	=> 1,
 );
 
 my $f = "$CONFDIR/mastertype/docker.conf";
@@ -156,6 +161,13 @@ open my $h, '>>', $f or do {
 print $h "docker	\n";
 close $h;
 
+#### create agent base directories.
+
+while( my ($host, $params) = each %targets ){
+	system_or_die "rsync -aJUSx $0.d/ $DISTRIBUTEDDIR/$host/";
+}
+
+
 #### Playbooks typically cannot read setting files (KEY=VALUE format).
 #### Plugin scripts may convert settings to YAML-formatted files.
 #### You can place YAML-formatted configuration files in ncrtbuild working dir and name them "plugin_PLUGINNAME_XXX.yml" to prevent conflicts between each configuration file.
@@ -169,7 +181,7 @@ close $h;
 #close $h;
 
 #### pass settings to the playbook of this plugin
-my $f = "$WORKDIR/plugin_mastertype_docker_vars.yml";
+my $f = "$PLAYBOOKDIR/plugin_mastertype_docker_vars.yml";
 open my $h, '>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -179,7 +191,7 @@ while( my ($k, $v) = each %server_settings ){
 close $h;
 
 #### pass users' infomation to the playbook of this plugin
-my $f = "$WORKDIR/plugin_mastertype_docker_users.yml";
+my $f = "$PLAYBOOKDIR/plugin_mastertype_docker_users.yml";
 open my $h, '>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -194,7 +206,7 @@ foreach my $user ( sort keys %users ){
 }
 close $h;
 
-my $f = "$WORKDIR/plugin_mastertype_docker_users.htpasswd";
+my $f = "$PLAYBOOKDIR/plugin_mastertype_docker_users.htpasswd";
 open my $h, '>', $f or do {
 	die "$f: cannot open, stopped";
 };

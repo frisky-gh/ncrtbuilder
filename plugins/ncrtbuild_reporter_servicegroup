@@ -10,33 +10,19 @@ if( @ARGV < 2 ){
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
 
-#### load global conf.
-my %ncrtconf;
-my $f = "$CONFDIR/ncrtbuild.conf";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die unless m"^(\w+)=(.*)$";
-	$ncrtconf{$1} = $2;
-}
-close $h;
-
 #### append conf info.
-my $f = "$WORKDIR/masterconfs";
+my $f = "$WORKDIR/plugin2type2pluginconf2format";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "reporter/servicegroup.conf\n";
-print $h "reporter/servicegroup.rules\n";
-print $h "reporter/servicegroup_activesession.tt\n";
-print $h "reporter/servicegroup_inactivesession.tt\n";
+print $h "contact	reporter	servicegroup.conf		simple\n";
+print $h "contact	reporter	servicegroup.rules		simple\n";
+print $h "contact	reporter	servicegroup_activesession.tt	simple\n";
+print $h "contact	reporter	servicegroup_inactivesession.tt	simple\n";
 foreach my $f ( "mail", "slack_open", "slack_close" ){
 	my $p = "reporter/servicegroup_$f.tt";
 	next unless -f "$CONFDIR/$p";
-	print $h "$p\n";
+	print $h "contact	reporter	servicegroup_$f.tt	simple\n";
 }
 close $h;
 

@@ -10,20 +10,6 @@ if( @ARGV < 2 ){
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
 
-#### load global conf.
-my %ncrtconf;
-my $f = "$CONFDIR/ncrtbuild.conf";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die unless m"^(\w+)=(.*)$";
-	$ncrtconf{$1} = $2;
-}
-close $h;
-
 #### load linuxhosts.
 my %targets;
 my $f = "$WORKDIR/agenthosts";
@@ -39,7 +25,7 @@ while( <$h> ){
 close $h;
 
 #### append measure info.
-my $f = "$WORKDIR/measures";
+my $f = "$WORKDIR/measurements";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -47,15 +33,15 @@ print $h "networkserverperf	agent	display_name=\"Network Server Connections\"\n"
 close $h;
 
 #### append conf info.
-my $f = "$WORKDIR/measure2conf";
+my $f = "$WORKDIR/plugin2type2pluginconf2format";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "networkserverperf	agent/networkserverperf.rules\n";
+print $h "networkserverperf	agent	networkserverperf.rules	default\n";
 close $h;
 
 #### append service mapping
-my $f = "$WORKDIR/host2service2measure";
+my $f = "$WORKDIR/monitoredhost2service2measurement";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };

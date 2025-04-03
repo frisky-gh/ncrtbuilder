@@ -44,37 +44,34 @@ inc/
 /conf/*.hosts
 /conf/*.rules
 # settings for measures
-/conf/agent/*.hosts
-/conf/agent/*.rules
-/conf/agent/*.ignores
-/conf/agent/*.categories
-/conf/agent/*.conf
-/conf/agentless/*.conf
-/conf/indirect/*.conf
+/conf/plugins/agent/*.hosts
+/conf/plugins/agent/*.rules
+/conf/plugins/agent/*.ignores
+/conf/plugins/agent/*.categories
+/conf/plugins/agent/*.conf
+/conf/plugins/agentless/*.conf
+/conf/plugins/indirect/*.conf
+/conf/plugins/reporter/*.conf
+/conf/plugins/reporter/*.rules
+/conf/plugins/reporter/*.tt
+/conf/plugins/agenttype/*.conf
+/conf/plugins/agenttype/*.pem
+/conf/plugins/agenttype/*.hosts
+/conf/plugins/agenttype/*.yml
+/conf/plugins/mastertype/*.conf
+/conf/plugins/mastertype/*.htpasswd
+/conf/plugins/mastertype/*.hosts
+/conf/plugins/contact/*.conf
 # option parameters
-/conf/option/*.optionrules
+/conf/ncrt/naemondirective/*.optionrules
 # threshold settings
-/conf/threshold/*.thresholds
+/conf/ncrt/threshold/*.thresholds
 # settings for miscs
-/conf/metricfilter/*.filterrules
-/conf/thresholdfilter/*.filterrules
-/conf/reporter/*.conf
-/conf/reporter/*.rules
-/conf/reporter/*.tt
-/conf/agenttype/*.conf
-/conf/agenttype/*.pem
-/conf/agenttype/*.hosts
-/conf/agenttype/*.yml
-/conf/mastertype/*.conf
-/conf/mastertype/*.htpasswd
-/conf/mastertype/*.hosts
-/conf/contact/*.conf
+/conf/ncrt/metricfilter/*.filterrules
+/conf/ncrt/thresholdfilter/*.filterrules
 # filters
 /filters/*.filter
 #
-/ncrtmaster/conf/*.conf
-/ncrtmaster/conf/*.tt
-/ncrtmaster/conf/*.rules
 /playbooks/*.retry
 /src/*
 !.gitkeep

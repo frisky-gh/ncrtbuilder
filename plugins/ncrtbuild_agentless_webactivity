@@ -10,57 +10,21 @@ if( @ARGV < 2 ){
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
 
-#### load global conf.
-my %ncrtconf;
-my $f = "$CONFDIR/ncrtbuild.conf";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die unless m"^(\w+)=(.*)$";
-	$ncrtconf{$1} = $2;
-}
-close $h;
-
 #### load detector conf.
 my $f = "$CONFDIR/agentless/webactivity.conf";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
-my $vhost;
-my %vhost2rules;
+my %vhost2vservices;
 while( <$h> ){
 	chomp;
 	next if m"^\s*(#|$)";
-	if( m"^===\s+(\S+)\s+===$" ){
-		$vhost = $1;
-	}elsif( m"^
-		(\S+)\s+
-		(
-			http(s)?://
-			(?:([^\s:]+):([^\s\@]+)\@)?
-			([-0-9a-zA-Z.]+)
-			(?::(\d+))?
-			((/[^\s\?]*)?(?:\?(\S*))?)
-		)\s+ 
-		(\d+)
-		(  (?: \s+ \S+ )*  )
-		\S*
-	$"x ){
-		my $shortname = $1;
-		my $url = $2;
-		my $status = $3;
-		# same url string to the url in ncrtmaster_website_activity
-		my $url = $3 ? "https" : "http";
-		$url .= "://";
-		$url .= "$4\@" if $4;
-		$url .= $6;
-		$url .= ":$7" if $7;
-		$url .= $8 if $8;
-		$url =~ s{[^-.\w:/@%=&+?]}{"#".uc unpack("H2",$&)}eg;
-		push @{$vhost2rules{$vhost}}, [$shortname, $url, $status];
+	if    ( m"^===\s+([-\w]+)\s+([-\w]+)\s+===$" ){
+		$vhost2vservices{$1}->{$2} = 1;
+	}elsif( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+		# nothing to do
+	}elsif( m"^\w+=.*$" ){
+		# nothing to do
 	}else{
 		die "$f:$.: illegal format, stopped";
 	}
@@ -68,7 +32,7 @@ while( <$h> ){
 close $h;
 
 #### append measure info.
-my $f = "$WORKDIR/measures";
+my $f = "$WORKDIR/measurements";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -76,22 +40,21 @@ print $h "webactivity	agentless\n";
 close $h;
 
 #### append conf info.
-my $f = "$WORKDIR/measure2conf";
+my $f = "$WORKDIR/plugin2type2pluginconf2format";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "webactivity	agentless/webactivity.conf\n";
+print $h "webactivity	agentless	webactivity.conf	default\n";
 close $h;
 
 #### append service mapping
-my $f = "$WORKDIR/host2service2measure";
+my $f = "$WORKDIR/monitoredhost2service2measurement";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-while( my ($vhost, $rules) = each %vhost2rules ){
-	foreach my $rule ( @$rules ){
-		my $shortname = $rule->[0];
-		print $h "$vhost	$shortname	webactivity\n";
+while( my ($vhost, $vservices) = each %vhost2vservices ){
+	while( my ($vservice, undef) = each %$vservices ){
+		print $h "$vhost	$vservice	webactivity\n";
 	}
 }
 close $h;

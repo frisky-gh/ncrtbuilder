@@ -10,23 +10,9 @@ if( @ARGV < 2 ){
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
 
-#### load global conf.
-my %ncrtconf;
-my $f = "$CONFDIR/ncrtbuild.conf";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die unless m"^(\w+)=(.*)$";
-	$ncrtconf{$1} = $2;
-}
-close $h;
-
 #### load hosts
 my %host2service;
-my $f = "$WORKDIR/host2service2measure";
+my $f = "$WORKDIR/monitoredhost2service2measurement";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -79,7 +65,7 @@ while( <$h> ){
 close $h;
 
 ####
-my $f = "$WORKDIR/host2contact";
+my $f = "$WORKDIR/monitoredhost2user";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -92,7 +78,7 @@ while( my ($host, $service) = each %host2service ){
 }
 close $h;
 
-my $f = "$WORKDIR/host2service2contact";
+my $f = "$WORKDIR/monitoredhost2service2user";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -107,7 +93,7 @@ while( my ($host, $services) = each %host2service ){
 }
 close $h;
 
-my $f = "$WORKDIR/host2group";
+my $f = "$WORKDIR/monitoredhost2group";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -118,7 +104,7 @@ while( my ($host) = each %host2service ){
 }
 close $h;
 
-my $f = "$WORKDIR/host2service2group";
+my $f = "$WORKDIR/monitoredhost2service2group";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
