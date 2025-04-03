@@ -16,6 +16,7 @@ our @EXPORT = (
 	'generate_metrics_from_targetagent',
 	'generate_metrics_from_proxyagents',
 	'generate_metrics_from_localplugin',
+	'ping_to_agent',
 	'pass_through_filters',
 	'evaluate_values',
 	'generate_thresholds',
@@ -85,16 +86,16 @@ sub generate_metrics_by_ncrtprotocol ($$$$$) {
 	my $res = $ua->request($req);
 
 	my %metrics;
-	unless($res->is_success) {
-		$metrics{"ncrtagent[$proxyhost]-error"} = 1;
-		return %metrics;
-	}
-
 	foreach my $i ( split m"\n+", $res->content ){
 		next unless $i =~ m"^([^\s=]+)=(.*)$";
 		my $k = $1;
 		my $v = $2;
-		$metrics{$k} = $v;
+		if( $k eq "message" ){ push @{$metrics{$k}}, $v; }
+		else                 { $metrics{$k} = $v; }
+	}
+	unless($res->is_success) {
+		$metrics{"ncrtagent[$proxyhost]-error"} = 1;
+		return %metrics;
 	}
 
 	$metrics{"ncrtagent[$proxyhost]-error"} = 0;
@@ -107,13 +108,18 @@ sub generate_metrics_by_nrpeprotocol ($$$$$) {
 	my %metrics;
 
 	####
-	my $timeout = $$param{timeout} // 50;
+	my $timeout = $$param{timeout}       // 50;
 	my $address = $$param{agent_address} // $proxyhost;
-	my $port    = $$param{agent_port} // "5666";
-	my $client  = $$param{agent_client} // "/usr/lib/nagios/plugins/check_nrpe";;
+	my $port    = $$param{agent_port}    // "5666";
+	my $nrpever = $$param{agent_nrpever} // 2;
+	my $client  = $$param{agent_client}  // "/usr/lib/nagios/plugins/check_nrpe";;
+	my $option = "-H $address -p $port -t $timeout";
+	if   ( $nrpever == 2 ){ $option .= " -2"; }
+	elsif( $nrpever == 3 ){ $option .= " -3"; }
+	elsif( $nrpever == 4 ){ }
 
 	####
-	open my $h, '-|', "$client -H $address -p $port -t $timeout -c check_$service" or do {
+	open my $h, '-|', "$client $option -c check_$service" or do {
 		$metrics{"nrpe[$proxyhost]-error"} = 3;
 		return %metrics;
 	};
@@ -203,6 +209,67 @@ sub generate_metrics_from_localplugin ($$$) {
 	return %metrics;
 }
 
+sub ping_by_ncrtprotocol ($$) {
+	my ($host, $param) = @_;
+
+	####
+	my $timeout = $$param{timeout}       // 20;
+	my $address = $$param{agent_address} // $host;
+	my $port    = $$param{agent_port}    // "46848";
+
+	####
+	my $ua = LWP::UserAgent->new;
+	$ua->agent("NCRTRemoteDetect/1.0");
+	$ua->timeout($timeout);
+	my $url = "http://$address:$port/ping";
+	my $req = HTTP::Request->new(GET => $url);
+	my $res = $ua->request($req);
+
+	return undef unless $res->is_success;
+	return 1;
+}
+
+sub ping_by_nrpeprotocol ($$) {
+	my ($host, $param) = @_;
+
+	####
+	my $timeout = $$param{timeout}       // 20;
+	my $address = $$param{agent_address} // $host;
+	my $port    = $$param{agent_port}    // "5666";
+	my $nrpever = $$param{agent_nrpever} // 2;
+	my $client  = $$param{agent_client}  // "/usr/lib/nagios/plugins/check_nrpe";;
+	my $option = "-H $address -p $port -t $timeout";
+	if   ( $nrpever == 2 ){ $option .= " -2"; }
+	elsif( $nrpever == 3 ){ $option .= " -3"; }
+	elsif( $nrpever == 4 ){ }
+
+	####
+	open my $h, '-|', "$client $option -c check_ok" or do {
+		return undef;
+	};
+	my $r = <$h>;
+	close $h;
+
+	chomp $r;
+	$r =~ m"^OK"x or do {
+		return undef;
+	};
+	return 1;
+}
+
+sub ping_to_agent ($$) {
+	my ($host, $param) = @_;
+
+	my $protocol = $$param{agent_protocol} // "ncrtagent";
+	if( $protocol eq 'nrpe' ){
+		return ping_by_nrpeprotocol $host, $param;
+	}elsif( $protocol eq 'ncrtagent' ){
+		return ping_by_ncrtprotocol $host, $param;
+	}else{
+		die;
+	}
+}
+
 sub pass_through_filters ($$$$%) {
 	my ($measure, $host, $service, $filtertype, %metrics) = @_;
 
@@ -228,26 +295,28 @@ sub pass_through_filters ($$$$%) {
 		};
 
 		while( my ($k, $v) = each %metrics ){
-			print $in "$k=$v\n";
+			if( ref($v) eq "ARRAY" ){
+				foreach my $i (@$v){ print $in "$k=$i\n"; }
+			}else{
+				print $in "$k=$v\n";
+			}
 		}
 		close $in;
 
 		%metrics = ();
-		my @output;
 		while( <$out> ){
 			chomp;
 			next if m"^\s*(#|$)";
 			die "$_, stopped" unless m"^([^[:cntrl:]\s:;=]+)=(.*)$";
 			my $k = $1;
 			my $v = $2;
-			if( $k eq 'output' ){ push @output, $v; }
-			else                { $metrics{$k} = $v; }
+			if( $k eq 'message' ){ push @{$metrics{$k}}, $v; }
+			else                 { $metrics{$k} = $v; }
 		}
 		close $out;
 
 		my $plugin_rc = $? >> 8;
 		$main::PLUGIN_HAS_FAILED = 1 if $plugin_rc > 0;
-
 	}
 	return %metrics;
 }
@@ -261,6 +330,7 @@ sub evaluate_values ($$$%) {
 
 	foreach my $k ( sort keys %values ){
 		my $v = $values{$k};
+		next unless ref($v) eq "";
 		next if $v =~ m"^\s*$";
 		next if $v =~ m"^([-+]?\d+(?:\.\d+)?)([%a-zA-Z]*)$";
 
@@ -358,14 +428,20 @@ sub generate_detection_results ($$$%) {
 		}
 	}
 
+	my @messages;
 	my (@p, @c, @w);
 	foreach my $k ( sort keys %metrics ){
 		my $v = $metrics{$k};
-		my ($min, $max);
 	
+		if( ref($v) eq "ARRAY" ){
+			push @messages, @$v;
+			next;
+		}
 		next unless $v =~ m"^([-+]?\d+(?:\.\d+)?)(.*)$";
 		my $value = $1;
 		my $unit = $2;
+
+		my ($min, $max);
 		if   ( $unit eq '%' ) { $min = '0.00'; $max = '100.00'; }
 		elsif( $unit eq 'MB' ){ $min = '0.00'; }
 		my $key_text = $unit ? "$k\[$unit\]" : "$k";
@@ -405,11 +481,10 @@ sub generate_detection_results ($$$%) {
 	elsif( @c ){ $status = 'CRIT'; $statuscode = 2; }
 	elsif( @w ){ $status = 'WARN'; $statuscode = 1; }
 
-	my $output = join ' / ', $status, @main::OUTPUTS, @c, @w;
+	my $output = join ' / ', $status, @main::OUTPUTS, @c, @w, @messages;
 	my $perfdata = join ' ', @p;
 	return $statuscode, $output, $perfdata;
 }
 
 1;
-
 
