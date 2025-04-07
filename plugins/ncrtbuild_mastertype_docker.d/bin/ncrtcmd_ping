@@ -16,7 +16,7 @@ use NCRTTimeSeries;
 our $BINDIR = "$TOOLHOME/bin";
 our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $FILTERSDIR = "$TOOLHOME/filters";
-our $CONFDIR = "$TOOLHOME/conf";
+our $CONFDIR = "$TOOLHOME/pluginsconf";
 
 if( @ARGV < 1 ){
 	print "usage: % $0 HOST\n";

@@ -11,10 +11,10 @@ use NCRTTimeSeries;
 
 our @EXPORT = (
 	'load_hosts',
-	'load_proxyhosts',
+	'load_backendhosts',
 	'generate_metrics_from_agent',
 	'generate_metrics_from_targetagent',
-	'generate_metrics_from_proxyagents',
+	'generate_metrics_from_backendagents',
 	'generate_metrics_from_localplugin',
 	'ping_to_agent',
 	'pass_through_filters',
@@ -24,7 +24,7 @@ our @EXPORT = (
 );
 
 sub load_hosts () {
-	my $f = "$main::CONFDIR/agenthosts";
+	my $f = "$main::NCRTCONFDIR/agenthosts";
 	open my $h, '<', $f or do {
 		die "$f: cannot open, stopped";
 	};
@@ -46,35 +46,35 @@ sub load_hosts () {
 	return \%host2param;
 }
 
-sub load_proxyhosts ($$$) {
+sub load_backendhosts ($$$) {
 	my ($measure, $host, $service) = @_;
 
 	#### load service conf.
-	my $f = "$main::CONFDIR/indirect/proxyhosts.$measure.$host.$service";
+	my $f = "$main::NCRTCONFDIR/backend/backend.$measure.$host.$service";
 	open my $h, '<', $f or do {
 		die "$f: cannot open, stopped";
 	};
-	my %proxyhost2param;
+	my %backendhost2param;
 	while( <$h> ){
 		chomp;
 		next if m"^\s*(#|$)";
 		if( m"^(\S+)"x ){
-			my ($proxyhost, @param) = split m"\s+";
-			$proxyhost2param{$proxyhost} = \@param;
+			my ($backendhost, @param) = split m"\s+";
+			$backendhost2param{$backendhost} = \@param;
 		}else{
 			die "$f:$.: illegal format, stopped";
 		}
 	}
 	close $h;
-	return \%proxyhost2param;
+	return \%backendhost2param;
 }
 
 sub generate_metrics_by_ncrtprotocol ($$$$$) {
-	my ($proxyhost, $measure, $host, $service, $param) = @_;
+	my ($backendhost, $measure, $host, $service, $param) = @_;
 
 	####
 	my $timeout = $$param{timeout} // 50;
-	my $address = $$param{agent_address} // $proxyhost;
+	my $address = $$param{agent_address} // $backendhost;
 	my $port    = $$param{agent_port} // "46848";
 
 	####
@@ -94,22 +94,22 @@ sub generate_metrics_by_ncrtprotocol ($$$$$) {
 		else                 { $metrics{$k} = $v; }
 	}
 	unless($res->is_success) {
-		$metrics{"ncrtagent[$proxyhost]-error"} = 1;
+		$metrics{"ncrtagent[$backendhost]-error"} = 1;
 		return %metrics;
 	}
 
-	$metrics{"ncrtagent[$proxyhost]-error"} = 0;
+	$metrics{"ncrtagent[$backendhost]-error"} = 0;
 	return %metrics;
 }
 
 sub generate_metrics_by_nrpeprotocol ($$$$$) {
-	my ($proxyhost, $measure, $host, $service, $param) = @_;
+	my ($backendhost, $measure, $host, $service, $param) = @_;
 
 	my %metrics;
 
 	####
 	my $timeout = $$param{timeout}       // 50;
-	my $address = $$param{agent_address} // $proxyhost;
+	my $address = $$param{agent_address} // $backendhost;
 	my $port    = $$param{agent_port}    // "5666";
 	my $nrpever = $$param{agent_nrpever} // 2;
 	my $client  = $$param{agent_client}  // "/usr/lib/nagios/plugins/check_nrpe";;
@@ -120,7 +120,7 @@ sub generate_metrics_by_nrpeprotocol ($$$$$) {
 
 	####
 	open my $h, '-|', "$client $option -c check_$service" or do {
-		$metrics{"nrpe[$proxyhost]-error"} = 3;
+		$metrics{"nrpe[$backendhost]-error"} = 3;
 		return %metrics;
 	};
 	my $r = <$h>;
@@ -128,7 +128,7 @@ sub generate_metrics_by_nrpeprotocol ($$$$$) {
 
 	chomp $r;
 	$r =~ m"^ (.*) \|\s* (\S.*) $"x or do {
-		$metrics{"nrpe[$proxyhost]-error"} = 2;
+		$metrics{"nrpe[$backendhost]-error"} = 2;
 		return %metrics;
 	};
 	my $output = $1;
@@ -139,20 +139,20 @@ sub generate_metrics_by_nrpeprotocol ($$$$$) {
 		my $value = $4;
 		$metrics{$key} = $value;
 	}
-	$metrics{"nrpe[$proxyhost]-error"} = 0;
+	$metrics{"nrpe[$backendhost]-error"} = 0;
 	return %metrics;
 }
 
 sub generate_metrics_from_agent ($$$$$) {
-	my ($proxyhost, $measure, $host, $service, $param) = @_;
+	my ($backendhost, $measure, $host, $service, $param) = @_;
 
 	my $protocol = $$param{agent_protocol} // "ncrtagent";
 	if( $protocol eq 'nrpe' ){
 		return generate_metrics_by_nrpeprotocol
-			$proxyhost, $measure, $host, $service, $param;
+			$backendhost, $measure, $host, $service, $param;
 	}else{
 		return generate_metrics_by_ncrtprotocol
-			$proxyhost, $measure, $host, $service, $param;
+			$backendhost, $measure, $host, $service, $param;
 	}
 }
 
@@ -163,16 +163,16 @@ sub generate_metrics_from_targetagent ($$$$) {
 		$host, $measure, $host, $service, $param;
 }
 
-sub generate_metrics_from_proxyagents ($$$$$) {
-	my ($measure, $host, $service, $host2param, $proxyhost2param) = @_;
+sub generate_metrics_from_backendagents ($$$$$) {
+	my ($measure, $host, $service, $host2param, $backendhost2param) = @_;
 
 	my $rc = 0;
 	my %metrics;
 
-	while( my ($proxyhost, $proxyhostparam) = each %$proxyhost2param ){
+	while( my ($backendhost, $backendhostparam) = each %$backendhost2param ){
 		my $hostparam = $$host2param{$host};
 		my %m = generate_metrics_from_agent
-			$proxyhost, $measure, $host, $service, $hostparam;
+			$backendhost, $measure, $host, $service, $hostparam;
 		while( my ($k, $v) = each %m ){
 			$metrics{$k} = $v;
 		}
@@ -185,7 +185,7 @@ sub generate_metrics_from_localplugin ($$$) {
 	my ($measure, $host, $service) = @_;
 
 	my $f = "$main::PLUGINSDIR/ncrtmaster_$measure";
-	open my $h, '-|', "$f $main::CONFDIR $main::WORKDIR $measure $host $service" or do {
+	open my $h, '-|', "$f $main::NCRTCONFDIR $main::WORKDIR $measure $host $service" or do {
 		print "UNKNOWN $f: not found.\n";
 		exit 3;
 	};
@@ -273,7 +273,7 @@ sub ping_to_agent ($$) {
 sub pass_through_filters ($$$$%) {
 	my ($measure, $host, $service, $filtertype, %metrics) = @_;
 
-	my $f = "$main::CONFDIR/$filtertype/$filtertype.$host.$service";
+	my $f = "$main::NCRTCONFDIR/$filtertype/$filtertype.$host.$service";
 
 	my @filters;
 	if( open my $h, '<', $f ){
@@ -289,7 +289,7 @@ sub pass_through_filters ($$$$%) {
 	
 	foreach my $filter ( @filters ){
 		my $f = "$main::FILTERSDIR/$filter";
-		open2 my $out, my $in, "$f $main::CONFDIR $main::WORKDIR $measure $host $service" or do {
+		open2 my $out, my $in, "$f $main::NCRTCONFDIR $main::WORKDIR $measure $host $service" or do {
 			print "UNKNOWN $f: not found.\n";
 			exit 3;
 		};
@@ -370,7 +370,7 @@ sub generate_thresholds ($$$%) {
 	my @crit_rules;
 
 	# load threshold rules
-	my $f = "$main::CONFDIR/threshold/thresholds.$measure.$host.$service";
+	my $f = "$main::NCRTCONFDIR/threshold/thresholds.$measure.$host.$service";
 	if( open my $h, '<', $f ){
 		while( <$h> ){
 			chomp;

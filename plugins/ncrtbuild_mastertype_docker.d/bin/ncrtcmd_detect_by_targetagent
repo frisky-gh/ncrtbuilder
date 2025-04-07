@@ -7,6 +7,8 @@ BEGIN {
 	$0 =~ m"^(.*)/";
 	$TOOLHOME = "$1/..";
 	while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+	$TOOLHOME =~ s{/+}{/}g;
+	$TOOLHOME =~ s{/+$}{};
 }
 use lib "$TOOLHOME/lib/perl5";
 use NCRTCommon;
@@ -16,16 +18,17 @@ use NCRTTimeSeries;
 our $BINDIR = "$TOOLHOME/bin";
 our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $FILTERSDIR = "$TOOLHOME/filters";
-our $CONFDIR = "$TOOLHOME/conf";
+our $PLUGINSCONFDIR = "$TOOLHOME/pluginsconf";
+our $NCRTCONFDIR = "$TOOLHOME/ncrtconf";
 
 if( @ARGV < 3 ){
 	print "usage: % $0 MEASURE HOST SERVICE\n";
 	exit 3;
 }
 
-my $measure   = $ARGV[0];
-my $host      = $ARGV[1];
-my $service   = $ARGV[2];
+my $measure = $ARGV[0];
+my $host    = $ARGV[1];
+my $service = $ARGV[2];
 
 # setup work directory
 our $WORKDIR;

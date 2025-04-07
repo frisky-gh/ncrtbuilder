@@ -6,7 +6,7 @@ $0 =~ m"^(.*)/";
 our $TOOLHOME = "$1/..";
 while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
 our $PLUGINSDIR = "$TOOLHOME/plugins";
-our $CONFDIR = "$TOOLHOME/conf";
+our $CONFDIR = "$TOOLHOME/pluginsconf";
 
 #if( @ARGV < 2 ){
 #	print "usage: % $0 DETECTOR_NAME TARGET_NAME [OPTION]\n";

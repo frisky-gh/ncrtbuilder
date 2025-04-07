@@ -7,6 +7,8 @@ BEGIN {
 	$0 =~ m"^(.*)/";
 	$TOOLHOME = "$1/..";
 	while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+      	$TOOLHOME =~ s{/+}{/}g;
+	$TOOLHOME =~ s{/+$}{};
 }
 use lib "$TOOLHOME/lib/perl5";
 use NCRTCommon;
@@ -16,16 +18,17 @@ use NCRTTimeSeries;
 our $BINDIR = "$TOOLHOME/bin";
 our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $FILTERSDIR = "$TOOLHOME/filters";
-our $CONFDIR = "$TOOLHOME/conf";
+our $PLUGINSCONFDIR = "$TOOLHOME/pluginsconf";
+our $NCRTCONFDIR = "$TOOLHOME/ncrtconf";
 
 if( @ARGV < 3 ){
 	print "usage: % $0 MEASURE HOST SERVICE\n";
 	exit 3;
 }
 
-my $measure   = $ARGV[0];
-my $host      = $ARGV[1];
-my $service   = $ARGV[2];
+my $measure = $ARGV[0];
+my $host    = $ARGV[1];
+my $service = $ARGV[2];
 
 # setup work directory
 our $WORKDIR;
@@ -48,10 +51,10 @@ our $PLUGIN_HAS_FAILED;
 #### 7. warnings / criticals are detected from metrics and thresholds.
 
 my $hosts = load_hosts;
-my $proxyhosts = load_proxyhosts $measure, $host, $service;
+my $backendhosts = load_backendhosts $measure, $host, $service;
 
 # 1. measure plugin generates metrics.
-my %m1 = generate_metrics_from_proxyagents $measure, $host, $service, $hosts, $proxyhosts;
+my %m1 = generate_metrics_from_backendagents $measure, $host, $service, $hosts, $backendhosts;
 
 # 2. metrics pass through some filters if required.
 my %m2 = pass_through_filters $measure, $host, $service, "metricfilter", %m1;
