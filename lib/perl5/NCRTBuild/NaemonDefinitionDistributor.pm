@@ -18,7 +18,7 @@ sub new ($$) {
 		'conf'		=> undef,
 		'outputdir'	=> undef,
 
-		'action_url' => undef,
+		'helperurl' => undef,
 		'generator' => undef,
 
 		'agenttypetemplates' => undef,
@@ -30,9 +30,19 @@ sub new ($$) {
 
 ####
 
-sub setActionURL ($$) {
-	my ($this, $action_url) = @_;
-	$$this{action_url} = $action_url;
+sub setHelperURL ($$) {
+	my ($this, $url) = @_;
+	$$this{helperurl} = $url;
+}
+
+sub setActionURLForHost ($$) {
+	my ($this, $url) = @_;
+	$$this{actionurl4host} = $url;
+}
+
+sub setActionURLForHostService ($$) {
+	my ($this, $url) = @_;
+	$$this{actionurl4hostservice} = $url;
 }
 
 sub setAgentTypes ($@) {
@@ -244,7 +254,7 @@ sub writeAgentTypeTemplates ($) {
 		my $agenttype = $$entry{agenttype};
 		my $naemondirective = $$entry{naemondirective};
 
-		my @line = generate_naemondirectiveline $naemondirective, %$entry;
+		my @line = generate_naemondirectiveline $naemondirective, $entry;
 		push @content,
 			"define host {",
 			"	name			ncrt-agenttype-$agenttype",
@@ -279,7 +289,7 @@ sub writeMeasurements ($) {
 		elsif( $type eq 'indirect' ) { $check_command = "ncrtcmd_detect_by_backendagents"; }
 		else{ die; }
 
-		my @line = generate_naemondirectiveline $naemondirective, %$entry;
+		my @line = generate_naemondirectiveline $naemondirective, $entry;
 		push @content,
 			"define service {",
 			"	name		ncrtdetector-$measurement",
@@ -297,6 +307,9 @@ sub writeAgentHosts ($) {
 	my ($this) = @_;
 	my $outputdir = $$this{outputdir};
 	my $agenthosts = $$this{agenthosts};
+	my $helperurl = $$this{helperurl};
+	my $actionurl4host = $$this{actionurl4host};
+	my %param = ( "helperurl" => $helperurl );
 
 	my @content;
 	foreach my $entry ( @$agenthosts ){
@@ -304,8 +317,9 @@ sub writeAgentHosts ($) {
 		my $agenttype       = $$entry{agenttype};
 		my $naemondirective = $$entry{naemondirective};
 		my $contacts        = generate_shortnamelist_or_nobody sort keys %{$$entry{contacts}};
+		my $url = expand_params $actionurl4host, $entry, \%param;
 
-		my @line = generate_naemondirectiveline $naemondirective, %$entry;
+		my @line = generate_naemondirectiveline $naemondirective, $entry;
 		my $host_urlencoded = uri_escape_utf8($agenthost);
 		push @content,
 			"define host {",
@@ -315,6 +329,7 @@ sub writeAgentHosts ($) {
 			"	contacts		$contacts",
 			"	_urlencoded		$host_urlencoded",
 			"	_agenttype		$agenttype",
+			"	action_url		$url",
 			@line,
 			"}";
 	}
@@ -325,13 +340,18 @@ sub writePseudoHosts ($) {
 	my ($this) = @_;
 	my $outputdir = $$this{outputdir};
 	my $pseudohosts = $$this{pseudohosts};
+	my $helperurl = $$this{helperurl};
+	my $actionurl4host = $$this{actionurl4host};
+	my %param = ( "helperurl" => $helperurl );
 
 	my @content;
 	foreach my $entry ( @$pseudohosts ){
 		my $host            = $$entry{pseudohost};
 		my $naemondirective = $$entry{naemondirective};
 		my $contacts        = generate_shortnamelist_or_nobody sort keys %{$$entry{contacts}};
-		my @line = generate_naemondirectiveline $naemondirective, %$entry;
+		my $url = expand_params $actionurl4host, $entry, \%param;
+
+		my @line = generate_naemondirectiveline $naemondirective, $entry;
 		my $host_urlencoded = uri_escape_utf8($host);
 		push @content,
 			"define host {",
@@ -341,6 +361,7 @@ sub writePseudoHosts ($) {
 			"	contacts		$contacts",
 			"	_urlencoded		$host_urlencoded",
 			"	_agenttype		pseudo",
+			"	action_url		$url",
 			@line,
 			"}";
 	}
@@ -351,6 +372,9 @@ sub writeMonitoredHostServices ($) {
 	my ($this) = @_;
 	my $outputdir = $$this{outputdir};
 	my $monitoredhostservices = $$this{monitoredhostservices};
+	my $helperurl = $$this{helperurl};
+	my $actionurl4hostservice = $$this{actionurl4hostservice};
+	my %param = ( "helperurl" => $helperurl );
 
 	my @content;
 	foreach my $entry ( @$monitoredhostservices ){
@@ -361,8 +385,9 @@ sub writeMonitoredHostServices ($) {
 		my $naemondirective = $$entry{naemondirective};
 		my @contacts = sort keys %{$$entry{contacts}};
 		my $contacts = generate_shortnamelist_or_nobody @contacts;
+		my $url = expand_params $actionurl4hostservice, $entry, \%param;
 
-		my @line = generate_naemondirectiveline $naemondirective, %$entry;
+		my @line = generate_naemondirectiveline $naemondirective, $entry;
 		my $service_urlencoded = uri_escape_utf8($service);
 
 		####
@@ -374,6 +399,7 @@ sub writeMonitoredHostServices ($) {
 			"	contacts		$contacts",
 			"	_urlencoded		$service_urlencoded",
 			"	_agenttype		$agenttype",
+			"	action_url		$url",
 			@line,
 			"}";
 	}
@@ -521,7 +547,6 @@ sub writeGenericHostTemplate ($) {
 sub writeGenericServiceTemplate ($) {
 	my ($this) = @_;
 	my $outputdir = $$this{outputdir};
-	my $action_url = $$this{action_url};
 
 	my @content;
 	push @content,
@@ -551,8 +576,6 @@ sub writeGenericServiceTemplate ($) {
 		"	flap_detection_enabled		1       ; Flap detection is enabled",
 		"	retain_nonstatus_information	1       ; Retain non-status information across program restarts",
 		"	retain_status_information	1       ; Retain status information across program restarts",
-
-		"	action_url			$action_url",
 
 		"	register			0	; DONT REGISTER THIS DEFINITION - ITS NOT A REAL SERVICE, JUST A TEMPLATE!",
 		"}";

@@ -23,63 +23,42 @@ sub nB ($) {
 }
 
 #### load service conf.
-my %rules;
-my $f = "$CONFDIR/agentless/webactivity.conf.$MEASURE.$VHOST";
+my %param;
+my $f = "$CONFDIR/agentless/webactivity.conf.$VHOST.$VSERVICE";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
 while( <$h> ){
 	chomp;
 	next if m"^\s*($|#)";
-	die "$f:$.: illegal format, stopped" unless m"^
-		(\S+)
-		\s+
-		http(s)?://
-		(?:([^\s:]+):([^\s\@]*)\@)?
-		([-0-9a-zA-Z.]+)
-		(?::(\d+))?
-		((/[^\s\?]*)?(?:\?(\S*))?)
-		\s+
-		(\d+)
-		(  (?: \s+ \S+ )*  )
-		\S*
-	$"x;
-	my $vservicename = $1;
-	my $secure = $2;
-	my $user = $3;
-	my $passwd = $4;
-	my $host = $5;
-	my $port = $6 || ($secure ? 443 : 80);
-	my $path_query = $7;
-	my $path = $8;
-	my $query = $9;
-	my $status = $10;
-	my $options = $11;
-	my $args = "-H $host -p $port";
-	$args .= " -S" if $secure;
-	$args .= " -a \Q$user:$passwd\E" if $user;
-	$args .= " -u \Q$path_query\E" if $path_query;
-	if( $options ){
-		foreach my $option ( split m"\s+", $options ){
-			$args .= " \Q$option\E";
-		}
-	}
-	# same url string to the influx_url in build_ncrtmaster_website_activity
-	my $url = $secure ? "https" : "http";
-	$url .= "://";
-	$url .= "$user\@" if $user;
-	$url .= $host;
-	$url .= ":$port" if $port;
-	$url .= $path_query if $path_query;
-	$rules{$vservicename} = [$url, $status, $args, $vservicename];
+	die "$f:$.: illegal format, stopped" unless m"^(\w+)=(.*)";
+	$param{$1} = $2;
 }
 close $h;
 
-####
-my ($url, $wantstatus, $args, $vservicename) = @{$rules{$VSERVICE} // []};
-unless( defined $url ){
-	print "web[$VSERVICE]-status=2\n";
-	exit 1;
+my $url = $param{URL};
+unless( $url =~ m"^http(s)?://(?:([^\s:]+):([^\s\@]*)\@)?([-0-9a-zA-Z.]+)(?::(\d+))?((/[^\s\?]*)?(?:\?(\S*))?)$" ){
+	die "url: invalid format, stopped";
+}
+my $secure = $1 ? 1 : undef;
+my $user   = $param{User}     ne "" ? $param{User}     : $2 ne "" ? $2 : undef;
+my $passwd = $param{Password} ne "" ? $param{Password} : $3 ne "" ? $3 : undef;
+my $host   = $4;
+my $port   = $5 || ($secure ? 443 : 80);
+my $path_query = $6;
+my $path = $7;
+my $query = $8;
+my $wantstatus = $param{StatusCode};
+my $options = $param{ChkCmdOptions};
+
+my $args = "-H $host -p $port";
+$args .= " -S" if $secure;
+$args .= " -a \Q$user:$passwd\E" if $user;
+$args .= " -u \Q$path_query\E" if $path_query;
+if( $options ){
+	foreach my $option ( split m"\s+", $options ){
+		$args .= " \Q$option\E";
+	}
 }
 
 my %d;
@@ -100,9 +79,9 @@ $r =~ m"^
 	    CRITICAL\ -\ (.*)
 	)
 $"x or do {
-	print "web[$vservicename]-size=-1\n";
-	print "web[$vservicename]-elapsed=-1\n";
-	print "web[$vservicename]-status=2\n";
+	print "web[$VSERVICE]-size=-1\n";
+	print "web[$VSERVICE]-elapsed=-1\n";
+	print "web[$VSERVICE]-status=2\n";
 	open my $h, '>>', "$WORKDIR/webactivity.log";
 	print $h time, " ERROR: url=$url response=$r\n";
 	close $h;
@@ -116,9 +95,9 @@ my $elapsed = ns $6;
 my $size = nB $7;
 my $status = $statuscode eq $wantstatus ? 0 : 1;
 $status = 2 if $result eq "CRITICAL";
-print "web[$vservicename]-size=$size\n";
-print "web[$vservicename]-elapsed=$elapsed\n";
-print "web[$vservicename]-status=$status\n";
+print "web[$VSERVICE]-size=$size\n";
+print "web[$VSERVICE]-elapsed=$elapsed\n";
+print "web[$VSERVICE]-status=$status\n";
 
 exit 0;
 

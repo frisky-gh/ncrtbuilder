@@ -420,8 +420,12 @@ if( $plan{Step12} ){
 	$ndefdist->setMonitoredHostUsers        ( @hostuser );
 	$ndefdist->setMonitoredHostServiceUsers ( @hostserviceuser );
 
-	my $action_url = $ncrtconfdir->getHELPERURL;
-	$ndefdist->setActionURL( $action_url );
+	my $helperurl             = $ncrtconfdir->getHELPERURL;
+	my $actionurl4host        = $ncrtconfdir->getACTIONURL_FOR_HOST;
+	my $actionurl4hostservice = $ncrtconfdir->getACTIONURL_FOR_HOSTSERVICE;
+	$ndefdist->setHelperURL                 ( $helperurl );
+	$ndefdist->setActionURLForHost          ( $actionurl4host );
+	$ndefdist->setActionURLForHostService   ( $actionurl4hostservice );
 	$ndefdist->setNaemonDirectiveGenerator  ( $ndirectivegen );
 	$ndefdist->run;
 

@@ -203,19 +203,23 @@ sub expand_importspec (@){
 	return $importmacro;
 }
 
-sub expand_params ($\%) {
-	my ($text, $params) = @_;
-	$text =~ s{ <(\w+)> }{ $params->{$1}; }egx;
+sub expand_params ($@) {
+	my ($text, @params_list) = @_;
+	$text =~ s{ <(\w+)> }{
+		my $r;
+		foreach( @params_list ){ $r = $$_{$1}; last if defined $r; }
+		$r;
+	}egx;
 	return $text;
 }
 
-sub generate_naemondirectiveline ($\%) {
-	my ($naemondirective, $params) = @_;
+sub generate_naemondirectiveline ($@) {
+	my ($naemondirective, @params_list) = @_;
 	my @line;
 	foreach my $k ( sort keys %$naemondirective ){
 		my $v = $$naemondirective{$k};
 		push @line, sprintf "\t%-23s\t%s",
-			$k, expand_params $v, %$params;
+			$k, expand_params $v, @params_list;
 	}
 	return @line;
 }

@@ -7,6 +7,8 @@ BEGIN {
 	$0 =~ m"^(.*)/";
 	$TOOLHOME = "$1/..";
 	while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
+	$TOOLHOME =~ s{/+}{/}g;
+	$TOOLHOME =~ s{/+$}{};
 }
 use lib "$TOOLHOME/lib/perl5";
 use NCRTCommon;
@@ -16,7 +18,8 @@ use NCRTTimeSeries;
 our $BINDIR = "$TOOLHOME/bin";
 our $PLUGINSDIR = "$TOOLHOME/plugins";
 our $FILTERSDIR = "$TOOLHOME/filters";
-our $CONFDIR = "$TOOLHOME/pluginsconf";
+our $PLUGINSCONFDIR = "$TOOLHOME/pluginsconf";
+our $NCRTCONFDIR = "$TOOLHOME/ncrtconf";
 
 if( @ARGV < 1 ){
 	print "usage: % $0 HOST\n";

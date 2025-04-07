@@ -82,6 +82,16 @@ sub getHELPERURL ($) {
 	return $$this{param}->{HELPERURL};
 }
 
+sub getACTIONURL_FOR_HOST ($) {
+	my ($this) = @_;
+	return $$this{param}->{ACTIONURL_FOR_HOST};
+}
+
+sub getACTIONURL_FOR_HOSTSERVICE ($) {
+	my ($this) = @_;
+	return $$this{param}->{ACTIONURL_FOR_HOSTSERVICE};
+}
+
 sub getHELPERURL_JUMP_TO_DASHBOARD ($) {
 	my ($this) = @_;
 	return $$this{param}->{HELPERURL_JUMP_TO_DASHBOARD};
