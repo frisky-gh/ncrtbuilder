@@ -5,29 +5,29 @@
 
 - hosts: PLUGINTYPE_mastertype.HOSTTYPE_docker
   tasks:
-    - name: include global variables
-      include_vars: "{{PLAYBOOKDIR}}/build_ncrtmasters_vars.yml"
+    - name: include plugin-specific variables
+      include_vars: "{{PLAYBOOKDIR}}/plugin_mastertype_docker.vars.yml"
       tags: [ common ]
 
-    - name: include plugin-specific variables
-      include_vars: "{{PLAYBOOKDIR}}/plugin_mastertype_docker_vars.yml"
+    - name: make user profiles
+      local_action: shell "{{playbook_dir}}/ncrtbuild_mastertype_docker.mkuserprofiles" "{{PLUGINWORKDIR}}" "{{PLAYBOOKDIR}}"
       tags: [ common ]
 
     - name: include user profiles
-      include_vars: "{{PLAYBOOKDIR}}/plugin_mastertype_docker_users.yml"
+      include_vars: "{{PLAYBOOKDIR}}/plugin_mastertype_docker.users.yml"
       tags: [ common ]
 
     #### for Debian / Ubuntu
     - name: install packages for docker
       apt:
-        name: [ docker.io, pip ]
+        name: [ docker.io, pip, apache2-utils ]
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
     #### for RHEL / AlmaLinux / OracleLinux
     - name: install packages for docker
       yum:
-        name: [ docker-ce, python3.12-pip ]
+        name: [ docker-ce, python3.12-pip, httpd-tools ]
       when: "ansible_os_family == 'RedHat'"
       tags: [ commoninstall ]
 
@@ -54,42 +54,12 @@
         rsync_opts: [ "-cOJ", "--chown=root:root" ]
       tags: [ common ]
 
-    ## setup container data
-
-    - name: read influxdb_has_been_setup status
-      slurp:
-        src: "{{NCRTMASTERHOME}}/containerdata/influxdb_has_been_setup"
-      register: influxdb_has_been_setup
-      failed_when: false
-      tags: [ commoninstall ]
-
-    - name: read grafana_has_been_setup status
-      slurp:
-        src: "{{NCRTMASTERHOME}}/containerdata/grafana_has_been_setup"
-      register: grafana_has_been_setup
-      failed_when: false
-      tags: [ commoninstall ]
-
-    - name: read grafana service account token
-      slurp:
-        src: "{{NCRTMASTERHOME}}/containerdata/grafana_service_account_token"
-      register: grafana_service_account_token
-      failed_when: false
-      tags: [ commoninstall ]
-
-    - name: set fact INFLUXDB_IS_NOT_YET_SETUP / GRAFANA_IS_NOT_YET_SETUP / GRAFANA_TOKEN
-      set_fact:
-        INFLUXDB_IS_NOT_YET_SETUP: "{{ influxdb_has_been_setup.content is undefined or (influxdb_has_been_setup.content | b64decode | regex_replace('\n', '')) != '1' }}"
-        GRAFANA_IS_NOT_YET_SETUP: "{{ grafana_has_been_setup.content is undefined or (grafana_has_been_setup.content | b64decode | regex_replace('\n', '')) != '1' }}"
-        GRAFANA_TOKEN: "{{ GRAFANA_TOKEN is defined and GRAFANA_TOKEN != '' and GRAFANA_TOKEN or grafana_service_account_token.content is defined and (grafana_service_account_token.content | b64decode) }}"
-      tags: [ commoninstall, common ]
-
     ## setup container settings
 
     - name: setup htpasswd
       copy:
-        src:  "{{PLAYBOOKDIR}}/plugin_mastertype_docker_users.htpasswd"
-        dest: "{{NCRTMASTERHOME}}/containersettings/thruk_conf/htpasswd"
+        src:  "{{PLAYBOOKDIR}}/plugin_mastertype_docker.userprofiles"
+        dest: "{{NCRTMASTERHOME}}/containersettings/userprofiles"
       tags: [ common ]
 
     ## setup containers
@@ -101,341 +71,14 @@
       notify: restart docker-compose
       tags: [ commoninstall ]
 
-#    - name: start docker-compose
-#      community.docker.docker_compose_v2:
-#        project_src: "{{NCRTMASTERHOME}}/containers"
-#        state: present
-#        wait:  true
-#      environment:
-#        https_proxy: "{{PROXY}}"
-#      tags: [ commoninstall ]
-
     - name: start docker-compose
-      shell: "cd {{NCRTMASTERHOME}}/containers ; docker compose down ; docker compose build ; docker compose up -d ; sleep 10"
-      environment:
-        https_proxy: "{{PROXY}}"
+      shell: "{{NCRTMASTERHOME}}/bin/ncrtdockerctl start"
       tags: [ commoninstall ]
-
-
-    ## Setup influxdb
-
-    - name: setup influxdb
-      community.docker.docker_container_exec:
-        container: ncrt-influxdb
-        argv: [ "influx", "setup", "-f", "-o", "{{INFLUXDB_ORG}}", "-r", "52w", "-b", "{{INFLUXDB_BUCKET}}", "-u", "{{INFLUXDB_USER}}", "-p", "{{INFLUXDB_PASSWD}}", "-t", "{{INFLUXDB_TOKEN}}", "--name", "default" ]
-      register: r
-      when:
-        - "MANAGE_INFLUXDB is defined and MANAGE_INFLUXDB != 0"
-        - "INFLUXDB_IS_NOT_YET_SETUP"
-      tags: [ commoninstall ]
-
-    - name: setup influxdb optional bucket
-      community.docker.docker_container_exec:
-        container: ncrt-influxdb
-        argv: [ "influx", "bucket", "create", "-o", "{{INFLUXDB_ORG}}", "-r", "4w", "-n", "{{INFLUXDB_OPTIONALBUCKET}}" ]
-      when:
-        - "MANAGE_INFLUXDB is defined and MANAGE_INFLUXDB != 0"
-        - "INFLUXDB_IS_NOT_YET_SETUP"
-      tags: [ commoninstall ]
-
-    - name: setup influxdb archive bucket
-      community.docker.docker_container_exec:
-        container: ncrt-influxdb
-        argv: [ "influx", "bucket", "create", "-o", "{{INFLUXDB_ORG}}", "-r", "520w", "-n", "{{INFLUXDB_ARCHIVEBUCKET}}" ]
-      when:
-        - "MANAGE_INFLUXDB is defined and MANAGE_INFLUXDB != 0"
-        - "INFLUXDB_IS_NOT_YET_SETUP"
-      tags: [ commoninstall ]
-
-    - name: store setup result
-      copy:
-        content: "1"
-        dest:    "{{NCRTMASTERHOME}}/containerdata/influxdb_has_been_setup"
-      when:
-        - "MANAGE_INFLUXDB is defined and MANAGE_INFLUXDB != 0"
-        - "INFLUXDB_IS_NOT_YET_SETUP"
-        - "r.rc == 0"
-      tags: [ commoninstall ]
-
-    ## Setup grafana
-
-    # setup grafana admin user
-
-    - name: setup grafana admin user
-      community.grafana.grafana_user:
-        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
-        login:    "{{GRAFANA_ADMIN}}"
-        password: "{{GRAFANA_ADMINPASSWD}}"
-        name:     "{{GRAFANA_ADMIN}}"
-        email:    "{{GRAFANA_ADMINEMAIL}}"
-        is_admin: true
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-        - "GRAFANA_IS_NOT_YET_SETUP"
-      tags: [ commoninstall ]
-
-    - name: generate dummy admin password
-      shell: "head -c 32 /dev/urandom | sha1sum | head -c 32"
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-        - "GRAFANA_IS_NOT_YET_SETUP"
-      register: dummy_password
-      tags: [ commoninstall ]
-
-    - name: change grafana admin password to dummy password
-      community.grafana.grafana_user:
-        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
-        url_username: "{{GRAFANA_ADMIN}}"
-        url_password: "{{GRAFANA_ADMINPASSWD}}"
-        login:    "admin"
-        password: "{{dummy_password.stdout}}"
-        name:     "admin"
-        email:    "admin@localhost"
-        is_admin: true
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-        - "GRAFANA_IS_NOT_YET_SETUP"
-      tags: [ commoninstall ]
-
-    - name: store dummy password
-      shell: "echo {{dummy_password.stdout}} > {{NCRTMASTERHOME}}/containerdata/grafana_dummy_password"
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-        - "GRAFANA_IS_NOT_YET_SETUP"
-      tags: [ commoninstall ]
-
-    - name: store setup result
-      copy:
-        content: "1"
-        dest:    "{{NCRTMASTERHOME}}/containerdata/grafana_has_been_setup"
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-        - "GRAFANA_IS_NOT_YET_SETUP"
-      tags: [ commoninstall ]
-
-    # setup grafana user / organization for the management of the performance data
-
-    - name: setup grafana user
-      community.grafana.grafana_user:
-        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
-        url_username: "{{GRAFANA_ADMIN}}"
-        url_password: "{{GRAFANA_ADMINPASSWD}}"
-        login:    "{{GRAFANA_USER}}"
-        password: "{{GRAFANA_USERPASSWD}}"
-        name:     "{{GRAFANA_USER}}"
-        email:    "{{GRAFANA_USEREMAIL}}"
-        is_admin: false
-      register: grafana_user_status
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-      tags: [ commoninstall ]
-
-    - name: setup grafana organization
-      community.grafana.grafana_organization:
-        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
-        url_username: "{{GRAFANA_ADMIN}}"
-        url_password: "{{GRAFANA_ADMINPASSWD}}"
-        name:     "{{GRAFANA_ORG}}"
-      register: grafana_org_status
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-      tags: [ common, commoninstall ]
-
-    - name: store organization id
-      copy:
-        content: "{{grafana_org_status.org.id}}"
-        dest:    "{{NCRTMASTERHOME}}/containerdata/grafana_org_id"
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-      tags: [ commoninstall ]
-
-    - name: setup grafana organization member
-      community.grafana.grafana_organization_user:
-        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
-        url_username: "{{GRAFANA_ADMIN}}"
-        url_password: "{{GRAFANA_ADMINPASSWD}}"
-        org_name:     "{{GRAFANA_ORG}}"
-        login:        "{{GRAFANA_USER}}"
-        role:         admin
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-      tags: [ commoninstall ]
-
-    - name: switch user context of grafana user
-      uri:
-        url: "http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/api/user/using/{{grafana_org_status.org.id}}"
-        user:             "{{GRAFANA_USER}}"
-        password:         "{{GRAFANA_USERPASSWD}}"
-        force_basic_auth: true
-        method:           POST
-        body_format:      json
-        body:             "{}"
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-      tags: [ commoninstall ]
-
-    # setup grafana user / organization for the performance data viewer
-
-    #### Currently, you cannot change the password for Grafana users.
-    #### To change the password, stop Docker, delete all Grafana backend data, and run ncrtbuild again.
-
-    - name: setup grafana user for viewer
-      community.grafana.grafana_user:
-        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
-        url_username: "{{GRAFANA_ADMIN}}"
-        url_password: "{{GRAFANA_ADMINPASSWD}}"
-        login:    "{{item.user}}"
-        password: "{{item.password}}"
-        name:     "{{item.user}}"
-        email:    "{{item.email}}"
-        is_admin: false
-      with_items: "{{ USERS }}"
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-      tags: [ commoninstall ]
-
-    - name: setup grafana organization member
-      community.grafana.grafana_organization_user:
-        url: http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
-        url_username: "{{GRAFANA_ADMIN}}"
-        url_password: "{{GRAFANA_ADMINPASSWD}}"
-        org_name:     "{{GRAFANA_ORG}}"
-        login:        "{{item.user}}"
-        role:         viewer
-      with_items: "{{ USERS }}"
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-      tags: [ commoninstall ]
-
-#    - name: switch user context of end users (DEBUG)
-#      debug:
-#        msg: "DEBUG: user={{item.user}} password={{item.password}} grafana_org_status={{grafana_org_status}}"
-#      with_items: "{{ USERS }}"
-#      when:
-#        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-#      tags: [ common ]
-
-    - name: switch user context of end users
-      uri:
-        url: "http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/api/user/using/{{grafana_org_status.org.id}}"
-        user:             "{{item.user}}"
-        password:         "{{item.password}}"
-        force_basic_auth: true
-        method:           POST
-        body_format:      json
-        body:             "{}"
-      with_items: "{{ USERS }}"
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-      tags: [ commoninstall ]
-
-    # setup grafana service account token
-
-    - name: Create service account
-      uri:
-        url: "http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/api/serviceaccounts"
-        user:             "{{GRAFANA_USER}}"
-        password:         "{{GRAFANA_USERPASSWD}}"
-        force_basic_auth: true
-        method:           POST
-        body_format:      json
-        body:             '{ "name":"{{GRAFANA_USER}}_sa", "role":"Admin", "isDisabled":false }'
-      register: grafana_sa_status
-      failed_when: "grafana_sa_status.status != 201 and grafana_sa_status.json.messageId != 'serviceaccounts.ErrAlreadyExists' "
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-        - "grafana_service_account_token.content is undefined or grafana_service_account_token.content == ''"
-      tags: [ commoninstall ]
-
-    - name: Create service account token
-      uri:
-        url: "http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/api/serviceaccounts/{{grafana_sa_status.json.id}}/tokens"
-        user:             "{{GRAFANA_USER}}"
-        password:         "{{GRAFANA_USERPASSWD}}"
-        force_basic_auth: true
-        method:           POST
-        body_format:      json
-        body:             '{ "name":"{{GRAFANA_USER}}_token" }'
-      register: grafana_new_sa_token
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-        - "grafana_service_account_token.content is undefined or grafana_service_account_token.content == ''"
-      tags: [ commoninstall ]
-
-    - name: Create api keys file
-      copy:
-        dest: "{{NCRTMASTERHOME}}/containerdata/grafana_service_account_token"
-        content: "{{ grafana_new_sa_token.json.key }}"
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-        - "grafana_service_account_token.content is undefined or grafana_service_account_token.content == ''"
-      tags: [ commoninstall ]
-
-    - name: set fact GRAFANATOKEN
-      set_fact:
-        GRAFANA_TOKEN: "{{ grafana_new_sa_token.json.key }}"
-      when:
-        - "MANAGE_GRAFANA is defined and MANAGE_GRAFANA != 0"
-        - "grafana_service_account_token.content is undefined or grafana_service_account_token.content == ''"
-      tags: [ commoninstall ]
-
-    - name: re-setup docker-compose.yml
-      template:
-        src:  "ncrtbuild_mastertype_docker.docker-compose.yml.tmpl"
-        dest: "{{NCRTMASTERHOME}}/containers/docker-compose.yml"
-      notify: restart naemon
-      tags: [ commoninstall ]
-
-    ## setup influxdb datasource in grafana
-
-    - name: create datasource
-      community.grafana.grafana_datasource:
-        name: "influxdb"
-        grafana_url:  http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
-        url_username: "{{GRAFANA_USER}}"
-        url_password: "{{GRAFANA_USERPASSWD}}"
-        org_name:     "{{GRAFANA_ORG}}"
-        ds_type: "influxdb"
-        ds_url:  "http://ncrt-influxdb:8086"
-        is_default: true
-        additional_json_data:
-          version:       "Flux"
-          organization:  "{{INFLUXDB_ORG}}"
-          defaultBucket: "{{INFLUXDB_BUCKET}}"
-          tlsSkipVerify: false
-        additional_secure_json_data:
-          token:         "{{INFLUXDB_TOKEN}}"
-      tags: [ commoninstall ]
-
-    #- name:
-
-    ##
 
   handlers:
-#    - name: restart docker-compose
-#      community.docker.docker_compose_v2:
-#        project_src: "{{NCRTMASTERHOME}}/containers"
-#        build: always
-#        recreate: always
-#        state: restarted
-#        wait:  true
-#      tags: [ common ]
-
-#    - name: restart naemon
-#      community.docker.docker_compose_v2:
-#        project_src: "{{NCRTMASTERHOME}}/containers"
-#        services: naemon
-#        build: always
-#        state: restarted
-#        wait:  true
-#      tags: [ common ]
 
     - name: restart docker-compose
-      shell: "cd {{NCRTMASTERHOME}}/containers ; docker compose down ; docker compose build ; docker compose up -d"
-      tags: [ common ]
-
-    - name: restart naemon
-      shell: "cd {{NCRTMASTERHOME}}/containers ; docker compose down ncrt-naemon ; docker compose build ncrt-naemon ; docker compose up ncrt-naemon -d"
+      shell: "{{NCRTMASTERHOME}}/bin/ncrtdockerctl restart"
       tags: [ common ]
 
 

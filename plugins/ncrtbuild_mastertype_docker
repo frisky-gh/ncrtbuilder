@@ -61,14 +61,15 @@ my %server_settings = (
 	'GRAFANA_ADMIN' 		=> 'ncrt_gfadmin',
 	'GRAFANA_ADMINPASSWD'		=> 'XXXXSECRETXXXX',
 	'GRAFANA_ADMINEMAIL'		=> 'ncrt_gfadmin@example.com',
-	'GRAFANA_USER'			=> 'ncrt_gfuser',
-	'GRAFANA_USERPASSWD'		=> 'XXXXSECRETXXXX',
-	'GRAFANA_USEREMAIL'		=> 'ncrt_gfuser@example.com',
+	'GRAFANA_DATAOWNER'		=> 'ncrt_gfuser',
+	'GRAFANA_DATAOWNERPASSWD'	=> 'XXXXSECRETXXXX',
+	'GRAFANA_DATAOWNEREMAIL'	=> 'ncrt_gfuser@example.com',
 	'GRAFANA_ORG'			=> 'ncrt_gforg',
 	'GRAFANA_ORGID' 		=> '1',
 	'GRAFANA_TOKEN' 		=> '',
 	'GRAFANA_DATASOURCE'		=> 'influxdb',
 	'GRAFANA_DB'			=> 'ncrt_gfdb',
+	'GRAFANA_LOCALPORT'		=> '3000',
 
 	'INFLUXDB_USER' 		=> 'ncrt_ifxuser',
 	'INFLUXDB_PASSWD'		=> 'XXXXSECRETXXXX',
@@ -77,6 +78,7 @@ my %server_settings = (
 	'INFLUXDB_OPTIONALBUCKET'	=> 'ncrt_ifxoptional',
 	'INFLUXDB_ARCHIVEBUCKET'	=> 'ncrt_ifxarchive',
 	'INFLUXDB_TOKEN'		=> 'ncrt_ifxtoken',
+	'INFLUXDB_LOCALPORT'		=> '8086',
 
 	'DATADIR'			=> "/opt/ncrtmaster/containerdata",
 	'MANAGE_GRAFANA'		=> '1',
@@ -90,8 +92,8 @@ my %server_settings = (
 my %server_settings_which_must_be_specified_by_user = (
 	'GRAFANA_ADMINEMAIL'		=> 1,
 	'GRAFANA_ADMINPASSWD'		=> 1,
-	'GRAFANA_USEREMAIL'		=> 1,
-	'GRAFANA_USERPASSWD'		=> 1,
+	'GRAFANA_DATAOWNEREMAIL'	=> 1,
+	'GRAFANA_DATAOWNERPASSWD'	=> 1,
 	'BROWSERSIDE_URL_PREFIX'	=> 1,
 );
 
@@ -112,32 +114,6 @@ if( %server_settings_which_must_be_specified_by_user ){
 	my $s = join(" ", keys %server_settings_which_must_be_specified_by_user);
 	die "$f: following settings must be specified: $s, stopped";
 }
-
-my %users;
-my $f = "$WORKDIR/users";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die "$f:$.: illegal format, stopped"  unless m"^(\S+)((\s+(\w+)=(\S*))*)\s*$";
-	my $user = $1;
-	my %profiles;
-	foreach my $k_v ( split m"\s+", $2 ){
-		next unless $k_v =~ m"^(\w+)=(\S*)$";
-		$profiles{$1} = $2;
-	}
-	unless( defined $profiles{password} ){
-		$profiles{password} = `head -c 9 /dev/urandom | base64`;
-		chomp $profiles{password};
-	}
-	unless( defined $profiles{email} ){
-		$profiles{email} = "grafana-user+$user\@example.com";
-	}
-	$users{$user} = \%profiles;
-}
-close $h;
 
 #### append masterhosts info.
 my $f = "$WORKDIR/masterhosts";
@@ -173,49 +149,20 @@ while( my ($host, $params) = each %targets ){
 #### You can place YAML-formatted configuration files in ncrtbuild working dir and name them "plugin_PLUGINNAME_XXX.yml" to prevent conflicts between each configuration file.
 
 #### append mastertype setting files
-#my $f = "$WORKDIR/mastertype2conf";
-#open my $h, '>>', $f or do {
-#	die "$f: cannot open, stopped";
-#};
-#print $h "docker	docker.htpasswd\n";
-#close $h;
+my $f = "$WORKDIR/plugin2type2pluginconf2format";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "docker	mastertype	docker.conf	simple\n";
+close $h;
 
 #### pass settings to the playbook of this plugin
-my $f = "$PLAYBOOKDIR/plugin_mastertype_docker_vars.yml";
+my $f = "$PLAYBOOKDIR/plugin_mastertype_docker.vars.yml";
 open my $h, '>', $f or do {
 	die "$f: cannot open, stopped";
 };
 while( my ($k, $v) = each %server_settings ){
 	print $h "  '$k' : '$v'\n";
-}
-close $h;
-
-#### pass users' infomation to the playbook of this plugin
-my $f = "$PLAYBOOKDIR/plugin_mastertype_docker_users.yml";
-open my $h, '>', $f or do {
-	die "$f: cannot open, stopped";
-};
-print $h "USERS:\n";
-foreach my $user ( sort keys %users ){
-	my $profiles = $users{$user};
-	print $h "  - user : '$user'\n";
-	foreach my $k ( sort keys %$profiles ){
-		my $v = $$profiles{$k};
-		print $h "    '$k' : '$v'\n";
-	}
-}
-close $h;
-
-my $f = "$PLAYBOOKDIR/plugin_mastertype_docker_users.htpasswd";
-open my $h, '>', $f or do {
-	die "$f: cannot open, stopped";
-};
-foreach my $user ( sort keys %users ){
-	my $profiles = $users{$user};
-	my $password = $$profiles{password};
-	my $user_password = ` echo "$password" | htpasswd -ni "$user" `;
-	chomp $user_password;
-	print $h "$user_password";
 }
 close $h;
 

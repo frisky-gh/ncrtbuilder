@@ -40,6 +40,7 @@ RUN /lib/finit/initctl enable sysv-nullmailer
 RUN rsync -aSvx /etc/apache2/ /etc/apache2_orig/
 RUN rsync -aSvx /etc/naemon/ /etc/naemon_orig/
 RUN rsync -aSvx /etc/thruk/ /etc/thruk_orig/
+RUN rsync -aSvx /etc/grafana-dashboard-helper/ /etc/grafana-dashboard-helper_orig/
 
 COPY --chown=root:root ./startup.sh /startup.sh
 RUN mkdir /opt/ncrtmaster
