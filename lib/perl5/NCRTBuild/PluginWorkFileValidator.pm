@@ -211,10 +211,10 @@ sub loadGroups ($) {
 
 	my @content = $inputdir->read( "groups" );
 	foreach( @content ){
-		my ($err, $group) = parse_item_with_params $_;
+		my ($err, $group, $profile) = parse_item_with_params $_;
 		print "groups: $err\n" if $err;
 		next unless defined $group;
-		$groups{$group} = 1;
+		$groups{$group} = $profile;
 	}
 	$$this{groups} = \%groups;
 }
@@ -227,10 +227,10 @@ sub loadUsers ($) {
 
 	my @content = $inputdir->read( "users" );
 	foreach( @content ){
-		my ($err, $user) = parse_item_with_params $_;
+		my ($err, $user, $profile) = parse_item_with_params $_;
 		print "users: $err\n" if $err;
 		next unless defined $user;
-		$users{$user} = 1;
+		$users{$user} = $profile;
 	}
 	$$this{users} = \%users;
 }
@@ -608,14 +608,28 @@ sub listPseudoHostServiceBackendHosts ($) {
 sub listGroups ($) {
 	my ($this) = @_;
 	my $groups = $$this{groups};
-	my @r = sort keys %$groups;
+	my @r;
+	foreach my $groupname ( sort keys %$groups ){
+		my $profile = $$groups{$groupname};
+		push @r, {
+			"name" => $groupname,
+			"profile" => $profile,
+		};
+	}
 	return @r;
 }
 
 sub listUsers ($) {
 	my ($this) = @_;
 	my $users = $$this{users};
-	my @r = sort keys %$users;
+	my @r;
+	foreach my $username ( sort keys %$users ){
+		my $profile = $$users{$username};
+		push @r, {
+			"name" => $username,
+			"profile" => $profile,
+		};
+	}
 	return @r;
 }
 

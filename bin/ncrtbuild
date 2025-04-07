@@ -169,6 +169,8 @@ if( $plan{Step3} ){
 my @agentplugins;
 my @agentlessplugins;
 my @indirectplugins;
+my @mastertypeplugins;
+my @agenttypeplugins;
 if( $plan{Step4} ){
 	$pluginexec->load;
 	$pluginexec->execAgentTypePlugins;
@@ -179,9 +181,11 @@ if( $plan{Step4} ){
 	$pluginexec->execContactPlugins;
 	$pluginexec->execReporterPlugins;
 
-	@agentplugins     = $pluginexec->listAgentPlugins;
-	@agentlessplugins = $pluginexec->listAgentlessPlugins;
-	@indirectplugins  = $pluginexec->listIndirectPlugins;
+	@mastertypeplugins = $pluginexec->listMasterTypePlugins;
+	@agenttypeplugins  = $pluginexec->listAgentTypePlugins;
+	@agentplugins      = $pluginexec->listAgentPlugins;
+	@agentlessplugins  = $pluginexec->listAgentlessPlugins;
+	@indirectplugins   = $pluginexec->listIndirectPlugins;
 }
 
 ######## Step5. ########
@@ -354,7 +358,7 @@ if( $plan{Step9} ){
 
 ######## Step10. ########
 
-if( $plan{Step11} ){
+if( $plan{Step10} ){
 	my %generator_and_distributor = (
 		"default" => sub {
 			my $generator = NCRTBuild::PluginConfigGenerator::HostService->new;
@@ -374,6 +378,28 @@ if( $plan{Step11} ){
 			my ($generator, $dist) = &{ $generator_and_distributor{$format} };
 			$generator->setOriginConfig( @$content );
 			$dist->addGenerator( 'agentless', $measurement, $pluginconf, $generator );
+		}
+	}
+}
+
+######## Step11. ########
+
+if( $plan{Step11} ){
+	my %generator_and_distributor = (
+		"simple"  => sub {
+			my $generator = NCRTBuild::PluginConfigGenerator::Simple->new;
+			return $generator, $simplepluginconfdist4m;
+		},
+	);
+	foreach my $plugin ( @mastertypeplugins ){
+		my @pluginconffile = $pluginconfvalid->loadPluginConfigFileOf( 'mastertype', $plugin );
+		foreach my $pluginconffile ( @pluginconffile ){
+			my $format     = $$pluginconffile{format};
+			my $pluginconf = $$pluginconffile{pluginconf};
+			my $content    = $$pluginconffile{content};
+			my ($generator, $dist) = &{ $generator_and_distributor{$format} };
+			$generator->setOriginConfig( @$content );
+			$dist->addGenerator( 'mastertype', $plugin, $pluginconf, $generator );
 		}
 	}
 }

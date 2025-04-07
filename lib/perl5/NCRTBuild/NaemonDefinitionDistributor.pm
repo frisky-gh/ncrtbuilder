@@ -78,8 +78,8 @@ sub setMonitoredHostServices ($@) {
 }
 
 sub setUsers ($@) {
-	my ($this, @monitoredhostusers) = @_;
-	$$this{monitoredhostusers} = \@monitoredhostusers;
+	my ($this, @users) = @_;
+	$$this{users} = \@users;
 }
 
 sub setMonitoredHostGroups ($@) {
@@ -253,6 +253,13 @@ sub writeAgentTypeTemplates ($) {
 			"	register		0",
 			"}";
 	}
+	push @content,
+		"define host {",
+		"	name			ncrt-agenttype-pseudo",
+		"	use			ncrt-generic-host",
+		"	check_command		ncrtcmd_do_nothing",
+		"	register		0",
+		"}";
 	$outputdir->writeToAllHosts( "ncrt_agenttypetemplates.cfg", @content );
 }
 
@@ -267,9 +274,9 @@ sub writeMeasurements ($) {
 		my $type        = $$entry{type};
 		my $naemondirective = $$entry{naemondirective};
 		my $check_command;
-		if   ( $type eq 'agent' )    { $check_command = "ncrtmaster_detect_by_targetagent"; }
-		elsif( $type eq 'agentless' ){ $check_command = "ncrtmaster_detect"; }
-		elsif( $type eq 'indirect' ) { $check_command = "ncrtmaster_detect_by_proxyagent"; }
+		if   ( $type eq 'agent' )    { $check_command = "ncrtcmd_detect_by_targetagent"; }
+		elsif( $type eq 'agentless' ){ $check_command = "ncrtcmd_detect"; }
+		elsif( $type eq 'indirect' ) { $check_command = "ncrtcmd_detect_by_backendagents"; }
 		else{ die; }
 
 		my @line = generate_naemondirectiveline $naemondirective, %$entry;
@@ -304,7 +311,7 @@ sub writeAgentHosts ($) {
 			"define host {",
 			"	host_name		$agenthost",
 			"	use			ncrt-agenttype-$agenttype",
-			"	check_command		ncrtmaster_ping",
+			"	check_command		ncrtcmd_ping",
 			"	contacts		$contacts",
 			"	_urlencoded		$host_urlencoded",
 			"	_agenttype		$agenttype",
@@ -330,7 +337,7 @@ sub writePseudoHosts ($) {
 			"define host {",
 			"	host_name		$host",
 			"	use			ncrt-agenttype-pseudo",
-			"	check_command		ncrtmaster_nothing",
+			"	check_command		ncrtcmd_do_nothing",
 			"	contacts		$contacts",
 			"	_urlencoded		$host_urlencoded",
 			"	_agenttype		pseudo",
@@ -423,14 +430,13 @@ sub writeUsers ($) {
 
 	my @content;
 	foreach my $entry ( @$users ){
-		my $user = $$entry{user};
+		my $user = $$entry{name};
 
-		####
 		push @content,
 			"define contact {",
 			"	contact_name		$user",
-			"	host_notification_commands	ncrtmaster_do_nothing",
-			"	service_notification_commands	ncrtmaster_do_nothing",
+			"	host_notification_commands	ncrtcmd_do_nothing",
+			"	service_notification_commands	ncrtcmd_do_nothing",
 			"	host_notification_period	ncrt_notime",
 			"	service_notification_period	ncrt_notime",
 			"	host_notification_options	n",
@@ -439,6 +445,18 @@ sub writeUsers ($) {
 			"	service_notifications_enabled	0",
 			"}";
 	}
+	push @content,
+		"define contact {",
+		"	contact_name		nobody",
+		"	host_notification_commands	ncrtcmd_do_nothing",
+		"	service_notification_commands	ncrtcmd_do_nothing",
+		"	host_notification_period	ncrt_notime",
+		"	service_notification_period	ncrt_notime",
+		"	host_notification_options	n",
+		"	service_notification_options	n",
+		"	host_notifications_enabled	0",
+		"	service_notifications_enabled	0",
+		"}";
 	$outputdir->writeToAllHosts( "ncrt_users.cfg", @content );
 }
 
@@ -455,8 +473,8 @@ sub writeGroups ($) {
 #		push @content,
 #			"define contact {",
 #			"	contact_name		$group",
-#			"	host_notification_commands	ncrtmaster_do_nothing",
-#			"	service_notification_commands	ncrtmaster_do_nothing",
+#			"	host_notification_commands	ncrtcmd_do_nothing",
+#			"	service_notification_commands	ncrtcmd_do_nothing",
 #			"	host_notification_period	ncrt_notime",
 #			"	service_notification_period	ncrt_notime",
 #			"	host_notification_options	n",
@@ -478,7 +496,7 @@ sub writeGenericHostTemplate ($) {
 		"define host {",
 		"	name				ncrt-generic-host",
 	
-		"	check_command			ncrtmaster_do_nothing",
+		"	check_command			ncrtcmd_do_nothing",
 		"	check_interval			4",
 		"	retry_interval			1",
 		"	max_check_attempts		3",

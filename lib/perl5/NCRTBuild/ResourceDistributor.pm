@@ -72,6 +72,21 @@ sub run ($) {
 			" $plugindir/ $workdir4m/$host/plugins/";
 		system_or_die "rsync -aJUSx --include=\\*.filter     --exclude=\\*" .
 			" $filterdir/ $workdir4m/$host/filters/";
+
+		my $f = "$workdir4m/$host/ncrtconf/agenthosts";
+		open my $h, ">", $f or die "$f: cannot open, stopped";
+		foreach( sort { $$a{agenthost} cmp $$b{agenthost} } @$agenthosts ){
+			my $agenthost = $$_{agenthost};
+			my $agenttype = $$_{agenttype};
+			my $ansibleparam = $$_{ansibleparam};
+			my @params;
+			foreach my $k ( sort keys %$ansibleparam ){
+				my $v = $$ansibleparam{$k};
+				push @params, "$k=$v";
+			}
+			print $h join("\t", $agenthost, $agenttype, @params), "\n";
+		}
+		close $h;
 	}
 }
 
