@@ -70,6 +70,9 @@ fi
 if [ "`ls /etc/grafana-dashboard-helper/`" = "" ] ;then
 	rsync -aSvx /etc/grafana-dashboard-helper_orig/ /etc/grafana-dashboard-helper/
 fi
+if [ "`ls /var/lib/grafana-dashboard-helper/`" = "" ] ;then
+	rsync -aSvx /var/lib/grafana-dashboard-helper_orig/ /var/lib/grafana-dashboard-helper/
+fi
 
 ##
 exec /sbin/init

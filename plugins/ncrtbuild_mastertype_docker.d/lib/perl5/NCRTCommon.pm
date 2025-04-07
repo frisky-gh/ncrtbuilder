@@ -185,7 +185,7 @@ sub generate_metrics_from_localplugin ($$$) {
 	my ($measure, $host, $service) = @_;
 
 	my $f = "$main::PLUGINSDIR/ncrtmaster_$measure";
-	open my $h, '-|', "$f $main::NCRTCONFDIR $main::WORKDIR $measure $host $service" or do {
+	open my $h, '-|', "$f $main::PLUGINSCONFDIR $main::WORKDIR $measure $host $service" or do {
 		print "UNKNOWN $f: not found.\n";
 		exit 3;
 	};
@@ -289,7 +289,7 @@ sub pass_through_filters ($$$$%) {
 	
 	foreach my $filter ( @filters ){
 		my $f = "$main::FILTERSDIR/$filter";
-		open2 my $out, my $in, "$f $main::NCRTCONFDIR $main::WORKDIR $measure $host $service" or do {
+		open2 my $out, my $in, "$f $main::WORKDIR $measure $host $service" or do {
 			print "UNKNOWN $f: not found.\n";
 			exit 3;
 		};

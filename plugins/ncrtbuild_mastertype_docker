@@ -58,40 +58,21 @@ while( <$h> ){
 close $h;
 
 my %server_settings = (
-	'GRAFANA_ADMIN' 		=> 'ncrt_gfadmin',
-	'GRAFANA_ADMINPASSWD'		=> 'XXXXSECRETXXXX',
-	'GRAFANA_ADMINEMAIL'		=> 'ncrt_gfadmin@example.com',
 	'GRAFANA_DATAOWNER'		=> 'ncrt_gfuser',
 	'GRAFANA_DATAOWNERPASSWD'	=> 'XXXXSECRETXXXX',
 	'GRAFANA_DATAOWNEREMAIL'	=> 'ncrt_gfuser@example.com',
-	'GRAFANA_ORG'			=> 'ncrt_gforg',
-	'GRAFANA_ORGID' 		=> '1',
-	'GRAFANA_TOKEN' 		=> '',
-	'GRAFANA_DATASOURCE'		=> 'influxdb',
-	'GRAFANA_DB'			=> 'ncrt_gfdb',
-	'GRAFANA_LOCALPORT'		=> '3000',
 
-	'INFLUXDB_USER' 		=> 'ncrt_ifxuser',
-	'INFLUXDB_PASSWD'		=> 'XXXXSECRETXXXX',
-	'INFLUXDB_ORG'			=> 'ncrt_ifxorg',
-	'INFLUXDB_BUCKET'		=> 'ncrt_ifxbucket',
-	'INFLUXDB_OPTIONALBUCKET'	=> 'ncrt_ifxoptional',
-	'INFLUXDB_ARCHIVEBUCKET'	=> 'ncrt_ifxarchive',
-	'INFLUXDB_TOKEN'		=> 'ncrt_ifxtoken',
+	'GRAFANA_LOCALPORT'		=> '3000',
 	'INFLUXDB_LOCALPORT'		=> '8086',
 
-	'DATADIR'			=> "/opt/ncrtmaster/containerdata",
-	'MANAGE_GRAFANA'		=> '1',
-	'MANAGE_INFLUXDB'		=> '1',
-
 	'BROWSERSIDE_URL_PREFIX'	=> 'http://example.com/',
-	'SERVERSIDE_PORT'		=> '80',
 	'SERVERSIDE_PATH_PREFIX'	=> '/',
+	'SERVERSIDE_PORT'		=> '80',
 	'PROXY'				=> '',
+
+	'TZ' => 'GMT',
 );
 my %server_settings_which_must_be_specified_by_user = (
-	'GRAFANA_ADMINEMAIL'		=> 1,
-	'GRAFANA_ADMINPASSWD'		=> 1,
 	'GRAFANA_DATAOWNEREMAIL'	=> 1,
 	'GRAFANA_DATAOWNERPASSWD'	=> 1,
 	'BROWSERSIDE_URL_PREFIX'	=> 1,
