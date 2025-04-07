@@ -1,0 +1,1116 @@
+#!/usr/bin/perl
+
+our $TOOLHOME;
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = ` cd "$1/.." && pwd `;
+	chomp $TOOLHOME;
+}
+use lib "$TOOLHOME/lib/perl5";
+our $SETTINGSDIR = "$TOOLHOME/containersettings";
+our $DATADIR = "$TOOLHOME/containerdata";
+
+use strict;
+use LWP::UserAgent;
+use MIME::Base64;
+use JSON;
+use Carp::Always;
+
+our $DOCKER_COMPOSE_CMD = "docker compose";
+our $CONFIG = "$TOOLHOME/containers/docker-compose.yml";
+our $PROJECT = "ncrtmaster";
+
+our %CONFIG = (
+        "GRAFANA_ADMIN"                 => "ncrt_gfadmin",
+        "GRAFANA_ADMINPASSWD"           => "XXXXSECRETXXXX",
+        "GRAFANA_ADMINEMAIL"            => 'ncrt_gfadmin@example.com',
+        "GRAFANA_DATAOWNER"             => "ncrt_gfuser",
+        "GRAFANA_DATAOWNERPASSWD"       => "XXXXSECRETXXXX",
+        "GRAFANA_DATAOWNEREMAIL"        => 'ncrt_gfuser@example.com',
+
+        "INFLUXDB_USER"                 => "ncrt_ifxuser",
+        "INFLUXDB_PASSWD"               => "XXXXSECRETXXXX",
+
+        "GRAFANA_LOCALPORT"             => "3000",
+        "INFLUXDB_LOCALPORT"            => "8086",
+
+	"SERVERSIDE_PORT"		=> "7080",	
+	"SERVERSIDE_PATH_PREFIX"	=> "/ncrt",	
+
+	"BROWSERSIDE_URL_PREFIX"        => "http://localhost/",
+
+);
+our ($GRAFANA_ADMIN,     $GRAFANA_ADMINPASSWD,     $GRAFANA_ADMINEMAIL);
+our ($GRAFANA_DATAOWNER, $GRAFANA_DATAOWNERPASSWD, $GRAFANA_DATAOWNEREMAIL);
+our ($INFLUXDB_USER, $INFLUXDB_PASSWD);
+our ($SERVERSIDE_PORT, $SERVERSIDE_PATH_PREFIX, $BROWSERSIDE_URL_PREFIX);
+our ($GRAFANA_LOCALPORT, $INFLUXDB_LOCALPORT);
+our %PASSWD;
+our $UA = LWP::UserAgent->new;
+our $JSON = JSON->new;
+our $VERBOSE = 0;
+
+STDOUT->autoflush(1);
+
+# fixed values
+our $GRAFANA_ORG = "ncrt_gforg";
+our $GRAFANA_DATASOURCE = "influxdb";
+our $GRAFANA_DB = "ncrt_gfdb";
+
+our $INFLUXDB_ORG = "ncrt_ifxorg";
+our $INFLUXDB_BUCKET = "ncrt_ifxbucket";
+our $INFLUXDB_OPTIONALBUCKET = "ncrt_ifxoptional";
+our $INFLUXDB_ARCHIVEBUCKET  = "ncrt_ifxarchive";
+
+####
+
+sub usage () {
+	print "usage: % $0 {start|stop|reload|status}\n";
+	exit 1;
+}
+
+sub create_or_die ($) {
+	my ($f) = @_;
+	open my $h, '>', $f or die "$f: cannot create, stopped";
+	close $h;
+}
+
+sub write_or_die ($$) {
+	my ($f,$content) = @_;
+	open my $h, '>', $f or die "$f: cannot open, stopped";
+	print $h $content;
+	close $h;
+}
+
+sub append_or_die ($$) {
+	my ($f,$content) = @_;
+	open my $h, '>>', $f or die "$f: cannot open, stopped";
+	print $h $content;
+	close $h;
+}
+
+sub read_or_die ($) {
+	my ($f) = @_;
+	open my $h, '<', $f or die "$f: cannot open, stopped";
+	my $r = join "", <$h>;
+	close $h;
+	return $r;
+}
+
+sub system_or_die ($) {
+	my ($cmd) = @_;
+	my $r = system $cmd;
+	if    ( $? == -1 ){
+		die sprintf "%s: failed to execute: %d, stopped",
+			$cmd, $!;
+	}elsif( $? & 127 ){
+		die sprintf "%s: child died with signal %d, %s coredump, stopped",
+			$cmd, ($? & 127), ($? & 128) ? 'with' : 'without';
+	}elsif( ($?>>8) != 0 ){
+		 die sprintf "%s: child exited with value %d, stopped",
+			$cmd, $? >> 8;
+	}
+}
+
+sub with_trailing_slash ($) {
+	my ($path) = @_;
+	$path =~ s{/$}{};
+	return "$path/";
+}
+
+sub load_config () {
+	my $f = "$TOOLHOME/pluginsconf/mastertype/docker.conf";
+	open my $h, "<", $f or die "$f: cannot open, stopped";
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$f:$.: invalid format, stopped" unless m"^(\w+)=(.*)";
+		$CONFIG{$1} = $2;
+	}
+	close $h;
+	$GRAFANA_ADMIN       = $CONFIG{GRAFANA_ADMIN};
+	$GRAFANA_ADMINPASSWD = $CONFIG{GRAFANA_ADMINPASSWD};
+	$GRAFANA_ADMINEMAIL  = $CONFIG{GRAFANA_ADMINEMAIL};
+	$GRAFANA_DATAOWNER        = $CONFIG{GRAFANA_DATAOWNER};
+	$GRAFANA_DATAOWNERPASSWD  = $CONFIG{GRAFANA_DATAOWNERPASSWD};
+	$GRAFANA_DATAOWNEREMAIL   = $CONFIG{GRAFANA_DATAOWNEREMAIL};
+
+	$INFLUXDB_USER   = $CONFIG{INFLUXDB_USER};
+	$INFLUXDB_PASSWD = $CONFIG{INFLUXDB_PASSWD};
+
+	$SERVERSIDE_PORT        = int $CONFIG{SERVERSIDE_PORT};
+	$SERVERSIDE_PATH_PREFIX = with_trailing_slash $CONFIG{SERVERSIDE_PATH_PREFIX};
+	$BROWSERSIDE_URL_PREFIX = with_trailing_slash $CONFIG{BROWSERSIDE_URL_PREFIX};
+	$GRAFANA_LOCALPORT      = int $CONFIG{GRAFANA_LOCALPORT};
+	$INFLUXDB_LOCALPORT     = int $CONFIG{INFLUXDB_LOCALPORT};
+}
+
+sub load_htpasswd () {
+	my $f = "$TOOLHOME/containersettings/htpasswd";
+	open my $h, "<", $f or die "$f: cannot open, stopped";
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+		die "$f:$.: invalid format, stopped" unless m"^([-.\w]+):(.*)";
+		$PASSWD{$1} = $2;
+	}
+	close $h;
+}
+
+sub docker_is_running () {
+	my $allstatuses = `$DOCKER_COMPOSE_CMD ls`;
+	my @allstatuses = split m"\n", $allstatuses;
+	shift @allstatuses;
+	foreach( @allstatuses ){
+		my ($project, $status, $config) = split m"\s+";
+		next unless $project eq $PROJECT;
+		next unless $config eq $CONFIG;
+		return 1 if $status =~ m"^running";
+	}
+	return undef;
+}
+
+sub naemon_is_running () {
+	my $stdout = `$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/naemon status`;
+	my $rc = $?;
+	return 1 if $rc == 0;
+	return undef;
+}
+
+sub setup_influxdb () {
+	return if -f "$DATADIR/influxdb_token";
+
+	my $influxdb_token = ` head -c 16 /dev/urandom | sha1sum | head -c 32 `;
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-influxdb " .
+		"influx setup -f -o $INFLUXDB_ORG -r 52w -b $INFLUXDB_BUCKET " .
+		" -u $INFLUXDB_USER -p $INFLUXDB_PASSWD --name default";
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-influxdb " .
+		"influx bucket create -o $INFLUXDB_ORG -r 4w -n $INFLUXDB_OPTIONALBUCKET";
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-influxdb " .
+		"influx bucket create -o $INFLUXDB_ORG -r 520w -n $INFLUXDB_ARCHIVEBUCKET";
+
+	write_or_die "$DATADIR/influxdb_token", $influxdb_token;
+}
+
+####
+
+sub req_grafanaapi ($$$;$) {
+	my ($method, $path, $authtoken, $req_body) = @_;
+	my $url = "http://localhost:$GRAFANA_LOCALPORT$path";
+        my $req = HTTP::Request->new($method => $url);
+
+	$req->header("Authorization" => $authtoken);
+
+	if( $method eq "POST" || $method eq "PUT" ){
+		$req->header("Content-Type" => "application/json");
+		$req->content( $JSON->encode($req_body) );
+	}
+
+	my $res = $UA->request($req);
+	my $status_line = $res->status_line;
+	unless($res->is_success) {
+		print "An error happened: $status_line\n";
+		my $res_body = $res->decoded_content;
+		print "Request: ", $JSON->encode($req_body), "\n";
+		print "Reesponse: $status_line, $res_body\n";
+		die;
+	}
+	print "Transfer went ok\n" if $VERBOSE;
+	my $res_body = $res->decoded_content;
+	print "Received response: $status_line, $res_body\n" if $VERBOSE;
+	my $res_obj = $JSON->decode( $res_body );
+	return $res_obj;
+}
+
+sub req_grafanaadminapi ($$;$) {
+	my ($method, $path, $req_body) = @_;
+
+	my $superadmin_passwd = read_or_die "$DATADIR/grafana_superadmin_passwd";
+	my $authtoken = "Basic " . encode_base64 "admin:$superadmin_passwd", "";
+	return req_grafanaapi $method, $path, $authtoken, $req_body;
+}
+
+sub req_grafanadataownerapi ($$;$) {
+	my ($method, $path, $req_body) = @_;
+
+	my $authtoken = "Basic " . encode_base64 "$GRAFANA_DATAOWNER:$GRAFANA_DATAOWNERPASSWD", "";
+	return req_grafanaapi $method, $path, $authtoken, $req_body;
+}
+
+sub req_grafanasaapi ($$;$) {
+	my ($method, $path, $req_body) = @_;
+
+	my $satoken = read_or_die "$DATADIR/grafana_service_account_token";
+	my $authtoken = "Bearer $satoken";
+	return req_grafanaapi $method, $path, $authtoken, $req_body;
+}
+
+sub req_grafanaadminapi_search_all_users () {
+	return req_grafanaadminapi("GET", "/api/users");
+}
+
+sub req_grafanaadminapi_search_all_orgs () {
+	return req_grafanaadminapi("GET", "/api/orgs");
+}
+
+sub req_grafanaadminapi_create_user ($$$$) {
+	my ($login, $email, $passwd, $is_admin) = @_;
+	
+	my $req = {
+		"name" => $login,
+		"login" => $login,
+		"email" => $email,
+		"password" => $passwd,
+		"isAdmin" => $is_admin ? \1 : \0,
+	};
+	return req_grafanaadminapi("POST", "/api/admin/users", $req);
+}
+
+sub req_grafanaadminapi_update_user ($$$$$) {
+	my ($id, $login, $email, $passwd, $is_admin) = @_;
+	
+	my $req = {
+		"name" => $login,
+		"login" => $login,
+		"email" => $email,
+		"password" => $passwd,
+		"isAdmin" => $is_admin ? \1 : \0,
+	};
+	return req_grafanaadminapi("PUT", "/api/users/$id", $req);
+}
+
+sub req_grafanaadminapi_delete_user ($) {
+	my ($id) = @_;
+	return req_grafanaadminapi("DELETE", "/api/admin/users/$id");
+}
+
+sub req_grafanaadminapi_create_org ($) {
+	my ($name) = @_;
+	
+	my $req = {
+		"name" => $name,
+	};
+	return req_grafanaadminapi("POST", "/api/orgs", $req);
+}
+
+sub req_grafanaadminapi_delete_org ($) {
+	my ($id) = @_;
+	return req_grafanaadminapi("DELETE", "/api/orgs/$id");
+}
+
+sub req_grafanaadminapi_get_id_of_org ($) {
+	my ($org_name) = @_;
+	return req_grafanaadminapi("GET", "/api/orgs/name/$org_name");
+}
+
+sub req_grafanaadminapi_search_all_members_in_org ($) {
+	my ($org_id) = @_;
+	return req_grafanaadminapi("GET", "/api/orgs/$org_id/users");
+}
+
+sub req_grafanaadminapi_join_org ($$$) {
+	my ($user_name, $role, $org_id) = @_;
+	my $req = {
+		"loginOrEmail" => $user_name,
+		"role" => $role,
+	};
+	return req_grafanaadminapi("POST", "/api/orgs/$org_id/users", $req);
+}
+
+sub req_grafanaadminapi_switch_user_context ($$) {
+	my ($user_id, $org_id) = @_;
+	return req_grafanaadminapi("POST", "/api/users/$user_id/using/$org_id");
+}
+
+sub req_grafanadataownerapi_search_serviceaccounts () {
+	return req_grafanadataownerapi("GET", "/api/serviceaccounts/search");
+}
+
+sub req_grafanadataownerapi_create_serviceaccount ($$$) {
+	my ($name, $org_id, $role) = @_;
+	
+	my $req = {
+		"name" => $name,
+		"role" => $role,
+		"orgId" => $org_id,
+	};
+	return req_grafanadataownerapi("POST", "/api/serviceaccounts");
+}
+
+sub req_grafanadataownerapi_search_serviceaccount_tokens_of ($) {
+	my ($sa_id) = @_;
+	return req_grafanadataownerapi("GET", "/api/serviceaccounts/$sa_id/tokens");
+}
+
+sub req_grafanadataownerapi_delete_serviceaccount_token ($$) {
+	my ($sa_id, $token_id) = @_;
+	return req_grafanadataownerapi("DELETE", "/api/serviceaccounts/$sa_id/tokens/$token_id");
+}
+
+sub req_grafanadataownerapi_create_serviceaccount_token ($$) {
+	my ($sa_id, $token_name) = @_;
+	my $req = {
+		"name" => $token_name,
+	};
+	return req_grafanadataownerapi("POST", "/api/serviceaccounts/$sa_id/tokens", $req);
+}
+
+sub req_grafanasaapi_search_datasources () {
+	return req_grafanasaapi("GET", "/api/datasources");
+}
+
+sub req_grafanasaapi_create_datasource ($$$$$$$) {
+	my ($name, $type, $url, $org_id, $access, $jsondata, $securejsonfields) = @_;
+	
+	my $req = {
+		"name" => $name,
+		"type" => $type,
+		"url" => $url,
+		"orgId" => $org_id,
+		"access" => $access,
+		"jsonData" => $jsondata,
+		"secureJsonFields" => $securejsonfields,
+	};
+	return req_grafanasaapi("POST", "/api/datasources", $req);
+}
+
+####
+
+sub setup_grafana_superadmin () {
+	return if -f "$DATADIR/grafana_superadmin_has_been_setup";
+	my $superadmin_passwd = ` head -c 16 /dev/urandom | sha1sum | head -c 32 `;
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-grafana " .
+		"grafana cli admin reset-admin-password \Q$superadmin_passwd\E";
+	write_or_die "$DATADIR/grafana_superadmin_passwd", $superadmin_passwd;
+
+	create_or_die "$DATADIR/grafana_superadmin_has_been_setup";
+}
+
+sub setup_grafana_admin () {
+	return if -f "$DATADIR/grafana_admin_has_been_setup";
+	my $res = req_grafanaadminapi_search_all_users;
+	my $target_id;
+	foreach my $user ( @$res ){
+		next unless $$user{login} eq $GRAFANA_DATAOWNER;
+		$target_id = $$user{id};
+		last;
+	}
+
+	if    ( defined $target_id ){
+		my $res = req_grafanaadminapi_update_user
+			$target_id, $GRAFANA_DATAOWNER, $GRAFANA_ADMINEMAIL, $GRAFANA_ADMINPASSWD, 1;
+	}else{
+		my $res = req_grafanaadminapi_create_user
+			$GRAFANA_DATAOWNER, $GRAFANA_ADMINEMAIL, $GRAFANA_ADMINPASSWD, 1;
+	}
+
+	create_or_die "$DATADIR/grafana_admin_has_been_setup";
+}
+
+sub setup_grafana_dataowner () {
+	return if -f "$DATADIR/grafana_dataowner_has_been_setup";
+	my $res = req_grafanaadminapi_search_all_users;
+	my $target_id;
+	foreach my $user ( @$res ){
+		next unless $$user{login} eq $GRAFANA_DATAOWNER;
+		$target_id = $$user{id};
+		last;
+	}
+
+	if    ( defined $target_id ){
+		my $res = req_grafanaadminapi_update_user
+			$target_id, $GRAFANA_DATAOWNER, $GRAFANA_DATAOWNEREMAIL, $GRAFANA_DATAOWNERPASSWD, 0;
+	}else{
+		my $res = req_grafanaadminapi_create_user
+			$GRAFANA_DATAOWNER, $GRAFANA_DATAOWNEREMAIL, $GRAFANA_DATAOWNERPASSWD, 0;
+	}
+
+	create_or_die "$DATADIR/grafana_dataowner_has_been_setup";
+}
+
+sub setup_grafana_org () {
+	return if -f "$DATADIR/grafana_org_has_been_setup";
+
+	print "searching organization $GRAFANA_ORG...";
+	my $res = req_grafanaadminapi_search_all_orgs;
+	my $target_org_id;
+	foreach my $org ( @$res ){
+		next unless $$org{name} eq $GRAFANA_ORG;
+		$target_org_id = $$org{id};
+		last;
+	}
+
+	if    ( defined $target_org_id ){
+		print "found.\n";
+		# nothing to do
+	}else{
+		print "not found. creating...";
+		my $res = req_grafanaadminapi_create_org $GRAFANA_ORG;
+		$target_org_id = $$res{id};
+		print "ok.\n";
+	}
+
+	print "searching user $GRAFANA_DATAOWNER in members of $GRAFANA_ORG...";
+	my $res = req_grafanaadminapi_search_all_members_in_org $target_org_id;
+	my $target_user_id;
+	foreach my $user ( @$res ){
+		next unless $$user{name} eq $GRAFANA_DATAOWNER;
+		$target_user_id = $$user{userId};
+		last;
+	}
+
+	if    ( defined $target_user_id ){
+		print "found.\n";
+		# nothing to do
+	}else{
+		print "not found. joining...";
+		my $res = req_grafanaadminapi_join_org $GRAFANA_DATAOWNER, "Admin", $target_org_id;
+		print "ok.\n";
+	}
+
+	print "switch context of user $GRAFANA_DATAOWNER to organization $GRAFANA_ORG...";
+	my $res = req_grafanaadminapi_switch_user_context $target_user_id, $target_org_id;
+	print "ok.\n";
+
+	create_or_die "$DATADIR/grafana_org_has_been_setup";
+}
+
+sub setup_grafana_datasource () {
+	return if -f "$DATADIR/grafana_datasource_has_been_setup";
+
+	my $influxdb_token = read_or_die "$DATADIR/influxdb_token";
+
+	print "getting id of organization $GRAFANA_ORG...";
+	my $res = req_grafanaadminapi_get_id_of_org $GRAFANA_ORG;
+	my $org_id = $$res{id};
+	print "found. Id is $org_id.\n";
+
+	print "searching data source $GRAFANA_DATASOURCE...";
+	my $res = req_grafanasaapi_search_datasources;
+	my $target_id;
+	foreach my $datasource ( @$res ){
+		next unless $$datasource{name} eq $GRAFANA_DATASOURCE;
+		$target_id = $$datasource{id};
+		last;
+	}
+
+	if    ( defined $target_id ){
+		print "found. Id is $target_id.\n";
+		# nothing to do
+	}else{
+		print "not found, creating...";
+		my $jsondata = {
+			"version" => "Flux",
+			"organization"  => $INFLUXDB_ORG,
+			"defaultBucket" => $INFLUXDB_BUCKET,
+			"tlsSkipVerify" => \0,
+		};
+		my $securejsonfield = {
+#			"token" => $satoken,
+		};
+		my $res = req_grafanasaapi_create_datasource $GRAFANA_DATASOURCE,
+			"influxdb", "http://ncrt-influxdb:8086", $org_id, "proxy",
+			$jsondata, $securejsonfield;
+		print "ok.\n";
+	}
+'
+    - name: create datasource
+      community.grafana.grafana_datasource:
+        name: "influxdb"
+        grafana_url:  http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
+        url_username: "{{GRAFANA_DATAOWNER}}"
+        url_password: "{{GRAFANA_DATAOWNERPASSWD}}"
+        org_name:     "{{GRAFANA_ORG}}"
+        ds_type: "influxdb"
+        ds_url:  "http://ncrt-influxdb:8086"
+        is_default: true
+        additional_json_data:
+          version:       "Flux"
+          organization:  "{{INFLUXDB_ORG}}"
+          defaultBucket: "{{INFLUXDB_BUCKET}}"
+          tlsSkipVerify: false
+        additional_secure_json_data:
+          token:         "{{INFLUXDB_TOKEN}}"
+      tags: [ commoninstall ]
+';
+	create_or_die "$DATADIR/grafana_datasource_has_been_setup";
+}
+
+sub setup_grafana_users () {
+	return if -f "$DATADIR/grafana_users_have_been_setup";
+
+	print "getting id of organization $GRAFANA_ORG...";
+	my $res = req_grafanaadminapi_get_id_of_org $GRAFANA_ORG;
+	my $org_id = $$res{id};
+	print "found. Id is $org_id.\n";
+
+	print "create or updating all users...";
+	my $res = req_grafanaadminapi_search_all_users;
+	my %existing_user_id;
+	foreach my $user ( @$res ){
+		$existing_user_id{ $$user{name} } = $$user{id};
+	}
+
+	my %joining_user_id;
+	my $res = req_grafanaadminapi_search_all_members_in_org $org_id;
+	foreach my $user ( @$res ){
+		$joining_user_id{ $$user{name} } = $$user{userId};
+	}
+
+	foreach my $username ( sort keys %PASSWD ){
+		my $passwd = $PASSWD{$username};
+		print "$username";
+
+		my $user_id = $existing_user_id{$username};
+		if( defined $user_id ){
+			my $res = req_grafanaadminapi_update_user
+				$user_id, $username, "$username\@example.com", $passwd, 0;
+		}else{
+			my $res = req_grafanaadminapi_create_user
+				$username, "$username\@example.com", $passwd, 0;
+			$user_id = $$res{id};
+		}
+		print ".";
+
+		my $member_id = $joining_user_id{$username};
+		if( defined $member_id ){
+			# nothing to do
+		}else{
+			my $res = req_grafanaadminapi_join_org $username, "Viewer", $org_id;
+		}
+		print ".";
+
+		my $res = req_grafanaadminapi_switch_user_context $user_id, $org_id;
+		print ".";
+	}
+	print "ok.\n";
+
+	create_or_die "$DATADIR/grafana_users_have_been_setup";
+}
+
+sub setup_grafana_serviceaccount () {
+	return if -f "$DATADIR/grafana_service_account_token";
+
+	print "getting id of organization $GRAFANA_ORG...";
+	my $res = req_grafanaadminapi_get_id_of_org $GRAFANA_ORG;
+	my $org_id = $$res{id};
+	print "found. Id is $org_id.\n";
+
+	print "serching service accounts of grafana data owner...";
+	my $res = req_grafanadataownerapi_search_serviceaccounts;
+	my $target_sa_id;
+	foreach my $sa ( @{$$res{serviceAccounts}} ){
+		print ".";
+		my $sa_id       = $$sa{id};
+		my $sa_name     = $$sa{name};
+		my $sa_login    = $$sa{login};
+		my $sa_org_id   = $$sa{orgId};
+		my $sa_disabled = $$sa{isDisabled};
+		if( $sa_name eq "${GRAFANA_DATAOWNER}_sa" ){
+			$target_sa_id = $sa_id;
+			last;
+		}
+	}
+	
+	if( defined $target_sa_id ){
+		print "found ${GRAFANA_DATAOWNER}_sa.\n";
+	}else{
+		print "not found ${GRAFANA_DATAOWNER}_sa, creating...";
+		my $res = req_grafanadataownerapi_create_serviceaccount "${GRAFANA_DATAOWNER}_sa", $org_id, "Admin";
+		$target_sa_id = $$res{id};
+		print "ok\n";
+	}
+
+	print "serching service account tokens of ${GRAFANA_DATAOWNER}_sa...";
+	my $res = req_grafanadataownerapi_search_serviceaccount_tokens_of $target_sa_id;
+	my $target_token_id;
+	foreach my $token ( @$res ){
+		print ".";
+		my $token_id   = $$token{id};
+		my $token_name = $$token{name};
+		my $token_created    = $$token{created};
+		my $token_lastusedat = $$token{lastUsedAt};
+		my $token_expiration = $$token{expiration};
+		if( $token_name eq "${GRAFANA_DATAOWNER}_token" ){
+			$target_token_id = $token_id;
+			last;
+		}
+	}
+
+	if( defined $target_token_id ){
+		print "found ${GRAFANA_DATAOWNER}_token, deleting...\n";
+		my $res = req_grafanadataownerapi_delete_serviceaccount_token $target_sa_id, $target_token_id;
+		print "ok\n";
+	}else{
+		print "not found ${GRAFANA_DATAOWNER}_token.\n";
+	}
+
+	print "creating service account token ${GRAFANA_DATAOWNER}_token...";
+	my $res = req_grafanadataownerapi_create_serviceaccount_token $target_sa_id, "${GRAFANA_DATAOWNER}_token";
+	my $key = $$res{key};
+	print "ok\n";
+
+	write_or_die "$DATADIR/grafana_service_account_token", $key;
+}
+
+####
+
+sub list_grafana_users () {
+	my $res = req_grafanaadminapi_search_all_users;
+	foreach my $user ( @$res ){
+		my $id    = $$user{id};
+		my $login = $$user{login};
+		my $email = $$user{email};
+		my $is_admin     = $$user{isAdmin};
+		my $is_disabled  = $$user{isDisabled};
+		my $last_seen_at = $$user{lastSeenAt};
+		printf "%-3d %-12s %-40s %-5s %-8s %-s\n",
+			$id, $login, $email,
+			$is_admin ? "admin" : "user",
+			$is_disabled ? "disabled" : "enabled",
+			$last_seen_at;
+	}
+}
+
+sub list_grafana_orgs () {
+	my $res = req_grafanaadminapi_search_all_orgs;
+	foreach my $org ( @$res ){
+		my $id    = $$org{id};
+		my $name = $$org{name};
+		printf "%-3d %-20s\n", $id, $name;
+	}
+}
+
+sub list_grafana_dataowners_serviceaccounts () {
+	my $res = req_grafanadataownerapi_search_serviceaccounts;
+	foreach my $sa ( @{$$res{serviceAccounts}} ){
+		my $id       = $$sa{id};
+		my $name     = $$sa{name};
+		my $login    = $$sa{login};
+		my $org_id   = $$sa{orgId};
+		my $disabled = $$sa{isDisabled};
+		printf "%-3d %-20s %-20s %2d %s\n",
+			$id, $name, $login, $org_id, $disabled ? "disabled" : "enabled";
+	}
+}
+
+sub list_grafana_dataowners_serviceaccount_tokens () {
+	my $res = req_grafanadataownerapi_search_serviceaccounts;
+	foreach my $sa ( @{$$res{serviceAccounts}} ){
+		my $id       = $$sa{id};
+		my $name     = $$sa{name};
+		my $login    = $$sa{login};
+		my $org_id   = $$sa{orgId};
+		my $disabled = $$sa{isDisabled};
+		my $res = req_grafanadataownerapi_search_serviceaccount_tokens_of $id;
+		foreach my $token ( @$res ){
+			my $token_id   = $$token{id};
+			my $token_name = $$token{name};
+			my $token_created    = $$token{created};
+			my $token_lastusedat = $$token{lastUsedAt};
+			my $token_expiration = $$token{expiration};
+			printf "%-5s %-20s %2d %-20s %-20s %-20s %-20s\n",
+				"$id.$token_id", $name, $org_id, $token_name,
+				$token_created, $token_lastusedat // "never_used", $token_expiration // "unlimited";
+		}
+	}
+}
+
+sub list_grafana_dataowners_datasources () {
+	my $res = req_grafanasaapi_search_datasources;
+	foreach my $org ( @$res ){
+		my $id    = $$org{id};
+		my $name = $$org{name};
+		printf "%-3d %-20s\n", $id, $name;
+	}
+}
+
+sub create_grafana_user ($$$$) {
+	my ($login, $email, $passwd, $is_admin) = @_;
+	my $res = req_grafanaadminapi_create_user $login, $email, $passwd, $is_admin;
+}
+
+sub update_grafana_user ($$$$) {
+	my ($login, $email, $passwd, $is_admin) = @_;
+	my $res = req_grafanaadminapi_search_all_users;
+	foreach my $user ( @$res ){
+		next unless $$user{login} eq $login;
+		my $res = req_grafanaadminapi_update_user $$user{id}, $login, $email, $passwd, $is_admin;
+		return;
+	}
+	die;
+}
+
+sub delete_grafana_user ($) {
+	my ($login) = @_;
+	my $res = req_grafanaadminapi_search_all_users;
+	foreach my $user ( @$res ){
+		next unless $$user{login} eq $login;
+		my $res = req_grafanaadminapi_delete_user $$user{id};
+		return;
+	}
+	die;
+}
+
+sub create_grafana_org ($) {
+	my ($name) = @_;
+	my $res = req_grafanaadminapi_create_org $name;
+}
+
+sub delete_grafana_org ($) {
+	my ($name) = @_;
+	my $res = req_grafanaadminapi_search_all_orgs;
+	foreach my $user ( @$res ){
+		next unless $$user{name} eq $name;
+		my $res = req_grafanaadminapi_delete_org $$user{id};
+		return;
+	}
+	die;
+}
+
+sub create_grafana_datasource ($$$$) {
+	my ($name, $type, $url, $org) = @_;
+	my $res = req_grafanadataownerapi_create_datasource $name, $type, $url, $org;
+}
+
+####
+
+sub setup_apache_conf () {
+	return if -f "$SETTINGSDIR/naemon_etc_apache2/ncrt_has_setup_these_conf_files";
+
+#	system_or_die "sed -i " .
+#		"-e \"s|^Listen 80|Listen ${SERVERSIDE_PORT}|\" " .
+#		"$SETTINGSDIR/naemon_etc_apache2/ports.conf";
+	system_or_die "sed -i " .
+		"-e \"s|^  Alias /thruk|  Alias ${SERVERSIDE_PATH_PREFIX}thruk|\" " .
+		"-e \"s|^  AliasMatch \\^/thruk|  AliasMatch ^${SERVERSIDE_PATH_PREFIX}thruk|\" " .
+		"-e \"s|^  <Location /thruk|  <Location ${SERVERSIDE_PATH_PREFIX}thruk|\" " .
+		"$SETTINGSDIR/naemon_etc_apache2/conf-available/thruk.conf";
+
+	append_or_die "$SETTINGSDIR/naemon_etc_apache2/sites-enabled/000-default.conf",
+		"ProxyPreserveHost On\n" .
+		"ProxyPass        ${SERVERSIDE_PATH_PREFIX}grafana/ http://ncrt-grafana:3000/\n" .
+		"ProxyPassReverse ${SERVERSIDE_PATH_PREFIX}grafana/ http://ncrt-grafana:3000/\n" .
+		"\n" .
+		"ProxyPass        ${SERVERSIDE_PATH_PREFIX}grafana-dashboard-helper/ http://localhost:46846/\n" .
+		"ProxyPassReverse ${SERVERSIDE_PATH_PREFIX}grafana-dashboard-helper/ http://localhost:46846/\n";
+
+	create_or_die "$SETTINGSDIR/naemon_etc_apache2/ncrt_has_setup_these_conf_files";
+}
+
+sub setup_naemon_conf () {
+	return if -f "$SETTINGSDIR/naemon_etc_naemon/ncrt_has_setup_these_conf_files";
+
+	append_or_die "$SETTINGSDIR/naemon_etc_naemon/naemon.cfg",
+		"process_performance_data=1\n" .
+		"service_perfdata_file_processing_command=ncrt-process-service-perfdata-naemon2influx\n" .
+		"service_perfdata_file_mode=a\n" .
+		"service_perfdata_file_processing_interval=5\n" .
+		"service_perfdata_file_template=\$TIMET\$\\t\$HOSTNAME\$\\t\$SERVICEDESC\$\\t\$SERVICESTATE\$\\t\$SERVICEPERFDATA\$\n" .
+		"service_perfdata_file=/var/lib/naemon/service-perfdata\n";
+
+	create_or_die "$SETTINGSDIR/naemon_etc_naemon/ncrt_has_setup_these_conf_files";
+}
+
+sub setup_naemon2influx_conf () {
+	return if -f "$SETTINGSDIR/naemon_etc_naemon/ncrt_has_setup_naemon2influx_conf_files";
+
+	my $influxdb_token = read_or_die "$DATADIR/influxdb_token";
+
+	append_or_die "$SETTINGSDIR/naemon_etc_naemon/naemon2influx.cfg",
+		"perfdata=/var/lib/naemon/service-perfdata\n" .
+		"perflineregexp=^(?<time>\S+)\t(?<hostname>\S+)\t(?<servicename>\S+)\t(?<state>\S+)\t(?<data>.*)\n" .
+		"enable_optional_values=1\n" .
+		"\n" .
+		"measurement=ncrt_<servicename>,host=<hostname>\n" .
+		"fieldkey=<label>\n" .
+		"\n" .
+		"apiver=2\n" .
+		"output=http://ncrt-influxdb:8086/\n" .
+		"org=$INFLUXDB_ORG\n" .
+		"bucket=$INFLUXDB_BUCKET\n" .
+		"token=$influxdb_token\n" .
+		"\n" .
+		"* if <name_of_optional_value> ne \"\"\n" .
+		"	measurement=ncrt_<servicename>,host=<hostname>,option=<name_of_optional_value>\n" .
+		"	#fieldkey=<label>.<name_of_optional_value>\n" .
+		"	bucket=$INFLUXDB_OPTIONALBUCKET\n";
+
+	create_or_die "$SETTINGSDIR/naemon_etc_naemon/ncrt_has_setup_naemon2influx_conf_files";
+}
+
+sub setup_thruk_conf () {
+	return if -f "$SETTINGSDIR/naemon_etc_thruk/ncrt_has_setup_these_conf_files";
+
+#	system_or_die "sed -i " .
+#		"-e \"s|^url_prefix = /|url_prefix = ${SERVERSIDE_PATH_PREFIX}|\" " .
+#		"$SETTINGSDIR/naemon_etc_thruk/thruk.conf";
+	append_or_die "$SETTINGSDIR/naemon_etc_thruk/thruk_local.conf",
+		"use_frames = 0\n" .
+		"product_prefix = ${SERVERSIDE_PATH_PREFIX}/thruk\n" .
+		"cookie_auth_restricted_url = ${BROWSERSIDE_URL_PREFIX}thruk/cgi-bin/restricted.cgi\n" .
+		"group_paging_overview = *30, 100, all\n" .
+		"group_paging_summary  = *50, 100, all\n" .
+		"group_paging_grid     = *30, 100, all\n";
+	system_or_die "rsync -aSvx $SETTINGSDIR/htpasswd $SETTINGSDIR/naemon_etc_thruk/htpasswd";
+
+	create_or_die "$SETTINGSDIR/naemon_etc_thruk/ncrt_has_setup_these_conf_files";
+}
+
+sub setup_grafana_dashboard_helper_conf () {
+	return if -f "$SETTINGSDIR/naemon_etc_grafana-dashboard-helper/ncrt_has_setup_these_conf_files";
+
+	my $satoken = read_or_die "$DATADIR/grafana_service_account_token";
+
+	write_or_die "$SETTINGSDIR/naemon_etc_grafana-dashboard-helper/grafana-dashboard-helper.conf",
+		"GDHLISTENADDR=0.0.0.0\n" .
+		"GDHLISTENPORT=46846\n" .
+		"GDHURL=${SERVERSIDE_PATH_PREFIX}grafana-dashboard-helper/\n" .
+		"GDHGRAFANAURL=${SERVERSIDE_PATH_PREFIX}grafana/\n" .
+		"\n" .
+		"GRAFANAURL=http://ncrt-grafana:3000/\n" .
+		"GRAFANATOKEN=$satoken\n" .
+		"GRAFANADATASOURCE=$GRAFANA_DATASOURCE\n" .
+		"\n" .
+		"INFLUXDBURL=http://ncrt-influxdb:8086/\n" .
+		"INFLUXDBBUCKET=ncrt_ifxbucket\n" .
+		"INFLUXDBORG=ncrt_org\n" .
+		"INFLUXDBTOKEN=ncrt_token\n" .
+		"\n" .
+		"DEBUG=1\n" .
+		"\n" .
+		"PLUGIN_NCRT_OPTIONALBUCKET=$INFLUXDB_OPTIONALBUCKET\n" .
+		"PLUGIN_NCRT_GENERIC_PANELPRIORITY=50\n" .
+		"PLUGIN_GENERIC_PANELPRIORITY=90\n";
+
+	create_or_die "$SETTINGSDIR/naemon_etc_grafana-dashboard-helper/ncrt_has_setup_these_conf_files";
+}
+
+####
+
+sub load_userprofiles ($) {
+	my ($f) = @_;
+	open my $h, "<", $f or return ();
+	my %profiles;
+	while( <$h> ){
+		chomp;
+		die "$f:$.: invalid format, stopped" unless m"^([^:\s\p{Cc}]+):(.*)$";
+		my $username = $1;
+		my $password = $2;
+		$profiles{$username} = {
+			"username" => $username,
+			"password" => $password,
+		};
+	}
+	close $h;
+	return %profiles;
+}
+
+sub cmp_new_userprofiles () {
+	my %new_profiles  = load_userprofiles "$SETTINGSDIR/userprofiles";
+	my %last_profiles = load_userprofiles "$SETTINGSDIR/userprofiles.last";
+
+	my @addlist;
+	while( my ($username, $p) = each %new_profiles ){
+		push @addlist, $p unless defined $last_profiles{$username};
+	}
+	my @removelist;
+	while( my ($username, $p) = each %last_profiles ){
+		push @removelist, $p unless defined $new_profiles{$username};
+	}
+	my @updatelist;
+	while( my ($username, $new_profile) = each %new_profiles ){
+		my $last_profile = $last_profiles{$username};
+		next unless defined $last_profile;
+
+		my $new_p  = $JSON->encode( $new_profile );
+		my $last_p = $JSON->encode( $last_profile );
+		push @updatelist, $new_profile unless $new_p eq $last_p;
+	}
+
+	return \@addlist, \@removelist, \@updatelist;
+}
+
+sub add_users (@) {
+	my ( @addlist ) = @_;
+	foreach my $profile ( @addlist ){
+		my $username = $$profile{username};
+		my $password = $$profile{password};
+		system_or_die "htpasswd -b -2 $SETTINGSDIR/htpasswd $username \Q$password\E";
+	}
+}
+
+sub remove_users (@) {
+	my ( @removelist ) = @_;
+	# TODO: implement
+}
+
+sub update_users (@) {
+	my ( @updatelist ) = @_;
+	foreach my $profile ( @updatelist ){
+		my $username = $$profile{username};
+		my $password = $$profile{password};
+		system_or_die "htpasswd -b -2 $SETTINGSDIR/htpasswd $username \Q$password\E";
+	}
+}
+
+sub accept_new_userprofiles () {
+	system_or_die "cp $SETTINGSDIR/userprofiles $SETTINGSDIR/userprofiles.last";
+}
+
+####
+
+sub setup_grafana () {
+	setup_grafana_superadmin;
+	setup_grafana_admin;
+	setup_grafana_dataowner;
+	setup_grafana_org;
+	setup_grafana_serviceaccount;
+	setup_grafana_datasource;
+	setup_grafana_users;
+}
+
+sub setup_apache () {
+	setup_apache_conf;
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/apache2 reload";
+}
+
+sub setup_naemon () {
+	setup_naemon_conf;
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/naemon reload";
+}
+
+sub setup_thruk () {
+	setup_thruk_conf;
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/thruk reload";
+}
+
+sub setup_grafana_dashboard_helper () {
+	setup_grafana_dashboard_helper_conf;
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/grafana-dashboard-helper reload";
+}
+
+sub setup () {
+	exit 2 unless docker_is_running;
+	setup_influxdb;
+	setup_grafana;
+	setup_apache;
+	setup_naemon;
+	setup_thruk;
+	setup_naemon2influx_conf;
+	setup_grafana_dashboard_helper;
+
+	return;
+}
+
+sub update_userprofiles () {
+	exit 2 unless docker_is_running;
+
+	my ($addlist, $removelist, $updatelist) = cmp_new_userprofiles;
+	add_users @$addlist;
+	remove_users @$removelist;
+	update_users @$updatelist;
+	accept_new_userprofiles;
+}
+
+sub status () {
+	exit 2 unless docker_is_running;
+	exit 3 unless naemon_is_running;
+	print "running.\n";
+	exit 0;
+}
+
+sub reload () {
+	exit 2 unless docker_is_running;
+
+	system_or_die "rsync -ax $TOOLHOME/naemondef/  $SETTINGSDIR/naemon_etc_naemon/conf.d/";
+	system_or_die "rsync -ax $SETTINGSDIR/htpasswd $SETTINGSDIR/naemon_etc_thruk/htpasswd";
+	if( naemon_is_running ){
+		system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/naemon reload";
+	}else{
+		system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/naemon start";
+	}
+}
+
+sub start () {
+	exit 0 if docker_is_running;
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG build";
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG up -d";
+}
+
+sub stop () {
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG down";
+}
+
+
+####
+
+if( @ARGV < 1 ){
+	usage;
+}
+
+load_config;
+load_htpasswd;
+
+my $subcmd = $ARGV[0];
+shift @ARGV;
+if( $ARGV[0] eq "-v" ){
+	$VERBOSE = 1;
+	shift @ARGV;
+}
+
+if    ( $subcmd eq "start" ){
+	start;
+}elsif( $subcmd eq "stop" ){
+	stop;
+}elsif( $subcmd eq "reload" ){
+	reload;
+}elsif( $subcmd eq "status" ){
+	status;
+}elsif( $subcmd eq "setup" ){
+	setup;
+}elsif( $subcmd eq "update_userprofiles" ){
+	update_userprofiles;
+
+## Grafana operation
+}elsif( $subcmd eq "list_grafana_users" ){
+	list_grafana_users;
+}elsif( $subcmd eq "list_grafana_orgs" ){
+	list_grafana_orgs;
+}elsif( $subcmd eq "list_grafana_dataowners_serviceaccounts" ){
+	list_grafana_dataowners_serviceaccounts;
+}elsif( $subcmd eq "list_grafana_dataowners_serviceaccount_tokens" ){
+	list_grafana_dataowners_serviceaccount_tokens;
+}elsif( $subcmd eq "list_grafana_dataowners_datasources" ){
+	list_grafana_dataowners_datasources;
+}elsif( $subcmd eq "create_grafana_user" ){
+	die if @ARGV < 4;
+	my ($login, $email, $passwd, $is_admin) = @ARGV;
+	create_grafana_user $login, $email, $passwd, $is_admin;
+}elsif( $subcmd eq "update_grafana_user" ){
+	die if @ARGV < 4;
+	my ($login, $email, $passwd, $is_admin) = @ARGV;
+	update_grafana_user $login, $email, $passwd, $is_admin;
+}elsif( $subcmd eq "delete_grafana_user" ){
+	die if @ARGV < 1;
+	my ($login) = @ARGV;
+	delete_grafana_user $login;
+}elsif( $subcmd eq "create_grafana_org" ){
+	die if @ARGV < 1;
+	my ($login) = @ARGV;
+	create_grafana_org $login;
+}elsif( $subcmd eq "delete_grafana_org" ){
+	die if @ARGV < 1;
+	my ($login) = @ARGV;
+	delete_grafana_org $login;
+}elsif( $subcmd eq "create_grafana_datasource" ){
+	die if @ARGV < 4;
+	my ($name, $type, $url, $org) = @ARGV;
+	create_grafana_datasource $name, $type, $url, $org;
+
+##
+}else{
+	usage;
+}
+
+
