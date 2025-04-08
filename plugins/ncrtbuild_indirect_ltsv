@@ -29,7 +29,7 @@ while( <$h> ){
         }elsif( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
 		$curr_vhost = undef;
 		$curr_vservice = undef;
-        }elsif( m"^backend=(.*)$" ){
+        }elsif( m"^BackendHost=([-.\w]+)$" ){
 		next unless defined $curr_vhost;
 		next unless defined $curr_vservice;
 		push @backend, [$curr_vhost, $curr_vservice, $1];
