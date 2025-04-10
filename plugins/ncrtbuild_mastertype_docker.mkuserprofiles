@@ -1,0 +1,88 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 PLUGINWORKDIR PLAYBOOKDIR\n";
+	exit 1;
+}
+
+our $WORKDIR = $ARGV[0];
+our $PLAYBOOKDIR = $ARGV[1];
+
+#### functions.
+
+sub system_or_die ($) {
+	my ($cmd) = @_;
+	my $r = system $cmd;
+	if   ($? == -1){
+		die sprintf "%s: failed to execute: %d, stopped",
+			$cmd, $!;
+	}elsif($? & 127){
+		die sprintf
+			"%s: child died with signal %d, %s coredump, stopped",
+			$cmd, ($? & 127), ($? & 128) ? 'with' : 'without';
+	}elsif( ($?>>8) != 0){
+		 die sprintf "%s: child exited with value %d, stopped",
+			$cmd, $? >> 8;
+	}
+}
+
+my %profiles;
+my $f = "$WORKDIR/users";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	die "$f:$.: illegal format, stopped"  unless m"^(\S+)((\s+(\w+)=(\S*))*)\s*$";
+	my $user = $1;
+	my %profile;
+	foreach my $k_v ( split m"\s+", $2 ){
+		next unless $k_v =~ m"^(\w+)=(\S*)$";
+		$profile{$1} = $2;
+	}
+	unless( defined $profile{password} ){
+		$profile{password} = `head -c 6 /dev/urandom | base64`;
+		chomp $profile{password};
+	}
+	unless( defined $profile{email} ){
+		$profile{email} = "grafana-user+$user\@example.com";
+	}
+	$profiles{$user} = \%profile;
+}
+close $h;
+
+#### pass users' infomation to the playbook of this plugin
+my $f = "$PLAYBOOKDIR/plugin_mastertype_docker.users.yml";
+open my $h, '>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "VIEWERS:\n";
+foreach my $user ( sort keys %profiles ){
+	my $profile = $profiles{$user};
+	print $h "  - user : '$user'\n";
+	foreach my $k ( sort keys %$profile ){
+		my $v = $$profile{$k};
+		print $h "    '$k' : '$v'\n";
+	}
+}
+close $h;
+
+my $f = "$PLAYBOOKDIR/plugin_mastertype_docker.userprofiles";
+open my $h, '>', $f or do {
+	die "$f: cannot open, stopped";
+};
+foreach my $user ( sort keys %profiles ){
+	my $profile = $profiles{$user};
+	my $password = $$profile{password};
+	#my $user_password = ` echo "$password" | htpasswd -ni "$user" `;
+	#chomp $user_password;
+	my $user_password = "$user:$password";
+	print $h "$user_password";
+}
+close $h;
+
+exit 0;
+
