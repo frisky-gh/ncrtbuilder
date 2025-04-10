@@ -87,9 +87,6 @@ sub loadAgentTypes ($) {
 		$agenttype                            {$agenttype} = 1;
 		$agenttype2naemondirective            {$agenttype} = $naemondirective;
 		$agenttype2naemondirective_of_instance{$agenttype} = $naemondirective_of_instance;
-#print "DEBUG5: $agenttype\n";
-#print "DEBUG7: ", join(",", %$naemondirective), "\n";
-#print "DEBUG8: ", join(",", %$naemondirective_of_instance), "\n";
 	}
 	$$this{agenttype}                             = \%agenttype;
 	$$this{agenttype2naemondirective}             = \%agenttype2naemondirective;
