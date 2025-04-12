@@ -71,6 +71,7 @@ my %server_settings = (
 	'PROXY'				=> '',
 
 	'TZ' => 'GMT',
+	'MTU' => '',
 );
 my %server_settings_which_must_be_specified_by_user = (
 	'GRAFANA_DATAOWNEREMAIL'	=> 1,
@@ -118,16 +119,11 @@ open my $h, '>>', $f or do {
 print $h "docker	\n";
 close $h;
 
-#### create agent base directories.
+#### create master base directories.
 
 while( my ($host, $params) = each %targets ){
 	system_or_die "rsync -aJUSx $0.d/ $DISTRIBUTEDDIR/$host/";
 }
-
-
-#### Playbooks typically cannot read setting files (KEY=VALUE format).
-#### Plugin scripts may convert settings to YAML-formatted files.
-#### You can place YAML-formatted configuration files in ncrtbuild working dir and name them "plugin_PLUGINNAME_XXX.yml" to prevent conflicts between each configuration file.
 
 #### append mastertype setting files
 my $f = "$WORKDIR/plugin2type2pluginconf2format";
@@ -136,6 +132,11 @@ open my $h, '>>', $f or do {
 };
 print $h "docker	mastertype	docker.conf	simple\n";
 close $h;
+
+
+#### Playbooks typically cannot read setting files (KEY=VALUE format).
+#### Plugin scripts may convert settings to YAML-formatted files.
+#### You can place YAML-formatted configuration files in ncrtbuild working dir and name them "plugin_PLUGINNAME_XXX.yml" to prevent conflicts between each configuration file.
 
 #### pass settings to the playbook of this plugin
 my $f = "$PLAYBOOKDIR/plugin_mastertype_docker.vars.yml";

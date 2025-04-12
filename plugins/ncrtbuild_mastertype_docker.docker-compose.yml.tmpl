@@ -72,6 +72,13 @@ services:
       - ../containersettings/naemon_etc_grafana-dashboard-helper:/etc/grafana-dashboard-helper
       - ../containerdata/naemon_var_lib_grafana-dashboard-helper:/var/lib/grafana-dashboard-helper
 
+{% if MTU != "" %} 
+networks:
+  default:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 1300
+{% endif %}
 
 
 
