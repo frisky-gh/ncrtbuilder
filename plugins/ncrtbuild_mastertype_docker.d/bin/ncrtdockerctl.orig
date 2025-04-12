@@ -3,7 +3,7 @@
 our $TOOLHOME;
 BEGIN {
 	$0 =~ m"^(.*)/";
-	$TOOLHOME = ` cd "$1/.." && pwd `;
+	$TOOLHOME = ` cd "$1/.." && pwd || echo . `;
 	chomp $TOOLHOME;
 }
 use lib "$TOOLHOME/lib/perl5";

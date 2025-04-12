@@ -72,6 +72,8 @@ sub run ($) {
 			" $plugindir/ $workdir4m/$host/plugins/";
 		system_or_die "rsync -aJUSx --include=\\*.filter     --exclude=\\*" .
 			" $filterdir/ $workdir4m/$host/filters/";
+#		system_or_die "rsync -aJUSx" .
+#			" $plugindir/ $workdir4a/$host/plugins/";
 
 		my $f = "$workdir4m/$host/ncrtconf/agenthosts";
 		open my $h, ">", $f or die "$f: cannot open, stopped";

@@ -1,5 +1,12 @@
 #!/usr/bin/perl
 
+our $TOOLHOME;
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = ` cd \Q$1/..\E ; pwd `;
+	chomp $TOOLHOME;
+}
+
 use strict;
 use String::Random 'random_regex';
 use Encode;
@@ -12,11 +19,8 @@ use HTTP::Status;
 use LWP::UserAgent;
 use MIME::EncWords ':all';
 
-$0 =~ m"^(.*)/";
-our $TOOLHOME = "$1/..";
-while( $TOOLHOME =~ s{(^|/)[^\./][^/]*/\.\.(/|$)}{} ){}
 our $PLUGINSDIR = "$TOOLHOME/plugins";
-our $CONFDIR = "$TOOLHOME/conf";
+our $NCRTCONFDIR = "$TOOLHOME/ncrtconf";
 our $SENDMAILEXE = '/usr/lib/sendmail';
 
 ####
@@ -43,7 +47,7 @@ unless( -d $WORKDIR ){ mkdir_or_die $WORKDIR; }
 
 ####
 my %conf;
-my $f = "$CONFDIR/ncrtbuild.conf";
+my $f = "$NCRTCONFDIR/ncrtbuild.conf";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -55,7 +59,7 @@ while( <$h> ){
 }
 close $h;
 
-my $f = "$CONFDIR/reporters";
+my $f = "$NCRTCONFDIR/reporters";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -146,8 +150,8 @@ sub path_decode ($) {
 debuglog "execute reporter plugins...";
 
 foreach my $e ( sort @reporters ){
-	#system "$PLUGINSDIR/ncrtmaster_$e $CONFDIR $WORKDIR";
-	my $r = `$PLUGINSDIR/ncrtmaster_$e $CONFDIR $WORKDIR`;
+	#system "$PLUGINSDIR/ncrtmaster_$e $NCRTCONFDIR $WORKDIR";
+	my $r = `$PLUGINSDIR/ncrtmaster_$e $NCRTCONFDIR $WORKDIR`;
 	debuglog "$PLUGINSDIR/ncrtmaster_$e: $r";
 }
 

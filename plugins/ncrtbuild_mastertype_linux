@@ -2,14 +2,15 @@
 
 use strict;
 
-if( @ARGV < 3 ){
-	print "usage: % $0 CONFDIR WORKDIR TEMPLATEDIR\n";
+if( @ARGV < 4 ){
+	print "usage: % $0 PLUGINCONFDIR PLUGINWORKDIR DISTRIBUTEDDIR PLAYBOOKDIR\n";
 	exit 1;
 }
 
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
-our $TEMPLATEDIR = $ARGV[2];
+our $DISTRIBUTEDDIR = $ARGV[2];
+our $PLAYBOOKDIR = $ARGV[3];
 
 #### load linux conf.
 my %targets;
@@ -94,7 +95,7 @@ print $h "linux	\n";
 close $h;
 
 ####
-my $f = "$WORKDIR/plugin_mastertype_linux_vars.yml";
+my $f = "$PLAYBOOKDIR/plugin_mastertype_linux_vars.yml";
 open my $h, '>', $f or do {
 	die "$f: cannot open, stopped";
 };
