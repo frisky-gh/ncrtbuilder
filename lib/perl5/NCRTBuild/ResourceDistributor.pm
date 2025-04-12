@@ -42,6 +42,11 @@ sub setDistributedDirPathForMasters ($$) {
 	$$this{workdir4m} = $workdir4m;
 }
 
+sub setReporterPlugins ($@) {
+	my ($this, @reporterplugins) = @_;
+	$$this{reporterplugins} = \@reporterplugins;
+}
+
 sub setAgentHosts ($@) {
 	my ($this, @agenthosts) = @_;
 	$$this{agenthosts} = \@agenthosts;
@@ -60,6 +65,7 @@ sub run ($) {
 	my $workdir4m   = $$this{workdir4m};
 	my $agenthosts  = $$this{agenthosts};
 	my $masterhosts = $$this{masterhosts};
+	my $reporterplugins = $$this{reporterplugins};
 
 	foreach( @$agenthosts ){
 		my $host = $$_{agenthost};
@@ -75,6 +81,7 @@ sub run ($) {
 #		system_or_die "rsync -aJUSx" .
 #			" $plugindir/ $workdir4a/$host/plugins/";
 
+		# create agenthosts configuration file.
 		my $f = "$workdir4m/$host/ncrtconf/agenthosts";
 		open my $h, ">", $f or die "$f: cannot open, stopped";
 		foreach( sort { $$a{agenthost} cmp $$b{agenthost} } @$agenthosts ){
@@ -87,6 +94,14 @@ sub run ($) {
 				push @params, "$k=$v";
 			}
 			print $h join("\t", $agenthost, $agenttype, @params), "\n";
+		}
+		close $h;
+
+		# create reportes configuration file.
+		my $f = "$workdir4m/$host/ncrtconf/reporters";
+		open my $h, ">", $f or die "$f: cannot open, stopped";
+		foreach my $pluginname ( sort @$reporterplugins ){
+			print $h join("\t", $pluginname), "\n";
 		}
 		close $h;
 	}

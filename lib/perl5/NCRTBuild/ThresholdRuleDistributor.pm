@@ -56,15 +56,7 @@ sub run ($) {
 		my $naemondirective = $$entry{naemondirective};
 
 		my @content = $generator->generate( $host, $service );
-		my @c;
-		foreach my $c ( @content ){
-			my $namepattern = $$c{namepattern};
-			my $severity    = $$c{severity};
-			my $upper       = $$c{upper};
-			my $lower       = $$c{lower};
-			push @content, "$namepattern $severity [$upper,$lower]";
-		}
-		$workdir->writeToAllHosts( "threshold", "thresholds.$host.$service", @c );
+		$workdir->writeToAllHosts( "threshold", "thresholds.$host.$service", @content );
 	}
 }
 

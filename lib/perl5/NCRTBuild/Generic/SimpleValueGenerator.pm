@@ -71,7 +71,7 @@ sub prepare ($) {
 	$$this{rules} = \@rules;
 }
 
-sub get ($$$) {
+sub generate ($$$) {
 	my ($this, $host, $service) = @_;
 	my $rules = $$this{rules};
 
