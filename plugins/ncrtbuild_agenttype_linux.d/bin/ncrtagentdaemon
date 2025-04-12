@@ -1,14 +1,15 @@
 #!/usr/bin/perl
 
-our ($TOOLHOME, $PLUGINSDIR, $CONFDIR);
+our $TOOLHOME;
 BEGIN {
 	$0 =~ m"^(.*)/";
-	$TOOLHOME = "$1/..";
-	while( $TOOLHOME =~ s{(^|/)[^\./][^/]*/\.\.(/|$)}{} ){}
-	$TOOLHOME =~ s{/$}{};
-	$PLUGINSDIR = "$TOOLHOME/plugins";
-	$CONFDIR = "$TOOLHOME/conf";
+	$TOOLHOME = ` cd "$1/.." && pwd || echo . `;
+	chomp $TOOLHOME;
 }
+our $DAEMONCONFDIR  = "$TOOLHOME/daemonconf";
+our $PLUGINSDIR     = "$TOOLHOME/plugins";
+our $PLUGINSCONFDIR = "$TOOLHOME/pluginsconf";
+
 use lib "$TOOLHOME/lib/perl5";
 
 use English;
@@ -22,7 +23,7 @@ use IPC::Open2;
 use Template;
 use strict;
 
-our $NAME = 'ncrtagentdaemon_linux';
+our $NAME = 'ncrtagentdaemon';
 our $LOGFILE  = '/var/log/naemon/ncrtagentdaemon.log';
 our $WORKDIR;
 
@@ -114,6 +115,19 @@ sub setup_workdir () {
  	}
 }
 
+sub setup_workdir_of ($) {
+	my ($daemon_user) = @_;
+	my ($name, $pw, $uid, $gid, $quota, $comment, $gcos,
+	    $home, $shell, $expire ) = getpwnam $daemon_user;
+	if    ( $< != $uid ){
+		$WORKDIR = "$home/.ncrt";
+	}elsif( $ENV{'HOME'} ne "" ){
+		$WORKDIR = $ENV{'HOME'} . "/.ncrt";
+	}else{
+		$WORKDIR = "$home/.ncrt";
+	}
+}
+
 sub read_conf () {
 	my %conf = (
 		'listen_address' => '0.0.0.0',
@@ -122,7 +136,7 @@ sub read_conf () {
 		'DEBUG' => 0,
 	);
 
-	my $conffile = "$CONFDIR/ncrtagent_linux.conf";
+	my $conffile = "$DAEMONCONFDIR/ncrtagentdaemon.conf";
 	open my $h, '<', $conffile or do {
 		die "cannot open $conffile: $OS_ERROR, stopped";
 	};
@@ -171,25 +185,32 @@ sub read_command ($) {
 
 sub write_pidfile ($) {
 	my ($pid) = @_;
-	my $f = "$WORKDIR/ncrtagent_linux.pid";
+	my $f = "$WORKDIR/ncrtagentdaemon.pid";
 	open my $h, '>', $f or die;
 	print $h "$pid\n";
 	close $h;
 }
 
 sub read_pidfile () {
-	my $f = "$WORKDIR/ncrtagent_linux.pid";
+	my $f = "$WORKDIR/ncrtagentdaemon.pid";
 	open my $h, '<', $f or return undef;
-	my $pid = <$h>;
+	my $pid = int <$h>;
 	close $h;
+	# check the process existence.
 	return undef unless kill 0, $pid;
+	# check the process name.
+	open my $h, "<", "/proc/$pid/cmdline" or return undef;
+	my $cmd = <$h>;
+	close $h;
+	return undef unless $cmd =~ m"^(\S*/)?(\w+)";
+	return undef unless $2 eq $NAME;
 	return $pid;
 }
 
 ####
 sub action_measure ($$$$$) {
 	my ($conf, $conn, $measure, $host, $service) = @_;
-	my $cmd = "$PLUGINSDIR/ncrtagent_${measure}_linux $CONFDIR $WORKDIR $measure $host $service";
+	my $cmd = "$PLUGINSDIR/ncrtagent_linux_${measure} $PLUGINSCONFDIR $WORKDIR $measure $host $service";
 	my ($ok, $metrics, $messages) = read_command $cmd;
 
 	my $content;
@@ -242,7 +263,7 @@ sub cmd_daemon ($) {
 		$ENV{HOME} = $home;
 	}
 	setup_workdir;
-	$LOGFILE  = "$WORKDIR/ncrtagentdaemon_linux.log";
+	$LOGFILE  = "$WORKDIR/ncrtagentdaemon.log";
 	if( open $LOGFH, '>>', $LOGFILE ){ $LOGFH->autoflush; }
 
 	my @allow = compile_allow( $$conf{allow} // "0.0.0.0/0" );
@@ -346,15 +367,22 @@ $DEBUG = $conf->{DEBUG};
 
 ####
 if    ( $ARGV[0] eq "daemon" ){
+	# setup workdir after fork.
 	cmd_daemon $conf;
 	exit 0;
 }elsif( $ARGV[0] eq "alive" ){
+	my $daemon_user = $$conf{daemon_user};
+	setup_workdir_of $daemon_user;
 	cmd_alive $conf;
 	exit 0;
 }elsif( $ARGV[0] eq "kill" ){
+	my $daemon_user = $$conf{daemon_user};
+	setup_workdir_of $daemon_user;
 	cmd_kill $conf;
 	exit 0;
 }elsif( $ARGV[0] eq "hup" ){
+	my $daemon_user = $$conf{daemon_user};
+	setup_workdir_of $daemon_user;
 	cmd_hup $conf;
 	exit 0;
 }elsif( $ARGV[0] eq "cron" ){

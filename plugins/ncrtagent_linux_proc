@@ -24,7 +24,7 @@ sub nc ($) {
 
 ####
 my @category_rules;
-my $f = "$CONFDIR/agent/proc.categories.$MEASURE.$HOST";
+my $f = "$CONFDIR/agent/proc.categories.$HOST.$SERVICE";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -40,7 +40,7 @@ while( <$h> ){
 close $h;
 
 my @elapsed_rules;
-my $f = "$CONFDIR/agent/proc_elapsed.rules.$MEASURE.$HOST";
+my $f = "$CONFDIR/agent/proc_elapsed.rules.$HOST.$SERVICE";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -54,7 +54,7 @@ while( <$h> ){
 close $h;
 
 my @count_rules;
-my $f = "$CONFDIR/agent/proc_count.rules.$MEASURE.$HOST";
+my $f = "$CONFDIR/agent/proc_count.rules.$HOST.$SERVICE";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };

@@ -122,7 +122,7 @@ sub calc_delta ($$\%) {
 ####
 
 my @category_rules;
-my $f = "$CONFDIR/agent/networktraffic.conf.$MEASURE.$HOST";
+my $f = "$CONFDIR/agent/networktraffic.conf.$HOST.$SERVICE";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
@@ -135,7 +135,7 @@ if( open my $h, '<', $f ){
 
 #### load detector conf. for agents
 my @ignore_rules;
-my $f = "$CONFDIR/agent/networktraffic.ignores.$MEASURE.$HOST";
+my $f = "$CONFDIR/agent/networktraffic.ignores.$HOST.$SERVICE";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;

@@ -131,7 +131,7 @@ sub calc_delta ($$\%) {
 ####
 
 my @category_rules;
-my $f = "$CONFDIR/agent/osperf.conf.$MEASURE.$HOST";
+my $f = "$CONFDIR/agent/osperf.conf.$HOST.$SERVICE";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };

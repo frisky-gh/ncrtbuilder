@@ -49,7 +49,7 @@ my %global_option = (
 	'timestamp_record_format'	=> '%Y-%m-%d',
 );
 my @rules;
-my $f = "$CONFDIR/indirect/ltsv.conf.$MEASURE.$VHOST.$VSERVICE";
+my $f = "$CONFDIR/indirect/ltsv.conf.$VHOST.$VSERVICE";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };

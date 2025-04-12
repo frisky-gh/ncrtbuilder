@@ -31,7 +31,7 @@ sub system_or_die ($) {
 }
 
 #### load linux conf.
-my %host2params;
+my %target_hosts;
 my %default = (
 	listen_address => "0.0.0.0",
 	listen_port => 46848,
@@ -60,7 +60,7 @@ while( <$h> ){
 	if( $host eq "*" ){
 		%default = %param;
 	}else{
-		$host2params{$host} = { %default, %param };
+		$target_hosts{$host} = { %default, %param };
 	}
 }
 close $h;
@@ -82,7 +82,7 @@ my $f = "$WORKDIR/agenthosts";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-while( my ($host, $params) = each %host2params ){
+while( my ($host, $params) = each %target_hosts ){
 	my @params;
 	while( my ($k, $v) = each %$params ){
 		push @params, "$k=$v";
@@ -101,9 +101,31 @@ close $h;
 
 #### create agent base directories.
 
-while( my ($host, $params) = each %host2params ){
+while( my ($host, $params) = each %target_hosts ){
 	system_or_die "rsync -aJUSx $0.d/ $DISTRIBUTEDDIR/$host/";
 }
+
+#### create agent daemon conf file.
+while( my ($host, $params) = each %target_hosts ){
+	my $f = "$DISTRIBUTEDDIR/$host/daemonconf/ncrtagentdaemon.conf";
+	open my $h, '>', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	foreach my $k ( sort keys %$params ){
+		my $v = $$params{$k};
+		print $h "$k=$v\n";
+	}
+	close $h;
+}
+
+#### append agenttype setting files
+my $f = "$WORKDIR/plugin2type2pluginconf2format";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+#print $h "linux	agenttype	foobar.conf     simple\n";
+close $h;
+
 
 #### Playbooks typically cannot read setting files (KEY=VALUE format).
 #### Plugin scripts may convert settings to YAML-formatted files.
@@ -118,8 +140,8 @@ while( my ($k, $v) = each %global_settings ){
 	print $h "  '$k' : '$v'\n";
 }
 print $h "  'host' :\n";
-foreach my $host ( sort keys %host2params ){
-	my %params = %{ $host2params{$host} };
+foreach my $host ( sort keys %target_hosts ){
+	my %params = %{ $target_hosts{$host} };
 	foreach my $k ( sort keys %params ){
 		my $v = $params{$k};
 		print $h "    '$k' : '$v'\n";

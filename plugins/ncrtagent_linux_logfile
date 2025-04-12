@@ -2,15 +2,16 @@
 
 use strict;
 
-if( @ARGV < 4 ){
+if( @ARGV < 5 ){
 	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST\n";
 	exit 1;
 }
 
-our $CONFDIR = $ARGV[0];
-our $WORKDIR = $ARGV[1];
-our $MEASURE = $ARGV[2];
-our $VHOST   = $ARGV[3];
+our $CONFDIR  = $ARGV[0];
+our $WORKDIR  = $ARGV[1];
+our $MEASURE  = $ARGV[2];
+our $VHOST    = $ARGV[3];
+our $VSERVICE = $ARGV[4];
 
 ####
 sub var2ltsv ( \% ){
@@ -59,7 +60,7 @@ sub debuglog ($) {
 sub read_conf () {
 	my %pathconf;
 	my %termconf;
-	my $f = "$CONFDIR/agent/logfile_path.conf.$MEASURE.$VHOST";
+	my $f = "$CONFDIR/agent/logfile_path.conf.$VHOST.$VSERVICE";
 	open my $h, '<', $f or do {
 		die "$f: cannot open, stopped";
 	};
@@ -76,7 +77,7 @@ sub read_conf () {
 	}
 	close $h;
 
-	my $f = "$CONFDIR/agent/logfile_term.conf.$MEASURE.$VHOST";
+	my $f = "$CONFDIR/agent/logfile_term.conf.$VHOST.$VSERVICE";
 	open my $h, '<', $f or do {
 		die "$f: cannot open, stopped";
 	};

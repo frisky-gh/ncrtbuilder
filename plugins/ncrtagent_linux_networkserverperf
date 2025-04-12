@@ -22,7 +22,7 @@ my %d;
 
 # netstats conf
 my %rules;
-my $f = "$CONFDIR/agent/networkserverperf.rules.$MEASURE.$HOST";
+my $f = "$CONFDIR/agent/networkserverperf.rules.$HOST.$SERVICE";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };

@@ -26,7 +26,7 @@ sub nMB ($) {
 
 #### load detector conf.
 my @exist_rules;
-my $f = "$CONFDIR/agent/disk.rules.$MEASURE.$HOST";
+my $f = "$CONFDIR/agent/disk.rules.$HOST.$SERVICE";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -39,7 +39,7 @@ while( <$h> ){
 close $h;
 
 my @ignore_rules;
-my $f = "$CONFDIR/agent/disk.ignores.$MEASURE.$HOST";
+my $f = "$CONFDIR/agent/disk.ignores.$HOST.$SERVICE";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
