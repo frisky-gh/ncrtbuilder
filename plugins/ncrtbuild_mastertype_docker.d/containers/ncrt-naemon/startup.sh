@@ -33,5 +33,21 @@ if [ "`ls /var/lib/grafana-dashboard-helper/`" = "" ] ;then
 fi
 
 ##
+if [ "$LANG" = "" ] ; then
+	echo "LANG=$LANG" > /etc/default/locale
+else
+	echo LANG=C > /etc/default/locale
+fi
+if [ "$TZ" != "" ] ; then
+	if [ -f /usr/share/zoneinfo/$TZ ] ; then
+		echo "$TZ" > /etc/timezone
+		rm /etc/localtime && ln -s /usr/share/zoneinfo/$TZ /etc/localtime
+	fi
+fi
+if [ "$SYSLOG_SERVER" != "" ] ; then
+	sed -e "s/^SYSLOG_OPTS=.*/SYSLOG_OPTS=\"-C128 -R $SYSLOG_SERVER\"/" \
+		-i /etc/default/busybox-syslogd
+fi
+##
 exec /sbin/init
 

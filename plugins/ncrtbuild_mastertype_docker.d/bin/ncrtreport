@@ -78,7 +78,7 @@ sub safesprintf ( @ ){
 
 our $LOG_HANDLE;
 sub openlog () {
-	open $LOG_HANDLE, '>>', "$WORKDIR/sg_log" or return;
+	open $LOG_HANDLE, '>>', "$WORKDIR/ncrtreporte.log" or return;
 	my $old = select $LOG_HANDLE;
 	$| = 1;
 	select $old;

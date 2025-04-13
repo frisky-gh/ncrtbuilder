@@ -70,6 +70,8 @@ my %server_settings = (
 	'SERVERSIDE_PORT'		=> '80',
 	'PROXY'				=> '',
 
+	'SYSLOG_SERVER' => '',
+	'LANG' => 'C',
 	'TZ' => 'GMT',
 	'MTU' => '',
 );

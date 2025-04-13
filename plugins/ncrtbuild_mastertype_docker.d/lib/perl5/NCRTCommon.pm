@@ -60,7 +60,14 @@ sub load_backendhosts ($$$) {
 		next if m"^\s*(#|$)";
 		if( m"^(\S+)"x ){
 			my ($backendhost, @param) = split m"\s+";
-			$backendhost2param{$backendhost} = \@param;
+			my %param;
+			foreach my $kv ( @param ){
+				next unless $kv =~ m"^(\w+)=(.*)$";
+				my $k = $1;
+				my $v = $2 eq '' ? undef : $2;
+				$param{$k} = $v;
+			}
+			$backendhost2param{$backendhost} = \%param;
 		}else{
 			die "$f:$.: illegal format, stopped";
 		}
@@ -169,10 +176,11 @@ sub generate_metrics_from_backendagents ($$$$$) {
 	my $rc = 0;
 	my %metrics;
 
-	while( my ($backendhost, $backendhostparam) = each %$backendhost2param ){
-		my $hostparam = $$host2param{$host};
+	while( my ($backendhost, $backendhostparam_overwrite) = each %$backendhost2param ){
+		my $backendhostparam = $$host2param{$backendhost};
+		my %hostparam = ( %$backendhostparam, %$backendhostparam_overwrite );
 		my %m = generate_metrics_from_agent
-			$backendhost, $measure, $host, $service, $hostparam;
+			$backendhost, $measure, $host, $service, \%hostparam;
 		while( my ($k, $v) = each %m ){
 			$metrics{$k} = $v;
 		}

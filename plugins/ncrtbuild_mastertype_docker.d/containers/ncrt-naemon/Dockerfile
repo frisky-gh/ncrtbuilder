@@ -27,7 +27,8 @@ RUN apt install --no-install-recommends -y sysvinit-core busybox-syslogd
 
 ##
 RUN apt install --no-install-recommends -y liburi-query-perl libhttp-daemon-perl libjson-xs-perl libtemplate-perl libstring-random-perl libmime-encwords-perl
-RUN apt install --no-install-recommends -y libjson-xs-perl libjson-pp-perl libemail-sender-perl libemail-mime-perl liburi-query-perl libossp-uuid-perl libcarp-always-perl
+RUN apt install --no-install-recommends -y libjson-perl libjson-xs-perl libjson-pp-perl libemail-sender-perl libemail-mime-perl liburi-query-perl libossp-uuid-perl libcarp-always-perl
+RUN apt install --no-install-recommends -y locales-all
 
 RUN curl -o /root/naemon2influx-1.4-rc2.deb -L https://github.com/frisky-gh/naemon2influx/releases/download/v1.4.2/naemon2influx-1.4-2.deb
 RUN dpkg -i /root/naemon2influx-1.4-rc2.deb
@@ -36,7 +37,7 @@ RUN curl -o /root/grafana-dashboard-helper_1.0-rc3.1_amd64.deb -L https://github
 RUN dpkg -i /root/grafana-dashboard-helper_1.0-rc3.1_amd64.deb
 
 ##
-RUN apt install --no-install-recommends -y lv zsh strace lsof
+RUN apt install --no-install-recommends -y lv zsh strace lsof jq
 COPY --chown=root:root ./.zshrc /root/.zshrc
 
 #### init start up
