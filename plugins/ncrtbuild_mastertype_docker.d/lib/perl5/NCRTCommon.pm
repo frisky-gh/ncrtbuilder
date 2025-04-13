@@ -370,7 +370,7 @@ sub generate_thresholds ($$$%) {
 	my @crit_rules;
 
 	# load threshold rules
-	my $f = "$main::NCRTCONFDIR/threshold/thresholds.$measure.$host.$service";
+	my $f = "$main::NCRTCONFDIR/threshold/thresholds.$host.$service";
 	if( open my $h, '<', $f ){
 		while( <$h> ){
 			chomp;

@@ -401,6 +401,17 @@ if( $plan{Step11} ){
 			$dist->addGenerator( 'mastertype', $plugin, $pluginconf, $generator );
 		}
 	}
+	foreach my $plugin ( @reporterplugins ){
+		my @pluginconffile = $pluginconfvalid->loadPluginConfigFileOf( 'reporter', $plugin );
+		foreach my $pluginconffile ( @pluginconffile ){
+			my $format     = $$pluginconffile{format};
+			my $pluginconf = $$pluginconffile{pluginconf};
+			my $content    = $$pluginconffile{content};
+			my ($generator, $dist) = &{ $generator_and_distributor{$format} };
+			$generator->setOriginConfig( @$content );
+			$dist->addGenerator( 'reporter', $plugin, $pluginconf, $generator );
+		}
+	}
 }
 
 

@@ -19,9 +19,12 @@ use HTTP::Status;
 use LWP::UserAgent;
 use MIME::EncWords ':all';
 
-our $PLUGINSDIR = "$TOOLHOME/plugins";
-our $NCRTCONFDIR = "$TOOLHOME/ncrtconf";
-our $SENDMAILEXE = '/usr/lib/sendmail';
+our $PLUGINSDIR     = "$TOOLHOME/plugins";
+our $PLUGINSCONFDIR = "$TOOLHOME/pluginsconf";
+our $NCRTCONFDIR    = "$TOOLHOME/ncrtconf";
+
+# for debug
+our $DEBUG = 0;
 
 ####
 sub mkdir_or_die ($) {
@@ -46,19 +49,6 @@ else{
 unless( -d $WORKDIR ){ mkdir_or_die $WORKDIR; }
 
 ####
-my %conf;
-my $f = "$NCRTCONFDIR/ncrtbuild.conf";
-open my $h, '<', $f or do {
-	die "$f: cannot open, stopped";
-};
-while( <$h> ){
-	chomp;
-	next if m"^\s*(#|$)";
-	die unless m"^(\w+)=(.*)$";
-	$conf{$1} = $2;
-}
-close $h;
-
 my $f = "$NCRTCONFDIR/reporters";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
@@ -70,9 +60,6 @@ while( <$h> ){
 }
 close $h;
 
-
-# for debug
-our $DEBUG = $conf{DEBUG} // 0;
 
 # timestamps
 sub timestamp ($) {
@@ -150,8 +137,8 @@ sub path_decode ($) {
 debuglog "execute reporter plugins...";
 
 foreach my $e ( sort @reporters ){
-	#system "$PLUGINSDIR/ncrtmaster_$e $NCRTCONFDIR $WORKDIR";
-	my $r = `$PLUGINSDIR/ncrtmaster_$e $NCRTCONFDIR $WORKDIR`;
+	#system "$PLUGINSDIR/ncrtmaster_$e $PLUGINSCONFDIR $WORKDIR";
+	my $r = `$PLUGINSDIR/ncrtmaster_$e $PLUGINSCONFDIR $WORKDIR`;
 	debuglog "$PLUGINSDIR/ncrtmaster_$e: $r";
 }
 
