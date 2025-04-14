@@ -1,0 +1,54 @@
+#!/usr/bin/perl
+
+our $TOOLHOME;
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = ` cd "$1/.." && pwd || echo . `;
+	chomp $TOOLHOME;
+}
+use lib "$TOOLHOME/plugins";
+use ncrtmaster_alertqueue;
+
+use strict;
+use Socket;
+use Encode;
+use JSON::XS;
+use Time::Local;
+
+if( @ARGV < 3 ){
+	print "usage: % $0 {update|cleanup} CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+my $subcmd = $ARGV[0];
+our $CONFDIR = $ARGV[1];
+our $WORKDIR = $ARGV[2];
+
+our $LIVESTATUS_SOCKET = "/var/cache/naemon/live";
+
+#### Main Entry Point
+
+if    ( $subcmd eq "update" ){
+	my ($sortrules_of_host, $sortrules_of_service, $sortrules_of_perf, $fixed_alertgroups) = read_rules;
+	my @existing_alertgroups = list_eventqueue;
+
+	my $sortedevents = new_sortedevents @$fixed_alertgroups, @existing_alertgroups;
+	my $timestamp = timestamp;
+	get_and_sort_hoststate    $sortedevents, $sortrules_of_host;
+	get_and_sort_servicestate $sortedevents, $sortrules_of_service, $sortrules_of_perf;
+
+	write_sortedevents $sortedevents, $timestamp;
+
+}elsif( $subcmd eq "cleanup" ){
+	my ($sortrules_of_host, $sortrules_of_service, $sortrules_of_perf, $fixed_alertgroups) = read_rules;
+	my @existing_alertgroups = list_eventqueue;
+
+	cleanup_eventqueues @$fixed_alertgroups, @existing_alertgroups;
+
+}else{
+	die "unknown sub command, stopped";
+}
+
+exit 0;
+
+
