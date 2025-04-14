@@ -52,6 +52,7 @@
         dest: "{{NCRTMASTERHOME}}/"
         checksum: yes
         rsync_opts: [ "-cOJ", "--chown=root:root" ]
+      notify: reload ncrtmaster
       tags: [ common ]
 
     ## setup container settings
@@ -68,17 +69,21 @@
       template:
         src:  "ncrtbuild_mastertype_docker.docker-compose.yml.tmpl"
         dest: "{{NCRTMASTERHOME}}/containers/docker-compose.yml"
-      notify: restart docker-compose
+      notify: restart ncrtmaster
       tags: [ commoninstall ]
 
-    - name: start docker-compose
+    - name: start ncrtmaster
       shell: "{{NCRTMASTERHOME}}/bin/ncrtdockerctl start"
       tags: [ commoninstall ]
 
   handlers:
 
-    - name: restart docker-compose
+    - name: restart ncrtmaster
       shell: "{{NCRTMASTERHOME}}/bin/ncrtdockerctl restart"
+      tags: [ common ]
+
+    - name: reload ncrtmaster
+      shell: "{{NCRTMASTERHOME}}/bin/ncrtdockerctl reload"
       tags: [ common ]
 
 
