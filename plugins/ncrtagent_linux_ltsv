@@ -42,13 +42,15 @@ sub nMB ($) {
 
 #### load service conf.
 my %global_option = (
-	'file_format'			=> 'ltsv',
-	'timeout'			=> 9999999,
-	'timestamp'			=> 'file',
-	'timestamp_record_key'		=> 'timestamp',
-	'timestamp_record_format'	=> '%Y-%m-%d',
+	'KeyRegexp'                     => qr".*",
+	'FileFormat'			=> 'ltsv',
+	'Timeout'			=> 9999999,
+	'Timestamp'			=> 'file',
+	'TimestampRecordKey'		=> 'timestamp',
+	'TimestampRecordFormat'	=> '%Y-%m-%d',
 );
-my @rules;
+my $curr_option = { %global_option };
+my @rules = ( $curr_option );
 my $f = "$CONFDIR/indirect/ltsv.conf.$VHOST.$VSERVICE";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
@@ -56,22 +58,10 @@ open my $h, '<', $f or do {
 while( <$h> ){
 	chomp;
 	next if m"^\s*(#|$)";
-	if( m"^(\w+)=(\S*)$" ){
-		$global_option{$1} = $2;
-	}elsif( m"^(\S+)\s+(\S+)(?:\s+(\S+=\S*(\s+\S+=\S*)*))?$" ){
-		my $ltsvfile = $1;
-		my $key_regexp = $2;
-		my $option = $3;
-		my %option;
-		foreach my $item ( split m"\s+", $option ){
-			next unless $item =~ m"^([^\s=]+)=(.*)$";
-			$option{$1} = $2;
-		}
-		push @rules, {
-			'ltsvfile'   => $ltsvfile,
-			'key_regexp' => qr"$key_regexp",
-			'option'     => {%global_option, %option},
-		};
+	if( m"^(\w+)=(\S.*)?$" ){
+		$$curr_option{$1} = $2;
+		if( $1 eq "KeyPattern" ){ $$curr_option{KeyRegexp} = qr"$2"; }
+
 	}else{
 		die "$f:$.:$_: illegal format, stopped";
 	}
@@ -85,9 +75,8 @@ chomp $realhost;
 my $rc = 0;
 my @output;
 foreach my $rule ( @rules ){
-	my $ltsvfile   = $$rule{ltsvfile};
-	my $key_regexp = $$rule{key_regexp};
-	my $option     = $$rule{option};
+	my $ltsvfile   = $$rule{FilePath};
+	my $key_regexp = $$rule{KeyRegexp};
 	open my $h, '-|', "tail -1 $ltsvfile" or do {
 		die "$ltsvfile: cannot open, stopped";
 	};
@@ -98,7 +87,7 @@ foreach my $rule ( @rules ){
 
 	my ($filename) = $ltsvfile =~ m"(?:^|/)([^/]+)$";
 	my %var;
-	my $option_file_format = $$option{'file_format'};
+	my $option_file_format = $$rule{FileFormat};
 	if    ( $option_file_format eq 'ltsv' ){
 		%var = ltsv2var $ltsv;
 	}elsif( $option_file_format eq 'json' ){
@@ -110,15 +99,15 @@ foreach my $rule ( @rules ){
 	}
 
 	my $age;
-	my $option_timestamp = $$option{'timestamp'};
-	my $option_timeout   = $$option{'timeout'};
+	my $option_timestamp = $$rule{Timestamp};
+	my $option_timeout   = $$rule{Timeout};
 	if    ( $option_timestamp eq 'file' ){
 		my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
 		    $atime,$mtime,$ctime,$blksize,$blocks) = stat $ltsvfile;
 		$age = int( (time - $mtime) / 60 );
 	}elsif( $option_timestamp eq 'record' ){
-		my $key    = $$option{timestamp_record_key};
-		my $format = $$option{timestamp_record_format};
+		my $key    = $$rule{TimestampRecordKey};
+		my $format = $$rule{TimestampRecordFormat};
 		my $t = 0;
 		eval {
 			$t = localtime
