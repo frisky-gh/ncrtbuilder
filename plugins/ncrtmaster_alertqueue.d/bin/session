@@ -1,0 +1,105 @@
+#!/usr/bin/perl
+
+our $TOOLHOME;
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = ` cd "$1/.." && pwd || echo . `;
+	chomp $TOOLHOME;
+}
+use lib "$TOOLHOME/lib/perl5";
+use NCRTAlertQueue;
+
+use strict;
+
+if( @ARGV < 3 ){
+	print "usage: % $0 {open|close|rename|cleanup} CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+my $subcmd = $ARGV[0];
+our $CONFDIR = $ARGV[1];
+our $WORKDIR = $ARGV[2];
+
+#### Main Entry Point of Session Management
+
+if    ( $subcmd eq "open" ){
+	my $now_min = int( time / 60 );
+	my @alertgroups = list_eventqueue;
+	foreach my $alertgroup ( @alertgroups ){
+		my ($last_uuid, $creation_unixtime) = read_alertid $alertgroup;
+		next if defined $last_uuid; # already alerted
+
+		my ($latest_eventbasket, $latest_unixtime, $latest_timestamp) = load_latest_eventbasket $alertgroup;
+		next unless defined $latest_eventbasket;
+		my $latest_unixtime_min = int( $latest_unixtime / 60 );
+
+		next if $now_min != $latest_unixtime_min; # eventqueue is not updated
+
+		my $size = get_size_of_eventbasket $alertgroup, $latest_timestamp;
+		next if $size < 8; # there is no event
+
+		my $there_is_alert;
+		while( my ($type, $events) = each %$latest_eventbasket ){
+			next if $type eq "perf_events";
+			foreach my $e ( @$events ){
+				next unless $$e{state} eq "Warning" || $$e{state} eq "Critical";
+				$there_is_alert = 1;
+				last;
+			}
+		}
+		next unless $there_is_alert;
+
+		my $uuid = mkuuid;
+		write_alertid $alertgroup, $uuid, $latest_unixtime;
+	}
+
+}elsif( $subcmd eq "close" ){
+	my $now = time;
+	my @alertgroups = list_eventqueue;
+	my $rules = load_reportrules;
+	foreach my $alertgroup ( @alertgroups ){
+		my ($last_uuid, $creation_unixtime) = read_alertid $alertgroup;
+		next unless defined $last_uuid;
+
+		my @entry = list_eventbasket $alertgroup;
+		my @sorted_entry = sort { $$b{unixtime} <=> $$a{unixtime} } @entry;
+
+		my $reportparam = get_report_param $rules, $alertgroup;
+		my $coolingperiod_unixtime = $now - $$reportparam{CLOSE_TIMESPAN}*60;
+		my $alert_has_continued;
+		foreach my $e ( @sorted_entry ){
+			my $unixtime  = $$e{unixtime};
+			my $timestamp = $$e{timestamp};
+			last if $unixtime < $coolingperiod_unixtime;
+
+			my $size = get_size_of_eventbasket $alertgroup, $timestamp;
+			next if $size < 8;
+
+			$alert_has_continued = 1;
+			last;
+		}
+		next if $alert_has_continued;
+
+		remove_alertid $alertgroup;
+	}
+
+}elsif( $subcmd eq "rename" ){
+	my $now = time;
+	my @alertgroups = list_eventqueue;
+	my $rules = load_reportrules;
+	foreach my $alertgroup ( @alertgroups ){
+		my ($last_uuid, $creation_unixtime) = read_alertid $alertgroup;
+		next unless defined $last_uuid;
+
+		my $reportparam = get_report_param $rules, $alertgroup;
+		my $expiration_unixtime = $now - $$reportparam{RENAME_TIMESPAN}*60;
+	}
+
+}elsif( $subcmd eq "cleanup" ){
+}else{
+	die "unknown sub command, stopped";
+}
+
+exit 0;
+
+

@@ -6,14 +6,10 @@ BEGIN {
 	$TOOLHOME = ` cd "$1/.." && pwd || echo . `;
 	chomp $TOOLHOME;
 }
-use lib "$TOOLHOME/plugins";
-use ncrtmaster_alertqueue;
+use lib "$TOOLHOME/lib/perl5";
+use NCRTAlertQueue;
 
 use strict;
-use Socket;
-use Encode;
-use JSON::XS;
-use Time::Local;
 
 if( @ARGV < 3 ){
 	print "usage: % $0 {update|cleanup} CONFDIR WORKDIR\n";
@@ -29,18 +25,17 @@ our $LIVESTATUS_SOCKET = "/var/cache/naemon/live";
 #### Main Entry Point
 
 if    ( $subcmd eq "update" ){
-	my ($sortrules_of_host, $sortrules_of_service, $sortrules_of_perf, $fixed_alertgroups) = read_rules;
+	my ($sortrules_of_host, $sortrules_of_service, $sortrules_of_perf, $fixed_alertgroups) = load_alertrules;
 	my @existing_alertgroups = list_eventqueue;
 
 	my $sortedevents = new_sortedevents @$fixed_alertgroups, @existing_alertgroups;
-	my $timestamp = timestamp;
-	get_and_sort_hoststate    $sortedevents, $sortrules_of_host;
-	get_and_sort_servicestate $sortedevents, $sortrules_of_service, $sortrules_of_perf;
+	get_and_sort_events $sortedevents, $sortrules_of_host, $sortrules_of_service, $sortrules_of_perf;
 
+	my $timestamp = mktimestamp;
 	write_sortedevents $sortedevents, $timestamp;
 
 }elsif( $subcmd eq "cleanup" ){
-	my ($sortrules_of_host, $sortrules_of_service, $sortrules_of_perf, $fixed_alertgroups) = read_rules;
+	my ($sortrules_of_host, $sortrules_of_service, $sortrules_of_perf, $fixed_alertgroups) = load_alertrules;
 	my @existing_alertgroups = list_eventqueue;
 
 	cleanup_eventqueues @$fixed_alertgroups, @existing_alertgroups;

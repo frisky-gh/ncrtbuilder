@@ -1,0 +1,167 @@
+#!/usr/bin/perl
+
+our $TOOLHOME;
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = ` cd "$1/.." && pwd || echo . `;
+	chomp $TOOLHOME;
+}
+use lib "$TOOLHOME/lib/perl5";
+use NCRTAlertQueue;
+use NCRTAlertQueue::Web;
+
+use strict;
+
+if( @ARGV < 3 ){
+	print "usage: % $0 {open|close|update|rename|cleanup} CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+my $subcmd = $ARGV[0];
+our $CONFDIR = $ARGV[1];
+our $WORKDIR = $ARGV[2];
+
+#### Main Entry Point of Wwb Page Management
+
+if    ( $subcmd eq "open" ){
+	my $conf = load_conf;
+	my @alertgroups = list_eventqueue;
+	foreach my $alertgroup ( @alertgroups ){
+		my ($uuid, $creation_unixtime) = read_alertid $alertgroup;
+		next unless defined $uuid;
+		my ($last_alertgroup, $reporting_unixtime) = read_reportstatus "web", $uuid;
+		next if $last_alertgroup eq $alertgroup;
+
+		my @panels = list_panels $conf, $uuid;
+
+		my $now = time;
+		my $fired_hosts = {};
+		my $fired_services = {};
+		my $fired_perfs = {};
+		my ($host_story, $service_story, $perf_story) = output_course_of_events
+			$alertgroup, $creation_unixtime, $now,
+			$fired_hosts, $fired_services,  $fired_perfs;
+
+		my ($latest_status) = load_latest_eventbasket $alertgroup;
+		my $firing_hosts    = $$latest_status{host_events};
+		my $firing_services = $$latest_status{service_events};
+		my $firing_perfs    = $$latest_status{perf_events};
+
+		write_webpage $conf, $alertgroup, $uuid, $now, "open",
+	       		$host_story, $service_story, $perf_story,
+			$firing_hosts, $firing_services, $firing_perfs,
+			\@panels;
+
+		write_reportstatus "web", $uuid, $alertgroup, $now, {
+			"session_status" => "opened",
+			"fired_hosts" => $fired_hosts,
+			"fired_services" => $fired_services,
+			"fired_perfs" => $fired_perfs,
+			"latest_firing_hosts" => $firing_hosts,
+			"latest_firing_services" => $firing_services,
+			"latest_firing_perfs" => $firing_perfs,
+			"latest_host_story" => $host_story,
+			"latest_service_story" => $service_story,
+			"latest_perf_story" => $perf_story,
+			"panels" => \@panels,
+		};
+	}
+
+}elsif( $subcmd eq "close" ){
+	my $conf = load_conf;
+	my @uuids = list_reportstatus "web";
+	foreach my $uuid ( @uuids ){
+		my ($alertgroup, $reporting_unixtime, $status) = read_reportstatus "web", $uuid;
+		next unless defined $alertgroup;
+		my $session_status = $$status{session_status};
+		next unless $session_status eq "opened";
+		my ($last_uuid, $creation_unixtime) = read_alertid $alertgroup;
+		next if $last_uuid eq $uuid;
+
+		my @panels = list_panels $conf, $uuid;
+
+		my $now = time;
+		my $fired_hosts    = $$status{fired_hosts};
+		my $fired_services = $$status{fired_services};
+		my $fired_perfs    = $$status{fired_perfs};
+		my ($host_story, $service_story, $perf_story) = output_course_of_events
+			$alertgroup, $creation_unixtime, $now,
+			$fired_hosts, $fired_services,  $fired_perfs;
+
+		my ($latest_status) = load_latest_eventbasket $alertgroup;
+		my $firing_hosts    = $$latest_status{host_events};
+		my $firing_services = $$latest_status{service_events};
+		my $firing_perfs    = $$latest_status{perf_events};
+
+		write_webpage $conf, $alertgroup, $uuid, $now, "close",
+	       		$host_story, $service_story, $perf_story,
+			$firing_hosts, $firing_services, $firing_perfs,
+			\@panels;
+
+		write_reportstatus "web", $uuid, $alertgroup, $now, {
+			"session_status" => "closed",
+			"fired_hosts" => $fired_hosts,
+			"fired_services" => $fired_services,
+			"fired_perfs" => $fired_perfs,
+			"latest_firing_hosts" => $firing_hosts,
+			"latest_firing_services" => $firing_services,
+			"latest_firing_perfs" => $firing_perfs,
+			"latest_host_story" => $host_story,
+			"latest_service_story" => $service_story,
+			"latest_perf_story" => $perf_story,
+			"panels" => \@panels,
+		};
+	}
+
+}elsif( $subcmd eq "rename" ){
+}elsif( $subcmd eq "update" ){
+	my $conf = load_conf;
+	my @uuids = list_reportstatus "web";
+	foreach my $uuid ( @uuids ){
+		my ($alertgroup, $reporting_unixtime, $status) = read_reportstatus "web", $uuid;
+		next unless defined $alertgroup;
+		my $session_status = $$status{session_status};
+		next unless $session_status eq "opened";
+
+		my @panels = list_panels $conf, $uuid;
+
+		my $now = time;
+		my $fired_hosts    = $$status{fired_hosts};
+		my $fired_services = $$status{fired_services};
+		my $fired_perfs    = $$status{fired_perfs};
+		my ($host_story, $service_story, $perf_story) = output_course_of_events
+			$alertgroup, $reporting_unixtime, $now,
+			$fired_hosts, $fired_services,  $fired_perfs;
+
+		my ($latest_status) = load_latest_eventbasket $alertgroup;
+		my $firing_hosts    = $$latest_status{host_events};
+		my $firing_services = $$latest_status{service_events};
+		my $firing_perfs    = $$latest_status{perf_events};
+
+		write_webpage $conf, $alertgroup, $uuid, $now, "update",
+	       		$host_story, $service_story, $perf_story,
+			$firing_hosts, $firing_services, $firing_perfs,
+			\@panels;
+
+		write_reportstatus "web", $uuid, $alertgroup, $now, {
+			"session_status" => "opened",
+			"fired_hosts" => $fired_hosts,
+			"fired_services" => $fired_services,
+			"fired_perfs" => $fired_perfs,
+			"latest_firing_hosts" => $firing_hosts,
+			"latest_firing_services" => $firing_services,
+			"latest_firing_perfs" => $firing_perfs,
+			"latest_host_story" => $host_story,
+			"latest_service_story" => $service_story,
+			"latest_perf_story" => $perf_story,
+		};
+	}
+
+}elsif( $subcmd eq "cleanup" ){
+}else{
+	die "unknown sub command, stopped";
+}
+
+exit 0;
+
+

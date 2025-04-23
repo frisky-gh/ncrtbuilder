@@ -9,8 +9,8 @@ BEGIN {
 	chomp $TOOLHOME;
 }
 
-use lib "$TOOLHOME/plugins";
-use ncrtmaster_alertqueue;
+use lib "$0.d/lib/perl5";
+use NCRTAlertQueue;
 
 use strict;
 use Carp::Always;
@@ -27,27 +27,38 @@ our $WORKDIR = $ARGV[1];
 
 my $min = int( time / 60 ) % 5;
 
-mkdir_or_die "$WORKDIR/aq_event";
-mkdir_or_die "$WORKDIR/aq_active";
-mkdir_or_die "$WORKDIR/aq_inactive";
-mkdir_or_die "$WORKDIR/aq_web";
-mkdir_or_die "$WORKDIR/aq_mail";
-mkdir_or_die "$WORKDIR/aq_slack";
-system_or_die "$0.eventq update    $CONFDIR $WORKDIR";
-#system_or_die "$0.session  open    $CONFDIR $WORKDIR";
-#system_or_die "$0.web      open    $CONFDIR $WORKDIR";
-#system_or_die "$0.mail     open    $CONFDIR $WORKDIR";
-#system_or_die "$0.slack    open    $CONFDIR $WORKDIR";
-#system_or_die "$0.session  rename  $CONFDIR $WORKDIR" if $min == 1;
-#system_or_die "$0.web      rename  $CONFDIR $WORKDIR" if $min == 1;
-#system_or_die "$0.slack    rename  $CONFDIR $WORKDIR" if $min == 1;
-#system_or_die "$0.session  close   $CONFDIR $WORKDIR" if $min == 2;
-#system_or_die "$0.web      close   $CONFDIR $WORKDIR" if $min == 2;
-#system_or_die "$0.mail     close   $CONFDIR $WORKDIR" if $min == 2;
-#system_or_die "$0.slack    close   $CONFDIR $WORKDIR" if $min == 2;
-system_or_die "$0.eventq  cleanup  $CONFDIR $WORKDIR" if $min == 3;
-#system_or_die "$0.session  cleanup $CONFDIR $WORKDIR" if $min == 3;
-#system_or_die "$0.web      cleanup $CONFDIR $WORKDIR" if $min == 3;
+mkdir_or_die		"$WORKDIR/aq_event";
+mkdir_or_die		"$WORKDIR/aq_web";
+mkdir_or_die		"$WORKDIR/aq_mail";
+mkdir_or_die		"$WORKDIR/aq_slack";
+mkdir_or_die		"$WORKDIR/aq_graph";
+
+system_or_die	 	"$0.d/bin/eventq   update  $CONFDIR $WORKDIR";
+
+system_or_die 		"$0.d/bin/session  open    $CONFDIR $WORKDIR";
+run_as_background	"$0.d/bin/web      open    $CONFDIR $WORKDIR";
+run_as_background	"$0.d/bin/mail     open    $CONFDIR $WORKDIR";
+run_as_background	"$0.d/bin/slack    open    $CONFDIR $WORKDIR";
+run_as_background	"$0.d/bin/graph    open    $CONFDIR $WORKDIR" if $min == 0;
+
+# TODO: implement
+#system_or_die		"$0.d/bin/session  rename  $CONFDIR $WORKDIR" if $min == 1;
+#run_as_background	"$0.d/bin/web      rename  $CONFDIR $WORKDIR" if $min == 1;
+#run_as_background	"$0.d/bin/slack    rename  $CONFDIR $WORKDIR" if $min == 1;
+
+system_or_die		"$0.d/bin/session  close   $CONFDIR $WORKDIR" if $min == 2;
+run_as_background	"$0.d/bin/web      close   $CONFDIR $WORKDIR" if $min == 2;
+run_as_background	"$0.d/bin/mail     close   $CONFDIR $WORKDIR" if $min == 2;
+run_as_background	"$0.d/bin/slack    close   $CONFDIR $WORKDIR" if $min == 2;
+
+system_or_die		"$0.d/bin/eventq   cleanup $CONFDIR $WORKDIR" if $min == 3;
+system_or_die		"$0.d/bin/session  cleanup $CONFDIR $WORKDIR" if $min == 3;
+run_as_background	"$0.d/bin/web      cleanup $CONFDIR $WORKDIR" if $min == 3;
+
+run_as_background	"$0.d/bin/web      update  $CONFDIR $WORKDIR" if $min == 4;
+run_as_background	"$0.d/bin/mail     update  $CONFDIR $WORKDIR" if $min == 4;
+run_as_background	"$0.d/bin/graph    update  $CONFDIR $WORKDIR" if $min == 4;
+
 exit 0;
 
 
