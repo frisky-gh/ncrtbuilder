@@ -48,6 +48,11 @@ if [ "$SYSLOG_SERVER" != "" ] ; then
 	sed -e "s/^SYSLOG_OPTS=.*/SYSLOG_OPTS=\"-C128 -R $SYSLOG_SERVER\"/" \
 		-i /etc/default/busybox-syslogd
 fi
+
+##
+mkdir -p /var/www/ncrtmaster
+chown naemon:naemon /var/www/ncrtmaster
+
 ##
 exec /sbin/init
 
