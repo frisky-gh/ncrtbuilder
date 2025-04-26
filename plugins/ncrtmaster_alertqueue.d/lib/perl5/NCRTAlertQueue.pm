@@ -4,6 +4,25 @@ package NCRTAlertQueue;
 
 use Exporter import;
 our @EXPORT = (
+	"openlog",
+	"debuglog",
+	"errorlog",
+
+	"mktimestamp",
+	"mkuuid",
+
+	"safesprintf",
+	"var2ltsv",
+	"ltsv2var",
+	"path_encode",
+	"path_decode ",
+	"expand_named_placeholders",
+
+	"system_or_die",
+	"run_as_background",
+	"mkdir_or_die",
+	"rmdir_or_die",
+
 	"load_conf",
 	"load_gdh_conf",
 	"load_alertrules",
@@ -11,35 +30,27 @@ our @EXPORT = (
 	"get_slack_urls",
 	"get_mail_addresses",
 	"get_report_param",
-	"ns",
-	"nB",
-	"mktimestamp",
-	"mkuuid",
-	"safesprintf",
-	"openlog",
-	"debuglog",
-	"errorlog",
-	"var2ltsv",
-	"ltsv2var",
-	"path_encode",
-	"path_decode ",
-	"expand_named_placeholders",
-	"system_or_die",
-	"run_as_background",
-	"mkdir_or_die",
+
 	"list_eventqueue",
+	"remove_eventqueue",
+
+	"output_course_of_events",
 	"list_eventbasket",
 	"write_eventbasket",
 	"unlink_eventbasket",
 	"get_size_of_eventbasket",
+	"read_latest_eventbasket",
+
 	"read_alertid",
 	"write_alertid",
 	"remove_alertid",
+
 	"sort_by_rules",
 	"open_livestatus_socket",
-	"get_and_sort_events",
-	"get_and_sort_hoststate",
-	"get_and_sort_servicestate",
+	"load_and_sort_events",
+	"load_and_sort_hoststate",
+	"load_and_sort_servicestate",
+
 	"new_sortedevents",
 	"write_sortedevents",
 	"cleanup_eventqueues",
@@ -48,8 +59,7 @@ our @EXPORT = (
 	"read_reportstatus",
 	"write_reportstatus",
 	"remove_reportstatus",
-	"output_course_of_events",
-	"load_latest_eventbasket",
+	"reportstatus_exists",
 
 	"generate_by_template",
 );
@@ -192,14 +202,15 @@ sub load_reportrules () {
 }
 
 our %DEFAULT_REPORT_PARAM = (
-	"MAILFROM"        => 'ncrt-alertqueue@example.com',
-	"UPDATE_TIMESPAN" => 10,
-	"RESEND_TIMESPAN" => 30,
-	"CLOSE_TIMESPAN"  => 30,
-	"EXPIRE_TIMESPAN" => 10080,
-	"RENAME_TIMESPAN" => 8640,
-	"GRAPH_TIMEOUT"   => 30,
-	"GRAPH_TIMESPAN"  => 480,
+	"MAILFROM"         => 'ncrt-alertqueue@example.com',
+	"UPDATE_TIMESPAN"  => 10,
+	"RESEND_TIMESPAN"  => 30,
+	"CLOSE_TIMESPAN"   => 30,
+	"EXPIRE_TIMESPAN"  => 10080,
+	"RENAME_TIMESPAN"  => 8640,
+	"GRAPH_TIMEOUT"    => 30,
+	"GRAPH_TIMESPAN"   => 480,
+	"CLEANUP_TIMESPAN" => 7200,
 );
 
 sub get_slack_urls ($$) {
@@ -251,15 +262,6 @@ sub get_report_param ($$) {
 }
 
 ####
-sub ns ($) {
-	return sprintf "%.2fs", $_[0];
-}
-
-sub nB ($) {
-	return sprintf "%dB", $_[0];
-}
-
-####
 sub mktimestamp (;$) {
 	my $t = shift // time;
 	my ($sec, $min, $hour, $day, $mon, $year) = localtime $t;
@@ -281,7 +283,7 @@ sub safesprintf ( @ ){
 
 our $LOG_HANDLE;
 sub openlog () {
-	open $LOG_HANDLE, '>>', "$main::WORKDIR/servicegroup.log" or return;
+	open $LOG_HANDLE, '>>', "$main::WORKDIR/alertqueue.log" or return;
 	my $old = select $LOG_HANDLE;
 	$| = 1;
 	select $old;
@@ -369,6 +371,19 @@ sub system_or_die ($) {
 	}
 }
 
+sub rmdir_or_die ($) {
+	my ($d) = @_;
+	return unless -d $d;
+	opendir my $h, $d or die "$d: cannot open, stopped";
+	my @e = readdir $h;
+	close $h;
+	foreach( @e ){
+		next if m"^(\.|\.\.)$";
+		unlink "$d/$_" or die "$d/$_: cannot remove, stopped";;
+	}
+	rmdir $d or die "$d: cannot remove. stopped";
+}
+
 sub run_as_background ($) {
 	my ($cmd) = @_;
 	my $pid = fork;
@@ -392,11 +407,20 @@ sub list_eventqueue () {
 	return @r;
 }
 
+sub remove_eventqueue ($) {
+	my ($alertgroup) = @_;
+	my $d = "$main::WORKDIR/aq_event/$alertgroup";
+	rmdir_or_die $d;
+}
+
 sub list_eventbasket ($) {
 	my ($alertgroup) = @_;
 	my @r;
 	my $f = "$main::WORKDIR/aq_event/$alertgroup";
-	opendir my $h, $f or die "$f: cannot open, stopped";
+	opendir my $h, $f or do {
+		debuglog "$f: not found.";
+		return ();
+	};
 	while( my $e = readdir $h ){
 		next unless $e =~ m"^((\d{4})-(\d{2})-(\d{2})_(\d{2}):(\d{2}):(\d{2}))\.json$";
 		my $timestamp = $1;
@@ -419,7 +443,10 @@ sub list_eventbasket ($) {
 sub write_eventbasket ($$$) {
 	my ($alertgroup, $timestamp, $eventbasket) = @_;
 	my $d = "$main::WORKDIR/aq_event/$alertgroup";
-	mkdir_or_die $d unless -d $d;
+	unless( -d $d ){
+		return unless %$eventbasket;
+		mkdir_or_die $d;
+	}
 	my $f = "$main::WORKDIR/aq_event/$alertgroup/$timestamp.json";
 	open my $h, '>', $f or do {
 		die "$f: cannot open, stopped";
@@ -536,6 +563,12 @@ sub remove_reportstatus ($$) {
 	my ($category, $uuid) = @_;
 	my $f = "$main::WORKDIR/aq_$category/$uuid.json";
 	unlink $f;
+}
+
+sub reportstatus_exists ($$) {
+	my ($category, $uuid) = @_;
+	my $f = "$main::WORKDIR/aq_$category/$uuid.json";
+	return -f $f;
 }
 
 sub add_host_story ($$$$$) {
@@ -701,13 +734,14 @@ sub output_course_of_events ($$$$$$) {
 	return \@hosts_story, \@services_story, \@perfs_story;
 }
 
-sub load_latest_eventbasket ($) {
+sub read_latest_eventbasket ($) {
 	my ($alertgroup) = @_;
 	my @names = list_eventbasket $alertgroup;
 	my $latest_name = $names[-1];
 	my $latest_eventbaskets = read_eventbasket $alertgroup, $$latest_name{timestamp};
 	return $latest_eventbaskets, $$latest_name{unixtime}, $$latest_name{timestamp};
 }
+
 
 ####
 
@@ -797,7 +831,7 @@ our @text_of_state = (
 	'Unknown',
 );
 
-sub get_and_sort_hoststate ($$$) {
+sub load_and_sort_hoststate ($$$) {
 	my ($sortedevents, $sortrules_of_host, $sortrules_of_perf) = @_;
 
 	my $h = open_livestatus_socket
@@ -903,7 +937,7 @@ sub get_and_sort_hoststate ($$$) {
 	close $h;
 }
 
-sub get_and_sort_servicestate ($$$) {
+sub load_and_sort_servicestate ($$$) {
 	my ($sortedevents, $sortrules_of_service, $sortrules_of_perf) = @_;
 
 	my $h = open_livestatus_socket
@@ -1013,14 +1047,14 @@ sub get_and_sort_servicestate ($$$) {
 	close $h;
 }
 
-sub get_and_sort_events ($$$$) {
+sub load_and_sort_events ($$$$) {
 	my ($sortedevents, $sortrules_of_host, $sortrules_of_service, $sortrules_of_perf) = @_;
 	eval {
-		get_and_sort_hoststate    $sortedevents, $sortrules_of_host, $sortrules_of_perf;
-		get_and_sort_servicestate $sortedevents, $sortrules_of_service, $sortrules_of_perf;
+		load_and_sort_hoststate    $sortedevents, $sortrules_of_host, $sortrules_of_perf;
+		load_and_sort_servicestate $sortedevents, $sortrules_of_service, $sortrules_of_perf;
 	};
 	if( $@ ){
-		push @{ $$sortedevents{host_events}->{__NaemonLiveStatus__} }, {
+		push @{ $$sortedevents{__NaemonLiveStatus__}->{host_events} }, {
 			"host_groups" => [],
 			"host" => "__localhost__",
 			"state" => "Critical",

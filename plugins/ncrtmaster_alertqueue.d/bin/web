@@ -27,12 +27,14 @@ if    ( $subcmd eq "open" ){
 	my $conf = load_conf;
 	my @alertgroups = list_eventqueue;
 	foreach my $alertgroup ( @alertgroups ){
-		my ($uuid, $creation_unixtime) = read_alertid $alertgroup;
+		my ($uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
 		next unless defined $uuid;
+		next if defined $prev_uuid;
 		my ($last_alertgroup, $reporting_unixtime) = read_reportstatus "web", $uuid;
 		next if $last_alertgroup eq $alertgroup;
 
-		my @panels = list_panels $conf, $uuid;
+		my ($panel_alertgroup, $panel_unixtime, $panel_status) = read_reportstatus "panel", $uuid;
+		my $panels = $$panel_status{panelbasket}->{panels};
 
 		my $now = time;
 		my $fired_hosts = {};
@@ -42,7 +44,7 @@ if    ( $subcmd eq "open" ){
 			$alertgroup, $creation_unixtime, $now,
 			$fired_hosts, $fired_services,  $fired_perfs;
 
-		my ($latest_status) = load_latest_eventbasket $alertgroup;
+		my ($latest_status) = read_latest_eventbasket $alertgroup;
 		my $firing_hosts    = $$latest_status{host_events};
 		my $firing_services = $$latest_status{service_events};
 		my $firing_perfs    = $$latest_status{perf_events};
@@ -50,7 +52,7 @@ if    ( $subcmd eq "open" ){
 		write_webpage $conf, $alertgroup, $uuid, $now, "open",
 	       		$host_story, $service_story, $perf_story,
 			$firing_hosts, $firing_services, $firing_perfs,
-			\@panels;
+			$panels;
 
 		write_reportstatus "web", $uuid, $alertgroup, $now, {
 			"session_status" => "opened",
@@ -63,7 +65,6 @@ if    ( $subcmd eq "open" ){
 			"latest_host_story" => $host_story,
 			"latest_service_story" => $service_story,
 			"latest_perf_story" => $perf_story,
-			"panels" => \@panels,
 		};
 	}
 
@@ -76,9 +77,10 @@ if    ( $subcmd eq "open" ){
 		my $session_status = $$status{session_status};
 		next unless $session_status eq "opened";
 		my ($last_uuid, $creation_unixtime) = read_alertid $alertgroup;
-		next if $last_uuid eq $uuid;
+		next if $uuid eq $last_uuid;
 
-		my @panels = list_panels $conf, $uuid;
+		my ($panel_alertgroup, $panel_unixtime, $panel_status) = read_reportstatus "panel", $uuid;
+		my $panels = $$panel_status{panelbasket}->{panels};
 
 		my $now = time;
 		my $fired_hosts    = $$status{fired_hosts};
@@ -88,7 +90,7 @@ if    ( $subcmd eq "open" ){
 			$alertgroup, $creation_unixtime, $now,
 			$fired_hosts, $fired_services,  $fired_perfs;
 
-		my ($latest_status) = load_latest_eventbasket $alertgroup;
+		my ($latest_status) = read_latest_eventbasket $alertgroup;
 		my $firing_hosts    = $$latest_status{host_events};
 		my $firing_services = $$latest_status{service_events};
 		my $firing_perfs    = $$latest_status{perf_events};
@@ -96,7 +98,7 @@ if    ( $subcmd eq "open" ){
 		write_webpage $conf, $alertgroup, $uuid, $now, "close",
 	       		$host_story, $service_story, $perf_story,
 			$firing_hosts, $firing_services, $firing_perfs,
-			\@panels;
+			$panels;
 
 		write_reportstatus "web", $uuid, $alertgroup, $now, {
 			"session_status" => "closed",
@@ -109,11 +111,74 @@ if    ( $subcmd eq "open" ){
 			"latest_host_story" => $host_story,
 			"latest_service_story" => $service_story,
 			"latest_perf_story" => $perf_story,
-			"panels" => \@panels,
 		};
 	}
 
 }elsif( $subcmd eq "rename" ){
+	my $conf = load_conf;
+	my @uuids = list_reportstatus "web";
+	foreach my $uuid ( @uuids ){
+		my ($alertgroup, $reporting_unixtime, $status) = read_reportstatus "web", $uuid;
+		next unless defined $alertgroup;
+		my $session_status = $$status{session_status};
+		next unless $session_status eq "opened";
+		my ($next_uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
+		next unless $uuid eq $prev_uuid;
+
+		my ($panel_alertgroup, $panel_unixtime, $panel_status) = read_reportstatus "panel", $uuid;
+		my $panels = $$panel_status{panelbasket}->{panels};
+
+		my $now = time;
+		my $fired_hosts    = $$status{fired_hosts};
+		my $fired_services = $$status{fired_services};
+		my $fired_perfs    = $$status{fired_perfs};
+		my ($host_story, $service_story, $perf_story) = output_course_of_events
+			$alertgroup, $creation_unixtime, $now,
+			$fired_hosts, $fired_services,  $fired_perfs;
+
+		my ($latest_status) = read_latest_eventbasket $alertgroup;
+		my $firing_hosts    = $$latest_status{host_events};
+		my $firing_services = $$latest_status{service_events};
+		my $firing_perfs    = $$latest_status{perf_events};
+
+		rename_webpage $conf, $uuid, $next_uuid;
+		write_webpage $conf, $alertgroup, $uuid, $now, "rename",
+	       		$host_story, $service_story, $perf_story,
+			$firing_hosts, $firing_services, $firing_perfs,
+			$panels, $next_uuid;
+
+		write_reportstatus "web", $uuid, $alertgroup, $now, {
+			"session_status" => "renamed",
+			"fired_hosts" => $fired_hosts,
+			"fired_services" => $fired_services,
+			"fired_perfs" => $fired_perfs,
+			"latest_firing_hosts" => $firing_hosts,
+			"latest_firing_services" => $firing_services,
+			"latest_firing_perfs" => $firing_perfs,
+			"latest_host_story" => $host_story,
+			"latest_service_story" => $service_story,
+			"latest_perf_story" => $perf_story,
+		};
+
+		write_webpage $conf, $alertgroup, $next_uuid, $now, "update",
+	       		$host_story, $service_story, $perf_story,
+			$firing_hosts, $firing_services, $firing_perfs,
+			$panels;
+
+		write_reportstatus "web", $next_uuid, $alertgroup, $now, {
+			"session_status" => "opened",
+			"fired_hosts" => $fired_hosts,
+			"fired_services" => $fired_services,
+			"fired_perfs" => $fired_perfs,
+			"latest_firing_hosts" => $firing_hosts,
+			"latest_firing_services" => $firing_services,
+			"latest_firing_perfs" => $firing_perfs,
+			"latest_host_story" => $host_story,
+			"latest_service_story" => $service_story,
+			"latest_perf_story" => $perf_story,
+		};
+	}
+
 }elsif( $subcmd eq "update" ){
 	my $conf = load_conf;
 	my @uuids = list_reportstatus "web";
@@ -123,7 +188,8 @@ if    ( $subcmd eq "open" ){
 		my $session_status = $$status{session_status};
 		next unless $session_status eq "opened";
 
-		my @panels = list_panels $conf, $uuid;
+		my ($panel_alertgroup, $panel_unixtime, $panel_status) = read_reportstatus "panel", $uuid;
+		my $panels = $$panel_status{panelbasket}->{panels};
 
 		my $now = time;
 		my $fired_hosts    = $$status{fired_hosts};
@@ -133,7 +199,7 @@ if    ( $subcmd eq "open" ){
 			$alertgroup, $reporting_unixtime, $now,
 			$fired_hosts, $fired_services,  $fired_perfs;
 
-		my ($latest_status) = load_latest_eventbasket $alertgroup;
+		my ($latest_status) = read_latest_eventbasket $alertgroup;
 		my $firing_hosts    = $$latest_status{host_events};
 		my $firing_services = $$latest_status{service_events};
 		my $firing_perfs    = $$latest_status{perf_events};
@@ -141,7 +207,7 @@ if    ( $subcmd eq "open" ){
 		write_webpage $conf, $alertgroup, $uuid, $now, "update",
 	       		$host_story, $service_story, $perf_story,
 			$firing_hosts, $firing_services, $firing_perfs,
-			\@panels;
+			$panels;
 
 		write_reportstatus "web", $uuid, $alertgroup, $now, {
 			"session_status" => "opened",
@@ -158,6 +224,37 @@ if    ( $subcmd eq "open" ){
 	}
 
 }elsif( $subcmd eq "cleanup" ){
+	my $conf = load_conf;
+	my $rules = load_reportrules;
+	my @uuids = list_reportstatus "web";
+	foreach my $uuid ( @uuids ){
+		my ($alertgroup, $reporting_unixtime, $status) = read_reportstatus "web", $uuid;
+		next unless defined $alertgroup;
+		my ($last_uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
+		next if $uuid eq $last_uuid;
+		next if $uuid eq $prev_uuid;
+
+		my $session_status = $$status{session_status};
+		if    ( $session_status eq "opened" ){
+			remove_webpage $conf, $uuid;
+			remove_reportstatus "web", $uuid;
+		}elsif( $session_status eq "renamed" ){
+			remove_webpage $conf, $uuid;
+			remove_reportstatus "web", $uuid;
+		}elsif( $session_status eq "closed" ){
+			my $now = time;
+			my $webparam = get_report_param $rules, $alertgroup;
+			my $expire_timespan = $$webparam{EXPIRE_TIMESPAN};
+			next unless $reporting_unixtime + $expire_timespan*60 < $now;
+			remove_webpage $conf, $uuid;
+			remove_reportstatus "web", $uuid;
+		}else{
+			debuglog "web: cleanup: unknown session status $session_status.";
+			remove_webpage $conf, $uuid;
+			remove_reportstatus "web", $uuid;
+		}
+	}
+
 }else{
 	die "unknown sub command, stopped";
 }

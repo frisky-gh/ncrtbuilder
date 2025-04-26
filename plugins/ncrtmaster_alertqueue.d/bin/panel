@@ -1,0 +1,81 @@
+#!/usr/bin/perl
+
+our $TOOLHOME;
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = ` cd "$1/.." && pwd || echo . `;
+	chomp $TOOLHOME;
+}
+use lib "$TOOLHOME/lib/perl5";
+use NCRTAlertQueue;
+use NCRTAlertQueue::Web;
+
+use strict;
+
+if( @ARGV < 3 ){
+	print "usage: % $0 {close|update|cleanup} CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+my $subcmd = $ARGV[0];
+our $CONFDIR = $ARGV[1];
+our $WORKDIR = $ARGV[2];
+
+#### Main Entry Point of Panel Attributes Management
+
+if    ( $subcmd eq "update" ){
+	my ($gdhurl, $grafanatoken) = get_gdhurl_and_grafanatoken;
+	my $conf = load_conf;
+	my $rules = load_reportrules;
+
+	my @web_uuids = list_reportstatus "web";
+	foreach my $uuid ( @web_uuids ){
+		my ($alertgroup, $unixtime, $web_status) = read_reportstatus "web", $uuid;
+		my $status = $$web_status{session_status};
+		next unless $status eq "opened";
+
+		my ($last_alertgroup, $last_unixtime, $last_status) = read_reportstatus "panel", $uuid;
+		my $panelbasket = $$last_status{panelbasket} // new_panelbasket $uuid;
+
+		my $now = time;
+		my $web_fired_perfs = $$web_status{fired_perfs};
+		download_panels_in_panelbasket $panelbasket, $gdhurl, $web_fired_perfs;
+
+		my $downloadparam = get_report_param $rules, $alertgroup;
+		create_imgreqs_of_panelbasket_if_not_exists $panelbasket, $uuid, $downloadparam;
+
+		write_reportstatus "panel", $uuid, $alertgroup, $now, {
+			"panelbasket" => $panelbasket,
+		};
+	}
+
+}elsif( $subcmd eq "close" ){
+	my @uuids = list_reportstatus "panel";
+	foreach my $uuid ( @uuids ){
+		my ($alertgroup, $unixtime, $web_status) = read_reportstatus "web", $uuid;
+		my $status = $$web_status{session_status};
+		next unless $status eq "closed";
+
+		my ($last_alertgroup, $last_unixtime, $last_status) = read_reportstatus "panel", $uuid;
+		my $panelbasket = $$last_status{panelbasket};
+		wakeup_imgreqs_of_panelbasket $panelbasket;
+
+		remove_reportstatus "panel", $uuid;
+	}
+
+}elsif( $subcmd eq "cleanup" ){
+	my @uuids = list_reportstatus "panel";
+	foreach my $uuid ( @uuids ){
+		my ($alertgroup, $unixtime, $web_status) = read_reportstatus "web", $uuid;
+		next if defined $alertgroup;
+
+		remove_reportstatus "panel", $uuid;
+	}
+
+}else{
+	die "unknown sub command, stopped";
+}
+
+exit 0;
+
+

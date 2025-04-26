@@ -29,7 +29,7 @@ if    ( $subcmd eq "open" ){
 		my ($last_uuid, $creation_unixtime) = read_alertid $alertgroup;
 		next if defined $last_uuid; # already alerted
 
-		my ($latest_eventbasket, $latest_unixtime, $latest_timestamp) = load_latest_eventbasket $alertgroup;
+		my ($latest_eventbasket, $latest_unixtime, $latest_timestamp) = read_latest_eventbasket $alertgroup;
 		next unless defined $latest_eventbasket;
 		my $latest_unixtime_min = int( $latest_unixtime / 60 );
 
@@ -92,10 +92,45 @@ if    ( $subcmd eq "open" ){
 		next unless defined $last_uuid;
 
 		my $reportparam = get_report_param $rules, $alertgroup;
-		my $expiration_unixtime = $now - $$reportparam{RENAME_TIMESPAN}*60;
+		next unless $creation_unixtime + $$reportparam{RENAME_TIMESPAN}*60 < $now;
+
+		my $uuid = mkuuid;
+		write_alertid $alertgroup, $uuid, $now, $last_uuid;
 	}
 
 }elsif( $subcmd eq "cleanup" ){
+	my $now = time;
+	my @alertgroups = list_eventqueue;
+	my $rules = load_reportrules;
+	foreach my $alertgroup ( @alertgroups ){
+		my ($last_uuid, $creation_unixtime) = read_alertid $alertgroup;
+		next if defined $last_uuid;
+
+		my @entry = list_eventbasket $alertgroup;
+		next unless @entry;
+
+		my $there_is_no_alert = 1;
+		my $oldest_eventbasket_unixtime = $now;
+		foreach my $e ( @entry ){
+			my $timestamp = $$e{timestamp};
+			my $unixtime  = $$e{unixtime};
+
+			$oldest_eventbasket_unixtime = $unixtime if $unixtime < $oldest_eventbasket_unixtime;
+
+			my $size = get_size_of_eventbasket $alertgroup, $timestamp;
+			next if $size < 8;
+
+			$there_is_no_alert = undef;
+			last;
+		}
+		next unless $there_is_no_alert;
+
+		my $reportparam = get_report_param $rules, $alertgroup;
+		next unless $oldest_eventbasket_unixtime + $$reportparam{CLEANUP_TIMESPAN}*60 < $now;
+
+		remove_eventqueue $alertgroup;
+	}
+
 }else{
 	die "unknown sub command, stopped";
 }

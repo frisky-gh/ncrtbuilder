@@ -4,18 +4,25 @@ package NCRTAlertQueue::Web;
 
 use Exporter import;
 our @EXPORT = (
-	"list_panels",
+	"get_gdhurl_and_grafanatoken",
+
+	"remove_webpage",
+	"rename_webpage",
 	"write_webpage",
 	"write_png",
-	"get_gdhurl_and_grafanatoken",
-	"download_panel_png_from_grafana",
-	"new_panelbasket",
-	"update_panelbasket",
-	"add_to_downloadqueue",
-	"execute_downloadqueue",
 
-	"generate_download_queue",
-	"execute_download_queue",
+	"new_panelbasket",
+	"download_panels_in_panelbasket",
+	"create_imgreqs_of_panelbasket_if_not_exists",
+	"wakeup_imgreqs_of_panelbasket",
+
+	"list_sleeping_imgreqs",
+	"read_sleeping_imgreq",
+	"pickup_imgreq",
+	"wakeup_imgreq",
+	"put_imgreq_to_sleep",
+	"remove_imgreq",
+	"download_img",
 );
 
 use strict;
@@ -29,67 +36,7 @@ use LWP::UserAgent;
 
 our $JSON = JSON::XS->new->utf8;
 
-####
-
-sub list_panels ($$) {
-	my ($conf, $uuid) = @_;
-	my $sessiondir     = $$conf{SESSIONDIR};
-	my $sessionurlbase = $$conf{SESSIONURLBASE};
-	my $sessionurl     = "$sessionurlbase/$uuid/";
-
-	my @r;
-	my $d = "$sessiondir/$uuid";
-	opendir my $h, $d or die "$d: cannot open, stopped";
-	while( my $e = readdir $h ){
-		next unless $e =~ m"^(\S+),(\S+),(\S+),(\d+)\.png$";
-
-		my $f = "$d/$1,$2,$3,$4.json";
-		open my $i, "<", $f or next;
-		my $json = join "", <$i>;
-		close $h;
-		my $obj = eval { $JSON->decode($json); };
-
-		push @r, {
-			"host" => $1,
-			"service" => $2,
-			"perf" => $3,
-			"index" => $4,
-			"file" => $e,
-			"title" => $$obj{panel_title},
-		};
-	}
-	return @r;
-}
-
-sub write_webpage ($$$$$$$$$$$$) {
-	my ($conf, $alertgroup, $uuid, $now, $action,
-	    $host_story, $service_story, $perf_story, $firing_host, $firing_service, $firing_perf,
-    	    $panels) = @_;
-	my $sessiondir = $$conf{SESSIONDIR};
-	my $sessionurlbase = $$conf{SESSIONURLBASE};
-	my $sessionurl     = "$sessionurlbase/$uuid/";
-
-	my $html = generate_by_template "web",
-		"ALERTGROUP"     => $alertgroup,
-		"UUID"           => $uuid,
-		"NOW"            => mktimestamp $now,
-		"ACTION"         => $action,
-		"SESSIONURL"     => $sessionurl,
-		"HOST_STORY"     => $host_story,
-		"SERVICE_STORY"  => $service_story,
-		"PERF_STRORY"    => $perf_story,
-		"FIRING_HOST"    => $firing_host,
-		"FIRING_SERVICE" => $firing_service,
-		"FIRING_PERF"    => $firing_perf,
-		"PANELS"         => $panels,
-		;
-
-	my $d = "$sessiondir/$uuid";
-	my $f = "$d/index.html";
-	open my $h, ">", $f or die "$f: cannot open, stopped";
-	print $h $html;
-	close $h;
-}
+#### Internal Functions
 
 sub download_panel_png_from_grafana ($$$) {
 	my ($url, $token, $param) = @_;
@@ -103,38 +50,6 @@ sub download_panel_png_from_grafana ($$$) {
 	debuglog "grafana: status=%s", $res->status_line;
 	return undef unless $res->code eq '200';
 	return $res->content;
-}
-
-sub write_png ($$$$$) {
-	my ($conf, $png, $alertgroup, $uuid, $panelid) = @_;
-	my ($host, $service, $perf, $idx) = split " ", $panelid;
-	my $sessiondir = $$conf{SESSIONDIR};
-	my $d = "$sessiondir/$uuid";
-	my $f = "$d/$host,$service,$perf,$idx.png";
-	open my $h, ">", $f or die "$f: cannot open, stopped";
-	print $h $png;
-	close $h;
-}
-
-sub write_paneljson ($$$$$) {
-	my ($conf, $obj, $alertgroup, $uuid, $panelid) = @_;
-	my ($host, $service, $perf, $idx) = split " ", $panelid;
-	my $sessiondir = $$conf{SESSIONDIR};
-	my $d = "$sessiondir/$uuid";
-	my $f = "$d/$host,$service,$perf,$idx.json";
-	open my $h, ">", $f or die "$f: cannot open, stopped";
-	print $h eval{ $JSON->encode($obj); }, "\n";
-	close $h;
-}
-
-sub get_mtime_of_png ($$$$) {
-	my ($conf, $alertgroup, $uuid, $panelid) = @_;
-	my ($host, $service, $perf, $idx) = split " ", $panelid;
-	my $sessiondir = $$conf{SESSIONDIR};
-	my $d = "$sessiondir/$uuid";
-	my $f = "$d/$host,$service,$perf,$idx.png";
-	my @r = stat $f;
-	return $r[9];
 }
 
 sub query_panels_to_grafana_dashboard_helper ($$$$) {
@@ -152,6 +67,8 @@ sub query_panels_to_grafana_dashboard_helper ($$$$) {
 	return $obj;
 }
 
+####
+
 sub get_gdhurl_and_grafanatoken () {
 	my $conf = load_conf;
 	unless( $$conf{USE_LOCAL_GDH} ){
@@ -164,88 +81,228 @@ sub get_gdhurl_and_grafanatoken () {
 	return "http://localhost:$gdhlistenport", $grafanatoken;
 }
 
-sub get_panels_of_perf ($$$$) {
+####
+
+sub remove_webpage ($$) {
+	my ($conf, $uuid) = @_;
+	my $sessiondir = $$conf{SESSIONDIR};
+
+	my $d = "$sessiondir/$uuid";
+	rmdir_or_die $d;
+}
+
+sub rename_webpage ($$$) {
+	my ($conf, $last_uuid, $next_uuid) = @_;
+	my $sessiondir = $$conf{SESSIONDIR};
+
+	my $lastd = "$sessiondir/$last_uuid";
+	my $nextd = "$sessiondir/$next_uuid";
+	rename $lastd, $nextd or do {
+		die "rename: $lastd -> $nextd: cannot rename, stopped";
+	};
+}
+
+sub write_webpage ($$$$$$$$$$$$;$) {
+	my ($conf, $alertgroup, $uuid, $now, $action,
+	    $host_story, $service_story, $perf_story, $firing_host, $firing_service, $firing_perf,
+    	    $panels, $next_uuid) = @_;
+	my $sessiondir = $$conf{SESSIONDIR};
+	my $sessionurlbase = $$conf{SESSIONURLBASE};
+	my $sessionurl     = "$sessionurlbase/$uuid/";
+
+	my $html = generate_by_template "web",
+		"ALERTGROUP"     => $alertgroup,
+		"UUID"           => $uuid,
+		"NEXT_UUID"      => $next_uuid,
+		"NOW"            => mktimestamp $now,
+		"ACTION"         => $action,
+		"SESSIONURL"     => $sessionurl,
+		"HOST_STORY"     => $host_story,
+		"SERVICE_STORY"  => $service_story,
+		"PERF_STRORY"    => $perf_story,
+		"FIRING_HOST"    => $firing_host,
+		"FIRING_SERVICE" => $firing_service,
+		"FIRING_PERF"    => $firing_perf,
+		"PANELS"         => $panels,
+		;
+
+	my $d = "$sessiondir/$uuid";
+	mkdir_or_die $d;
+	my $f = "$d/index.html";
+	open my $h, ">", $f or die "$f: cannot open, stopped";
+	print $h $html;
+	close $h;
+}
+
+sub write_png ($$$$) {
+	my ($conf, $uuid, $panelid, $png) = @_;
+	my $sessiondir = $$conf{SESSIONDIR};
+	my $d = "$sessiondir/$uuid";
+	my $f = "$d/panel_$panelid.png";
+	open my $h, ">", $f or die "$f: cannot open, stopped";
+	print $h $png;
+	close $h;
+}
+
+sub download_panels_of_perf ($$$$) {
 	my ($gdhurl, $host, $service, $perf) = @_;
 	my $panels = query_panels_to_grafana_dashboard_helper
 		$gdhurl, $host, $service, $perf;
 }
 
-sub new_panelbasket () {
+#### PanelBasket Functions
+
+sub new_panelbasket ($) {
+	my ($uuid) = @_;
 	return {
+		"uuid" => $uuid,
 		"panels_of_perf" => {},
 		"panels" => [],
 	};
 }
 
-sub update_panelbasket ($$$) {
-	my ($panelbasket, $gdhurl, $fired_perfs) = @_;
+sub download_panels_in_panelbasket ($$$) {
+	my ($panelbasket, $gdhurl, $fired_perfs) = @_;                                                          
 	my $panels_of_perf = $$panelbasket{panels_of_perf};
 	my $panels         = $$panelbasket{panels};
 
-	while( my ($host_service_perf, undef) = each %$fired_perfs ){
-		next if defined $$panels_of_perf{$host_service_perf};
+	while( my ($fired_host_service_perf, undef) = each %$fired_perfs ){
+		next if defined $$panels_of_perf{$fired_host_service_perf};
 
-		my ($host, $service, $perf) = split " ", $host_service_perf;
-		my $r = get_panels_of_perf $gdhurl, $host, $service, $perf;
-		my $index = 1;
-		foreach my $i ( @$r ){
-			$$i{panelid} = sprintf "%s %03d", $host_service_perf , $index++;
-			push @$panels, $i;
+		my ($host, $service, $perf) = split " ", $fired_host_service_perf;
+		my $panels_of_fired_perf = download_panels_of_perf $gdhurl, $host, $service, $perf;
+		$$panels_of_perf{$fired_host_service_perf} = $panels_of_fired_perf;
+		foreach my $panel_of_fired_perf ( @$panels_of_fired_perf ){
+			my $panelid = sprintf "%03d", int( @$panels + 1 );
+			$$panel_of_fired_perf{panelid} = $panelid;
+			$$panel_of_fired_perf{host}    = $host;
+			$$panel_of_fired_perf{service} = $service;
+			$$panel_of_fired_perf{perf}    = $perf;
+			push @$panels, $panel_of_fired_perf;
 		}
-		$$panels_of_perf{$host_service_perf} = $r;
 	}
 }
 
-sub execute_downloadqueue (\@$$$) {
-	my ($downloadqueue, $conf, $download_status, $grafanatoken) = @_;
-
-	my $now = time;
-	@$downloadqueue = sort {$$a{unixtime} <=> $$b{unixtime}} @$downloadqueue;
-	foreach my $i ( @$downloadqueue ){
-		my $alertgroup = $$i{alertgroup};
-		my $uuid = $$i{uuid};
-		my $last_download_unixtime = $$i{unixtime};
-		my $param = $$i{param};
-		my $timeout = $$param{GRAPH_TIMEOUT};
-		my $timespan = $$param{GRAPH_TIMESPAN};
-
-		next unless $last_download_unixtime + $timespan*60 < $now;
-
-		my $panelid = $$i{panelid};
-		my $url = $$i{url};
-		my $png = download_panel_png_from_grafana $url, $grafanatoken, $param;
-		write_png       $conf, $png, $alertgroup, $uuid, $panelid;
-		write_paneljson $conf, $i,   $alertgroup, $uuid, $panelid;
-
-		++$$download_status{count};
-		return if $$download_status{count} >= $$download_status{max};
-	}
-}
-
-sub add_to_downloadqueue (\@$$$$$) {
-	my ($downloadqueue, $conf, $alertgroup, $uuid, $panelbasket, $downloadparam) = @_;
+sub create_imgreqs_of_panelbasket_if_not_exists ($$$) {
+	my ($panelbasket, $uuid, $downloadparam) = @_;
 	my $panels = $$panelbasket{panels};
+	foreach my $panel ( @$panels ){
+		my $panelid = $$panel{panelid};
+		my $imgid   = "$uuid+$panelid";
+		my $f = "$main::WORKDIR/aq_img/$imgid.json";
+		my $g = "$main::WORKDIR/aq_imgdl/$imgid.json";
+		next if -f $f;
+		next if -f $g;
 
-	foreach my $i ( @$panels ){
-		my $panelid = $$i{panelid};
-		my $url = $$i{url};
-		my $mtime = get_mtime_of_png $conf, $alertgroup, $uuid, $panelid;
-		push @$downloadqueue, {
-			"alertgroup" => $alertgroup,
-			"uuid"       => $uuid,
-
-			"panelid"  => $panelid,
-			"url" => $url,
-			"unixtime" => $mtime,
-			"panel_name"  => $$i{panel_name},
-			"panel_title" => $$i{panel_title},
-
-			"param" => $downloadparam,
-		};
+		$$panel{uuid}    = $uuid;
+		$$panel{imgid}   = $imgid;
+		while( my ($k, $v) = each %$downloadparam ){
+			$$panel{$k} = $v;
+		}
+		open my $h, ">", $g or die "$g: cannot open, stopped";
+		print $h eval{ $JSON->encode($panel); }, "\n";
+		close $h;
 	}
 }
 
+sub wakeup_imgreqs_of_panelbasket ($) {
+	my ($panelbasket) = @_;
+	my $panels = $$panelbasket{panels};
+	foreach my $panel ( @$panels ){
+		my $imgid = $$panel{imgid};
+		my $f = "$main::WORKDIR/aq_img/$imgid.json";
+		my $g = "$main::WORKDIR/aq_imgdl/$imgid.json";
+		next if -f $g;
+		if( -f $f ){
+			rename $f, $g;
+			next;
+		}
+	}
+}
 
+### ImgReq Functions
+
+sub list_sleeping_imgreqs () {
+	my @r;
+	my $f = "$main::WORKDIR/aq_img";
+	opendir my $h, $f or die "$f: cannot open, stopped";
+	while( my $e = readdir $h ){
+		next unless $e =~ m"^([-+0-9a-fA-F]+)\.json$";
+		push @r, $1;
+	}
+	close $h;
+	return @r;
+}
+
+sub pickup_imgreq () {
+	my @r;
+	my $f = "$main::WORKDIR/aq_imgdl";
+	my $imgid;
+	my $imgreq;
+	my $unixtime;
+	opendir my $h, $f or die "$f: cannot open, stopped";
+	while( my $e = readdir $h ){
+		next unless $e =~ m"^([-+0-9a-fA-F]+)\.json$";
+
+		$imgid = $1;
+		my $g = "$main::WORKDIR/aq_imgdl/$imgid.json";
+		open my $i, '<', $g or do die "$f: cannot open, stopped";
+		my $json = join "", <$i>;
+		close $i;
+		$imgreq = eval { $JSON->decode($json); };
+		my ( $dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+		     $atime,$mtime,$ctime,$blksize,$blocks ) = stat $g;
+		$unixtime = $mtime;
+		last;
+	}
+	close $h;
+	return $imgid, $imgreq, $unixtime;
+}
+
+sub read_sleeping_imgreq ($) {
+	my ($imgid) = @_;
+	my $f = "$main::WORKDIR/aq_img/$imgid.json";
+	open my $h, '<', $f or do die "$f: cannot open, stopped";
+	my $json = join "", <$h>;
+	close $h;
+	my $r = eval { $JSON->decode($json); };
+	my ( $dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
+	     $atime,$mtime,$ctime,$blksize,$blocks ) = stat $f;
+	return $r, $mtime;
+}
+
+sub put_imgreq_to_sleep ($) {
+	my ($imgid) = @_;
+	my $f = "$main::WORKDIR/aq_imgdl/$imgid.json";
+	my $g = "$main::WORKDIR/aq_img/$imgid.json";
+	rename $f, $g or die "$f: cannot rename, stopped";
+	open my $h, ">>", $g or die "$g: cannot open, stopped";
+	close $h;
+}
+
+sub wakeup_imgreq ($) {
+	my ($imgid) = @_;
+	my $f = "$main::WORKDIR/aq_img/$imgid.json";
+	my $g = "$main::WORKDIR/aq_imgdl/$imgid.json";
+	rename $f, $g or die "$f: cannot rename, stopped";
+}
+
+sub remove_imgreq ($) {
+	my ($imgid) = @_;
+	my $f = "$main::WORKDIR/aq_img/$imgid.json";
+	unlink $f;
+}
+
+sub download_img ($$$) {
+	my ($conf, $grafanatoken, $imgreq) = @_;
+	my $imgid   = $$imgreq{imgid};
+	my $uuid    = $$imgreq{uuid};
+	my $panelid = $$imgreq{panelid};
+	my $url     = $$imgreq{url};
+	my $param   = $$imgreq{param};
+	my $png = download_panel_png_from_grafana $url, $grafanatoken, $param;
+	write_png $conf, $uuid, $panelid, $png;
+}
 
 ####
 

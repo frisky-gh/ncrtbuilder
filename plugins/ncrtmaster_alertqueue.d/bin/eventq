@@ -29,7 +29,7 @@ if    ( $subcmd eq "update" ){
 	my @existing_alertgroups = list_eventqueue;
 
 	my $sortedevents = new_sortedevents @$fixed_alertgroups, @existing_alertgroups;
-	get_and_sort_events $sortedevents, $sortrules_of_host, $sortrules_of_service, $sortrules_of_perf;
+	load_and_sort_events $sortedevents, $sortrules_of_host, $sortrules_of_service, $sortrules_of_perf;
 
 	my $timestamp = mktimestamp;
 	write_sortedevents $sortedevents, $timestamp;

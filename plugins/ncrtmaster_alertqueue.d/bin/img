@@ -1,0 +1,64 @@
+#!/usr/bin/perl
+
+our $TOOLHOME;
+BEGIN {
+	$0 =~ m"^(.*)/";
+	$TOOLHOME = ` cd "$1/.." && pwd || echo . `;
+	chomp $TOOLHOME;
+}
+use lib "$TOOLHOME/lib/perl5";
+use NCRTAlertQueue;
+use NCRTAlertQueue::Web;
+
+use strict;
+
+if( @ARGV < 3 ){
+	print "usage: % $0 {open|close|update|cleanup} CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+my $subcmd = $ARGV[0];
+our $CONFDIR = $ARGV[1];
+our $WORKDIR = $ARGV[2];
+
+#### Main Entry Point of Image Dowload Management
+
+if    ( $subcmd eq "download" ){
+	my ($gdhurl, $grafanatoken) = get_gdhurl_and_grafanatoken;
+	my $conf = load_conf;
+
+	foreach my $i ( 1 .. 20 ){
+		my ($imgid, $imgreq, $unixtime) = pickup_imgreq;
+		last unless defined $imgid;
+
+		download_img $conf, $grafanatoken, $imgreq;
+		put_imgreq_to_sleep $imgid;
+	}
+
+}elsif( $subcmd eq "refresh" ){
+	my $now = time;
+	my @imgids = list_sleeping_imgreqs;
+	foreach my $imgid ( @imgids ){
+		my ($imgreq, $unixtime) = read_sleeping_imgreq $imgid;
+		my $graph_timespan = $$imgreq{GRAPH_TIMESPAN};
+		next unless $unixtime + $graph_timespan*60 < $now;
+		wakeup_imgreq $imgid;
+	}
+
+}elsif( $subcmd eq "cleanup" ){
+	my $now = time;
+	my @imgids = list_sleeping_imgreqs;
+	foreach my $imgid ( @imgids ){
+		my ($imgreq, $unixtime) = read_sleeping_imgreq $imgid;
+		my $uuid = $$imgreq{uuid};
+		next if reportstatus_exists "panel", $uuid;
+		remove_imgreq $imgid;
+	}
+
+}else{
+	die "unknown sub command, stopped";
+}
+
+exit 0;
+
+

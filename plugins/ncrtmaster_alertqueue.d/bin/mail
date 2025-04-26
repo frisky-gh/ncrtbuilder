@@ -40,7 +40,7 @@ if    ( $subcmd eq "open" ){
 			$alertgroup, $creation_unixtime, $now,
 			$fired_hosts, $fired_services,  $fired_perfs;
 
-		my ($latest_status) = load_latest_eventbasket $alertgroup;
+		my ($latest_status) = read_latest_eventbasket $alertgroup;
 		my $firing_hosts    = $$latest_status{host_events};
 		my $firing_services = $$latest_status{service_events};
 		my $firing_perfs    = $$latest_status{perf_events};
@@ -82,7 +82,7 @@ if    ( $subcmd eq "open" ){
 			$alertgroup, $reporting_unixtime, $now,
 			$fired_hosts, $fired_services,  $fired_perfs;
 
-		my ($latest_status) = load_latest_eventbasket $alertgroup;
+		my ($latest_status) = read_latest_eventbasket $alertgroup;
 		my $firing_hosts    = $$latest_status{host_events};
 		my $firing_services = $$latest_status{service_events};
 		my $firing_perfs    = $$latest_status{perf_events};
@@ -117,7 +117,7 @@ if    ( $subcmd eq "open" ){
 			$alertgroup, $reporting_unixtime, $now,
 			$fired_hosts, $fired_services,  $fired_perfs;
 
-		my ($latest_status) = load_latest_eventbasket $alertgroup;
+		my ($latest_status) = read_latest_eventbasket $alertgroup;
 		my $firing_hosts    = $$latest_status{host_events};
 		my $firing_services = $$latest_status{service_events};
 		my $firing_perfs    = $$latest_status{perf_events};

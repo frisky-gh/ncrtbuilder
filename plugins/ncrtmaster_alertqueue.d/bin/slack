@@ -27,8 +27,9 @@ if    ( $subcmd eq "open" ){
 	my $rules = load_reportrules;
 	my @alertgroups = list_eventqueue;
 	foreach my $alertgroup ( @alertgroups ){
-		my ($uuid, $creation_unixtime) = read_alertid $alertgroup;
+		my ($uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
 		next unless defined $uuid;
+		next if defined $prev_uuid;
 		my ($last_alertgroup, $reporting_unixtime) = read_reportstatus "slack", $uuid;
 		next if $last_alertgroup eq $alertgroup;
 
@@ -40,7 +41,7 @@ if    ( $subcmd eq "open" ){
 			$alertgroup, $creation_unixtime, $now,
 			$fired_hosts, $fired_services,  $fired_perfs;
 
-		my ($latest_status) = load_latest_eventbasket $alertgroup;
+		my ($latest_status) = read_latest_eventbasket $alertgroup;
 		my $firing_hosts    = $$latest_status{host_events};
 		my $firing_services = $$latest_status{service_events};
 		my $firing_perfs    = $$latest_status{perf_events};
@@ -71,8 +72,9 @@ if    ( $subcmd eq "open" ){
 	foreach my $uuid ( @uuids ){
 		my ($alertgroup, $reporting_unixtime, $status) = read_reportstatus "slack", $uuid;
 		next unless defined $alertgroup;
-		my ($last_uuid, $creation_unixtime) = read_alertid $alertgroup;
+		my ($last_uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
 		next if $last_uuid eq $uuid;
+		next if $prev_uuid eq $uuid;
 
 		my $now = time;
 		my $fired_hosts    = $$status{fired_hosts};
@@ -82,7 +84,7 @@ if    ( $subcmd eq "open" ){
 			$alertgroup, $reporting_unixtime, $now,
 			$fired_hosts, $fired_services,  $fired_perfs;
 
-		my ($latest_status) = load_latest_eventbasket $alertgroup;
+		my ($latest_status) = read_latest_eventbasket $alertgroup;
 		my $firing_hosts    = $$latest_status{host_events};
 		my $firing_services = $$latest_status{service_events};
 		my $firing_perfs    = $$latest_status{perf_events};
@@ -97,6 +99,48 @@ if    ( $subcmd eq "open" ){
 	}
 
 }elsif( $subcmd eq "rename" ){
+	my $rules = load_reportrules;
+	my @alertgroups = list_eventqueue;
+	foreach my $alertgroup ( @alertgroups ){
+		my ($next_uuid, $renaming_unixtime, $prev_uuid) = read_alertid $alertgroup;
+		next unless defined $prev_uuid;
+		my ($alertgroup, $reporting_unixtime, $status) = read_reportstatus "slack", $prev_uuid;
+		next unless defined $alertgroup;
+
+		my $now = time;
+		my $fired_hosts    = $$status{fired_hosts};
+		my $fired_services = $$status{fired_services};
+		my $fired_perfs    = $$status{fired_perfs};
+		my ($host_story, $service_story, $perf_story) = output_course_of_events
+			$alertgroup, $reporting_unixtime, $now,
+			$fired_hosts, $fired_services,  $fired_perfs;
+
+		my ($latest_status) = read_latest_eventbasket $alertgroup;
+		my $firing_hosts    = $$latest_status{host_events};
+		my $firing_services = $$latest_status{service_events};
+		my $firing_perfs    = $$latest_status{perf_events};
+
+		my $urls = get_slack_urls $rules, $alertgroup;
+
+		write_to_slack $alertgroup, $next_uuid, $now, "rename", $urls,
+	       		$host_story, $service_story, $perf_story,
+			$firing_hosts, $firing_services, $firing_perfs;
+
+		write_reportstatus "slack", $next_uuid, $alertgroup, $now, {
+			"fired_hosts" => $fired_hosts,
+			"fired_services" => $fired_services,
+			"fired_perfs" => $fired_perfs,
+			"latest_firing_hosts" => $firing_hosts,
+			"latest_firing_services" => $firing_services,
+			"latest_firing_perfs" => $firing_perfs,
+			"latest_host_story" => $host_story,
+			"latest_service_story" => $service_story,
+			"latest_perf_story" => $perf_story,
+			"latest_urls" => $urls,
+		};
+		remove_reportstatus "slack", $prev_uuid;
+	}
+
 }else{
 	die "unknown sub command, stopped";
 }
