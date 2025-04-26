@@ -52,7 +52,7 @@ inc/
 /conf/plugins/agentless/*.conf
 /conf/plugins/indirect/*.conf
 /conf/plugins/reporter/*.conf
-/conf/plugins/reporter/*.rules
+/conf/plugins/reporter/*.*rules
 /conf/plugins/reporter/*.tt
 /conf/plugins/agenttype/*.conf
 /conf/plugins/agenttype/*.pem
