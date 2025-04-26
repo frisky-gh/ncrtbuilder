@@ -4,10 +4,6 @@ package NCRTAlertQueue;
 
 use Exporter import;
 our @EXPORT = (
-	"openlog",
-	"debuglog",
-	"errorlog",
-
 	"mktimestamp",
 	"mkuuid",
 
@@ -17,6 +13,10 @@ our @EXPORT = (
 	"path_encode",
 	"path_decode ",
 	"expand_named_placeholders",
+
+	"openlog",
+	"debuglog",
+	"errorlog",
 
 	"system_or_die",
 	"run_as_background",
@@ -101,6 +101,7 @@ sub load_conf () {
 		die "$f:$.: invalid format, stopped" unless m"^(\w+)=(.*)";
 		$conf{$1} = $2;
 	}
+	$DEBUG = $conf{DEBUG};
 	return \%conf;
 }
 
@@ -281,36 +282,6 @@ sub safesprintf ( @ ){
 	return $text;
 }
 
-our $LOG_HANDLE;
-sub openlog () {
-	open $LOG_HANDLE, '>>', "$main::WORKDIR/alertqueue.log" or return;
-	my $old = select $LOG_HANDLE;
-	$| = 1;
-	select $old;
-}
-
-sub debuglog ( $;@ ){
-	return unless $DEBUG;
-	openlog unless defined $LOG_HANDLE;
-	print $LOG_HANDLE mktimestamp(time), " ", safesprintf(@_), "\n";
-}
-
-sub errorlog ( $;@ ){
-	openlog unless defined $LOG_HANDLE;
-	print $LOG_HANDLE mktimestamp(time), " ", safesprintf(@_), "\n";
-}
-
-sub var2ltsv ( \% ){
-	my ($var) = @_;
-	my @ltsv;
-	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
-	foreach my $k ( sort {$a cmp $b} keys %$var ){
-		next if $k eq 'timestamp';
-		push @ltsv, "$k:".$var->{$k};
-	}
-	return join "\t", @ltsv;
-}
-
 sub ltsv2var ( $ ){
 	my ($ltsv) = @_;
 	my %var;
@@ -345,6 +316,37 @@ sub expand_named_placeholders ($%) {
 		$r;
 	}egx;
 	return $text;
+}
+
+####
+our $LOG_HANDLE;
+sub openlog () {
+	open $LOG_HANDLE, '>>', "$main::WORKDIR/alertqueue.log" or return;
+	my $old = select $LOG_HANDLE;
+	$| = 1;
+	select $old;
+}
+
+sub debuglog ( $;@ ){
+	return unless $DEBUG;
+	openlog unless defined $LOG_HANDLE;
+	print $LOG_HANDLE mktimestamp(time), " ", safesprintf(@_), "\n";
+}
+
+sub errorlog ( $;@ ){
+	openlog unless defined $LOG_HANDLE;
+	print $LOG_HANDLE mktimestamp(time), " ", safesprintf(@_), "\n";
+}
+
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
+	foreach my $k ( sort {$a cmp $b} keys %$var ){
+		next if $k eq 'timestamp';
+		push @ltsv, "$k:".$var->{$k};
+	}
+	return join "\t", @ltsv;
 }
 
 #### I/O functions

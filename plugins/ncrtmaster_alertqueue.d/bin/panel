@@ -20,12 +20,13 @@ if( @ARGV < 3 ){
 my $subcmd = $ARGV[0];
 our $CONFDIR = $ARGV[1];
 our $WORKDIR = $ARGV[2];
+my $conf = load_conf;
 
 #### Main Entry Point of Panel Attributes Management
 
 if    ( $subcmd eq "update" ){
+	debuglog "panel: $subcmd: start.";
 	my ($gdhurl, $grafanatoken) = get_gdhurl_and_grafanatoken;
-	my $conf = load_conf;
 	my $rules = load_reportrules;
 
 	my @web_uuids = list_reportstatus "web";
@@ -48,8 +49,30 @@ if    ( $subcmd eq "update" ){
 			"panelbasket" => $panelbasket,
 		};
 	}
+	debuglog "panel: $subcmd: complete.";
+
+}elsif( $subcmd eq "rename" ){
+	debuglog "panel: $subcmd: start.";
+	my @alertgroups = list_panelueue;
+	foreach my $alertgroup ( @alertgroups ){
+		my ($next_uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
+		next unless defined $prev_uuid;
+		my ($prev_alertgroup, $reporting_unixtime, $status) = read_reportstatus "panel", $prev_uuid;
+		next unless defined $prev_alertgroup;
+
+		my $now = time;
+		my $panelbasket = $$status{panelbasket};
+		rename_imgreqs_of_panelbasket $panelbasket, $next_uuid;
+
+		write_reportstatus "panel", $next_uuid, $alertgroup, $now, {
+			"panelbasket" => $panelbasket,
+		};
+		remove_reportstatus "panel", $prev_uuid;
+	}
+	debuglog "panel: $subcmd: complete.";
 
 }elsif( $subcmd eq "close" ){
+	debuglog "panel: $subcmd: start.";
 	my @uuids = list_reportstatus "panel";
 	foreach my $uuid ( @uuids ){
 		my ($alertgroup, $unixtime, $web_status) = read_reportstatus "web", $uuid;
@@ -62,8 +85,10 @@ if    ( $subcmd eq "update" ){
 
 		remove_reportstatus "panel", $uuid;
 	}
+	debuglog "panel: $subcmd: complete.";
 
 }elsif( $subcmd eq "cleanup" ){
+	debuglog "panel: $subcmd: start.";
 	my @uuids = list_reportstatus "panel";
 	foreach my $uuid ( @uuids ){
 		my ($alertgroup, $unixtime, $web_status) = read_reportstatus "web", $uuid;
@@ -71,6 +96,7 @@ if    ( $subcmd eq "update" ){
 
 		remove_reportstatus "panel", $uuid;
 	}
+	debuglog "panel: $subcmd: complete.";
 
 }else{
 	die "unknown sub command, stopped";

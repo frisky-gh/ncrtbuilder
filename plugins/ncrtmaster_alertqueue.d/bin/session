@@ -19,10 +19,12 @@ if( @ARGV < 3 ){
 my $subcmd = $ARGV[0];
 our $CONFDIR = $ARGV[1];
 our $WORKDIR = $ARGV[2];
+my $conf = load_conf;
 
 #### Main Entry Point of Session Management
 
 if    ( $subcmd eq "open" ){
+	debuglog "session: $subcmd: start.";
 	my $now_min = int( time / 60 );
 	my @alertgroups = list_eventqueue;
 	foreach my $alertgroup ( @alertgroups ){
@@ -52,8 +54,10 @@ if    ( $subcmd eq "open" ){
 		my $uuid = mkuuid;
 		write_alertid $alertgroup, $uuid, $latest_unixtime;
 	}
+	debuglog "session: $subcmd: complete.";
 
 }elsif( $subcmd eq "close" ){
+	debuglog "session: $subcmd: start.";
 	my $now = time;
 	my @alertgroups = list_eventqueue;
 	my $rules = load_reportrules;
@@ -82,8 +86,10 @@ if    ( $subcmd eq "open" ){
 
 		remove_alertid $alertgroup;
 	}
+	debuglog "session: $subcmd: complete.";
 
 }elsif( $subcmd eq "rename" ){
+	debuglog "session: $subcmd: start.";
 	my $now = time;
 	my @alertgroups = list_eventqueue;
 	my $rules = load_reportrules;
@@ -97,8 +103,10 @@ if    ( $subcmd eq "open" ){
 		my $uuid = mkuuid;
 		write_alertid $alertgroup, $uuid, $now, $last_uuid;
 	}
+	debuglog "session: $subcmd: complete.";
 
 }elsif( $subcmd eq "cleanup" ){
+	debuglog "session: $subcmd: start.";
 	my $now = time;
 	my @alertgroups = list_eventqueue;
 	my $rules = load_reportrules;
@@ -130,6 +138,7 @@ if    ( $subcmd eq "open" ){
 
 		remove_eventqueue $alertgroup;
 	}
+	debuglog "session: $subcmd: complete.";
 
 }else{
 	die "unknown sub command, stopped";

@@ -20,12 +20,14 @@ if( @ARGV < 3 ){
 my $subcmd = $ARGV[0];
 our $CONFDIR = $ARGV[1];
 our $WORKDIR = $ARGV[2];
+my $conf = load_conf;
 
 #### Main Entry Point of Slack Management
 
 if    ( $subcmd eq "open" ){
+	debuglog "slack: $subcmd: start.";
 	my $rules = load_reportrules;
-	my @alertgroups = list_eventqueue;
+	my @alertgroups = list_slackueue;
 	foreach my $alertgroup ( @alertgroups ){
 		my ($uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
 		next unless defined $uuid;
@@ -65,8 +67,10 @@ if    ( $subcmd eq "open" ){
 			"latest_urls" => $urls,
 		};
 	}
+	debuglog "slack: $subcmd: complete.";
 
 }elsif( $subcmd eq "close" ){
+	debuglog "slack: $subcmd: start.";
 	my $rules = load_reportrules;
 	my @uuids = list_reportstatus "slack";
 	foreach my $uuid ( @uuids ){
@@ -97,10 +101,12 @@ if    ( $subcmd eq "open" ){
 
 		remove_reportstatus "slack", $uuid;
 	}
+	debuglog "slack: $subcmd: complete.";
 
 }elsif( $subcmd eq "rename" ){
+	debuglog "slack: $subcmd: start.";
 	my $rules = load_reportrules;
-	my @alertgroups = list_eventqueue;
+	my @alertgroups = list_slackueue;
 	foreach my $alertgroup ( @alertgroups ){
 		my ($next_uuid, $renaming_unixtime, $prev_uuid) = read_alertid $alertgroup;
 		next unless defined $prev_uuid;
@@ -140,6 +146,7 @@ if    ( $subcmd eq "open" ){
 		};
 		remove_reportstatus "slack", $prev_uuid;
 	}
+	debuglog "slack: $subcmd: complete.";
 
 }else{
 	die "unknown sub command, stopped";

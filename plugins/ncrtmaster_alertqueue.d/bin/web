@@ -20,12 +20,13 @@ if( @ARGV < 3 ){
 my $subcmd = $ARGV[0];
 our $CONFDIR = $ARGV[1];
 our $WORKDIR = $ARGV[2];
+my $conf = load_conf;
 
 #### Main Entry Point of Wwb Page Management
 
 if    ( $subcmd eq "open" ){
-	my $conf = load_conf;
-	my @alertgroups = list_eventqueue;
+	debuglog "web: $subcmd: start.";
+	my @alertgroups = list_webueue;
 	foreach my $alertgroup ( @alertgroups ){
 		my ($uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
 		next unless defined $uuid;
@@ -67,9 +68,10 @@ if    ( $subcmd eq "open" ){
 			"latest_perf_story" => $perf_story,
 		};
 	}
+	debuglog "web: $subcmd: complete.";
 
 }elsif( $subcmd eq "close" ){
-	my $conf = load_conf;
+	debuglog "web: $subcmd: start.";
 	my @uuids = list_reportstatus "web";
 	foreach my $uuid ( @uuids ){
 		my ($alertgroup, $reporting_unixtime, $status) = read_reportstatus "web", $uuid;
@@ -113,19 +115,19 @@ if    ( $subcmd eq "open" ){
 			"latest_perf_story" => $perf_story,
 		};
 	}
+	debuglog "web: $subcmd: complete.";
 
 }elsif( $subcmd eq "rename" ){
-	my $conf = load_conf;
-	my @uuids = list_reportstatus "web";
-	foreach my $uuid ( @uuids ){
-		my ($alertgroup, $reporting_unixtime, $status) = read_reportstatus "web", $uuid;
-		next unless defined $alertgroup;
+	debuglog "web: $subcmd: start.";
+	my @alertgroups = list_webueue;
+	foreach my $alertgroup ( @alertgroups ){
+		my ($next_uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
+		next unless defined $prev_uuid;
+		my ($prev_alertgroup, $reporting_unixtime, $status) = read_reportstatus "web", $prev_uuid;
 		my $session_status = $$status{session_status};
 		next unless $session_status eq "opened";
-		my ($next_uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
-		next unless $uuid eq $prev_uuid;
 
-		my ($panel_alertgroup, $panel_unixtime, $panel_status) = read_reportstatus "panel", $uuid;
+		my ($panel_alertgroup, $panel_unixtime, $panel_status) = read_reportstatus "panel", $prev_uuid;
 		my $panels = $$panel_status{panelbasket}->{panels};
 
 		my $now = time;
@@ -141,13 +143,13 @@ if    ( $subcmd eq "open" ){
 		my $firing_services = $$latest_status{service_events};
 		my $firing_perfs    = $$latest_status{perf_events};
 
-		rename_webpage $conf, $uuid, $next_uuid;
-		write_webpage $conf, $alertgroup, $uuid, $now, "rename",
+		rename_webpage $conf, $prev_uuid, $next_uuid;
+		write_webpage $conf, $alertgroup, $prev_uuid, $now, "rename",
 	       		$host_story, $service_story, $perf_story,
 			$firing_hosts, $firing_services, $firing_perfs,
 			$panels, $next_uuid;
 
-		write_reportstatus "web", $uuid, $alertgroup, $now, {
+		write_reportstatus "web", $prev_uuid, $alertgroup, $now, {
 			"session_status" => "renamed",
 			"fired_hosts" => $fired_hosts,
 			"fired_services" => $fired_services,
@@ -178,9 +180,10 @@ if    ( $subcmd eq "open" ){
 			"latest_perf_story" => $perf_story,
 		};
 	}
+	debuglog "web: $subcmd: complete.";
 
 }elsif( $subcmd eq "update" ){
-	my $conf = load_conf;
+	debuglog "web: $subcmd: start.";
 	my @uuids = list_reportstatus "web";
 	foreach my $uuid ( @uuids ){
 		my ($alertgroup, $reporting_unixtime, $status) = read_reportstatus "web", $uuid;
@@ -222,9 +225,10 @@ if    ( $subcmd eq "open" ){
 			"latest_perf_story" => $perf_story,
 		};
 	}
+	debuglog "web: $subcmd: complete.";
 
 }elsif( $subcmd eq "cleanup" ){
-	my $conf = load_conf;
+	debuglog "web: $subcmd: start.";
 	my $rules = load_reportrules;
 	my @uuids = list_reportstatus "web";
 	foreach my $uuid ( @uuids ){
@@ -254,6 +258,7 @@ if    ( $subcmd eq "open" ){
 			remove_reportstatus "web", $uuid;
 		}
 	}
+	debuglog "web: $subcmd: complete.";
 
 }else{
 	die "unknown sub command, stopped";

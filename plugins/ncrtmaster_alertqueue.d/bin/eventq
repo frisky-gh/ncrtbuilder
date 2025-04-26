@@ -19,12 +19,14 @@ if( @ARGV < 3 ){
 my $subcmd = $ARGV[0];
 our $CONFDIR = $ARGV[1];
 our $WORKDIR = $ARGV[2];
+my $conf = load_conf;
 
 our $LIVESTATUS_SOCKET = "/var/cache/naemon/live";
 
 #### Main Entry Point
 
 if    ( $subcmd eq "update" ){
+	debuglog "eventq: $subcmd: start.";
 	my ($sortrules_of_host, $sortrules_of_service, $sortrules_of_perf, $fixed_alertgroups) = load_alertrules;
 	my @existing_alertgroups = list_eventqueue;
 
@@ -33,12 +35,15 @@ if    ( $subcmd eq "update" ){
 
 	my $timestamp = mktimestamp;
 	write_sortedevents $sortedevents, $timestamp;
+	debuglog "eventq: $subcmd: complete.";
 
 }elsif( $subcmd eq "cleanup" ){
+	debuglog "eventq: $subcmd: start.";
 	my ($sortrules_of_host, $sortrules_of_service, $sortrules_of_perf, $fixed_alertgroups) = load_alertrules;
 	my @existing_alertgroups = list_eventqueue;
 
 	cleanup_eventqueues @$fixed_alertgroups, @existing_alertgroups;
+	debuglog "eventq: $subcmd: complete.";
 
 }else{
 	die "unknown sub command, stopped";

@@ -6,6 +6,7 @@ use Exporter import;
 our @EXPORT = (
 	"get_gdhurl_and_grafanatoken",
 
+	"there_is_webpage",
 	"remove_webpage",
 	"rename_webpage",
 	"write_webpage",
@@ -15,6 +16,7 @@ our @EXPORT = (
 	"download_panels_in_panelbasket",
 	"create_imgreqs_of_panelbasket_if_not_exists",
 	"wakeup_imgreqs_of_panelbasket",
+	"rename_imgreqs_of_panelbasket",
 
 	"list_sleeping_imgreqs",
 	"read_sleeping_imgreq",
@@ -22,6 +24,7 @@ our @EXPORT = (
 	"wakeup_imgreq",
 	"put_imgreq_to_sleep",
 	"remove_imgreq",
+	"rename_imgreq",
 	"download_img",
 );
 
@@ -82,6 +85,14 @@ sub get_gdhurl_and_grafanatoken () {
 }
 
 ####
+
+sub there_is_webpage ($$) {
+	my ($conf, $uuid) = @_;
+	my $sessiondir = $$conf{SESSIONDIR};
+
+	my $d = "$sessiondir/$uuid";
+	return -d $d;
+}
 
 sub remove_webpage ($$) {
 	my ($conf, $uuid) = @_;
@@ -220,6 +231,28 @@ sub wakeup_imgreqs_of_panelbasket ($) {
 	}
 }
 
+sub rename_imgreqs_of_panelbasket ($$) {
+	my ($panelbasket, $uuid) = @_;
+	$$panelbasket{uuid} = $uuid;
+	my $panels = $$panelbasket{panels};
+	foreach my $panel ( @$panels ){
+		my $panelid    = $$panel{panelid};
+		my $prev_imgid = $$panel{imgid};
+		my $imgid      = "$uuid+$panelid";
+		$$panel{uuid}  = $uuid;
+		$$panel{imgid} = $imgid;
+		rename_imgreq($prev_imgid, $imgid, $uuid);
+	}
+	my $panels_of_perf = $$panelbasket{panels_of_perf};
+	foreach my $panel ( values %$panels_of_perf ){
+		my $panelid    = $$panel{panelid};
+		my $prev_imgid = $$panel{imgid};
+		my $imgid      = "$uuid+$panelid";
+		$$panel{uuid}  = $uuid;
+		$$panel{imgid} = $imgid;
+	}
+}
+
 ### ImgReq Functions
 
 sub list_sleeping_imgreqs () {
@@ -290,7 +323,32 @@ sub wakeup_imgreq ($) {
 sub remove_imgreq ($) {
 	my ($imgid) = @_;
 	my $f = "$main::WORKDIR/aq_img/$imgid.json";
-	unlink $f;
+	my $g = "$main::WORKDIR/aq_imgdl/$imgid.json";
+	unlink $f if -f $f;
+	unlink $g if -f $g;
+}
+
+sub rename_imgreq ($$$) {
+	my ($imgid, $next_imgid, $uuid) = @_;
+	foreach my $qname ("aq_img", "aq_imgdl"){
+		my $f = "$main::WORKDIR/$qname/$imgid.json";
+		next unless -f $f;
+
+		open my $h, '<', $f or do die "$f: cannot open, stopped";
+		my $json = join "", <$h>;
+		close $h;
+		my $imgreq = eval { $JSON->decode($json); };
+
+		$$imgreq{uuid} = $uuid;
+		$$imgreq{imgid} = $next_imgid;
+
+		my $g = "$main::WORKDIR/$qname/$next_imgid.json";
+		open my $h, ">", $g or die "$g: cannot open, stopped";
+		print $h eval{ $JSON->encode($imgreq); }, "\n";
+		close $h;
+
+		unlink $f;
+	}
 }
 
 sub download_img ($$$) {

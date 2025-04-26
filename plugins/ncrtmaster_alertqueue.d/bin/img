@@ -20,22 +20,31 @@ if( @ARGV < 3 ){
 my $subcmd = $ARGV[0];
 our $CONFDIR = $ARGV[1];
 our $WORKDIR = $ARGV[2];
+my $conf = load_conf;
 
 #### Main Entry Point of Image Dowload Management
 
 if    ( $subcmd eq "download" ){
+	debuglog "img: $subcmd: start.";
 	my ($gdhurl, $grafanatoken) = get_gdhurl_and_grafanatoken;
-	my $conf = load_conf;
 
 	foreach my $i ( 1 .. 20 ){
 		my ($imgid, $imgreq, $unixtime) = pickup_imgreq;
 		last unless defined $imgid;
 
+		my $uuid = $$imgreq{uuid};
+		unless( there_is_webpage $conf, $uuid ){
+			remove_imgreq $imgid;
+			next;
+		}
+
 		download_img $conf, $grafanatoken, $imgreq;
 		put_imgreq_to_sleep $imgid;
 	}
+	debuglog "img: $subcmd: complete.";
 
 }elsif( $subcmd eq "refresh" ){
+	debuglog "img: $subcmd: start.";
 	my $now = time;
 	my @imgids = list_sleeping_imgreqs;
 	foreach my $imgid ( @imgids ){
@@ -44,8 +53,10 @@ if    ( $subcmd eq "download" ){
 		next unless $unixtime + $graph_timespan*60 < $now;
 		wakeup_imgreq $imgid;
 	}
+	debuglog "img: $subcmd: complete.";
 
 }elsif( $subcmd eq "cleanup" ){
+	debuglog "img: $subcmd: start.";
 	my $now = time;
 	my @imgids = list_sleeping_imgreqs;
 	foreach my $imgid ( @imgids ){
@@ -54,6 +65,7 @@ if    ( $subcmd eq "download" ){
 		next if reportstatus_exists "panel", $uuid;
 		remove_imgreq $imgid;
 	}
+	debuglog "img: $subcmd: complete.";
 
 }else{
 	die "unknown sub command, stopped";

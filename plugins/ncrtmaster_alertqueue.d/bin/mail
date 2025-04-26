@@ -20,12 +20,14 @@ if( @ARGV < 3 ){
 my $subcmd = $ARGV[0];
 our $CONFDIR = $ARGV[1];
 our $WORKDIR = $ARGV[2];
+my $conf = load_conf;
 
 #### Main Entry Point of Slack Management
 
 if    ( $subcmd eq "open" ){
+	debuglog "mail: $subcmd: start.";
 	my $rules = load_reportrules;
-	my @alertgroups = list_eventqueue;
+	my @alertgroups = list_mailueue;
 	foreach my $alertgroup ( @alertgroups ){
 		my ($uuid, $creation_unixtime) = read_alertid $alertgroup;
 		next unless defined $uuid;
@@ -64,8 +66,10 @@ if    ( $subcmd eq "open" ){
 			"latest_addresses" => $addresses,
 		};
 	}
+	debuglog "mail: $subcmd: complete.";
 
 }elsif( $subcmd eq "close" ){
+	debuglog "mail: $subcmd: start.";
 	my $rules = load_reportrules;
 	my @uuids = list_reportstatus "mail";
 	foreach my $uuid ( @uuids ){
@@ -95,8 +99,10 @@ if    ( $subcmd eq "open" ){
 
 		remove_reportstatus "mail", $uuid;
 	}
+	debuglog "mail: $subcmd: complete.";
 
 }elsif( $subcmd eq "update" ){
+	debuglog "mail: $subcmd: start.";
 	my $rules = load_reportrules;
 	my @uuids = list_reportstatus "mail";
 	foreach my $uuid ( @uuids ){
@@ -141,6 +147,7 @@ if    ( $subcmd eq "open" ){
 			"latest_addresses" => $addresses,
 		};
 	}
+	debuglog "mail: $subcmd: complete.";
 
 }else{
 	die "unknown sub command, stopped";
