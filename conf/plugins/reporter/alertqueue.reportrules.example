@@ -1,0 +1,26 @@
+
+
+alert: .*
+	MAILFROM=ncrt-alertqueue@exapmle.com
+
+	UPDATE_TIMESPAN=10
+	RESEND_TIMESPAN=30
+	CLOSE_TIMESPAN=30
+	EXPIRE_TIMESPAN=10080
+	RENAME_TIMESPAN=8640
+	CLEANUP_TIMESPAN=7200
+
+	GRAPH_TIMEOUT=30
+	GRAPH_TIMESPAN=480
+
+alert: .*_Staging
+	UPDATE_TIMESPAN=120
+	RESEND_TIMESPAN=720
+	CLOSE_TIMESPAN=120
+	slack https://hooks.slack.com/services/XXXX
+
+alert: .*_Product
+	mail emergency@example.com
+	slack https://hooks.slack.com/services/YYYY
+
+

@@ -1,0 +1,26 @@
+
+=== .* ===
+MAILFROM=naemon-admin@example.com
+
+UPDATE_TIMESPAN=10
+RESEND_TIMESPAN=30
+CLOSE_TIMESPAN=30
+EXPIRE_TIMESPAN=1440
+RENAME_TIMESPAN=720
+
+GRAPH_TIMESPAN=720
+GRAPH_TIMEOUT=10
+
+=== .*Staging ===
+RESEND_TIMESPAN=720
+RENAME_TIMESPAN=2880
+
+=== .*Product ===
+mail operaters@example.com
+slack https://hooks.slack.com/services/XXXX/YYYY/ZZZZ
+
+=== .*Staging ===
+mail developers@example.com
+
+
+

@@ -1,0 +1,17 @@
+
+alert_of_host:		<HOSTGROUP>
+	host_groups~	(?<HOSTGROUP>.+)
+
+alert_of_service:	<SERVICEGROUP>
+	service_groups~	(?<SERVICEGROUP>.+)
+
+alert_of_perf:		<SERVICEGROUP>
+	service_groups~	(?<SERVICEGROUP>.+)
+
+
+alert_of_service:	AllWarning
+	state~		Warning
+
+alert_of_service:	AlertForSample
+	host~		samplehost
+	service~	(sampleservice1|sampleservice2)

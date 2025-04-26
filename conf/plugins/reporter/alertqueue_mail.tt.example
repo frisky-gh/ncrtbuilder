@@ -1,0 +1,69 @@
+From: "Naemon AlertQueue Reporter" <[%MAILFROM%]>
+To: "You" <[%MAILTO%]>
+[% IF    ACTION == "open" -%]
+Subject: [NAEMONALERT] "[%=ALERTGROUP%]" is now NG
+[% ELSIF ACTION == "close" -%]
+Subject: [NAEMONALERT] All Status of "[%=ALERTGROUP%]" are OK
+[% ELSIF ACTION == "update" -%]
+Subject: [NAEMONALERT] "[%=ALERTGROUP%]" Has been NG
+[% ELSE -%]
+Subject: [NAEMONALERT] "[%=ALERTGROUP%]" Action "[%=ACTION%]"
+[% END -%]
+
+[% IF FIRING_HOST != "" -%]
+=== Current Host NG Status ===
+host                 service              state
+-------------------- -------------------- ------
+[%     FOREACH ng IN ngservices -%]
+[%=        safesprintf("%-20s %-20s %s", ng.host, ng.service, state) %]
+[%     END -%]
+[% END -%]
+
+[% IF FIRING_SERVICE != "" -%]
+=== Current Service NG Status ===
+host                 service              state
+-------------------- -------------------- ------
+[%     FOREACH i IN FIRING_SERVICE -%]
+[%=        safesprintf("%-20s %-20s %s", i.host, i.service, i.state) %]
+[%     END -%]
+[% ELSE -%]
+=== All Services Have OK Status ===
+[% END -%]
+
+[% IF FIRING_PERF != "" -%]
+=== Current Performance NG Status ===
+host                 service              performance               state
+-------------------- -------------------- ------------------------- --------
+[%-    FOREACH i IN FIRING_PERF -%]
+[%-        IF    i.perfstate == "under_warn" %][% s = i.value _ " < W" _ i.warn -%]
+[%-        ELSIF i.perfstate == "over_warn"  %][% s = "W" _ i.warn _ " < " _ i.value -%]
+[%-        ELSIF i.perfstate == "under_crit" %][% s = i.value _ " < C" _ i.crit -%]
+[%-        ELSIF i.perfstate == "over_crit"  %][% s = "C" _ i.crit _ " < " _ i.value -%]
+[%-        ELSE %][% s = "Unknown" -%]
+[%-        END -%]
+[%=        safesprintf("%-20s %-20s %-25s %s", i.host, i.service, i.perf, s) %]
+[%-    END -%]
+[% END -%]
+
+[% IF TIMEBASED_SERVICE_STORY != "" -%]
+=== Recent Service NG Status Changes ===
+timestamp           host                 service              state change
+------------------- -------------------- -------------------- -------------
+[%-    FOREACH i IN TIMEBASED_SERVICE_STORY -%]
+[%=        safesprintf("%-19s %-20s %-20s %s->%s", i.timestamp, i.host, i.service, i.old_state, i.state) %]
+[%-    END -%]
+[% END -%]
+
+[% IF TIMEBASED_PERF_STORY != "" -%]
+=== Recent Performance NG Status Changes ===
+timestamp           host                 performance          state change
+------------------- -------------------- -------------------- -------------
+[%-    FOREACH i IN TIMEBASED_SERVICE_STORY -%]
+[%=        safesprintf("%-19s %-20s %-20s %s->%s", i.timestamp, i.host, i.perf, i.old_state, i.state) %]
+[%-    END -%]
+[% END -%]
+
+----
+timestamp: [%= NOW %]
+You get lastest NG status at following:
+[% SESSIONURL %]

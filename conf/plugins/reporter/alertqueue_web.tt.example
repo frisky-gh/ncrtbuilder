@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Alert Group "[% ALERTGROUP %]"</title>
+  <style>
+    table, td, th {
+      border-collapse: collapse;
+      border:1px solid #333;
+      padding: 4px;
+    }
+    th { font-size: 14px; font-color: #aaaaaa; }
+    td { font-size: 12px; }
+  </style>
+</head>
+<body>
+[% IF ACTION == "open" || ACTION == "update" || ACTION == "close" -%]
+  [%- IF FIRING_HOST != "" -%]
+  <h3>Alert Group "[% ALERTGROUP %]" Current Host Status</h3>
+  <table>
+    <tr>
+      <th>host</th>
+      <th>service</th>
+      <th>status</th>
+      <th>links</th>
+    </tr>
+    [%- FOREACH i IN FIRING_HOST -%]
+    <tr>
+      <td>[% i.host %]</td>
+      <td>[% i.state %]</td>
+      <td>
+        <a href="/tng/thruk/cgi-bin/extinfo.cgi?type=2&host=[% i.host %]&service=[% i.service %]">Thruk</a>
+        <a href="/tng/grafana-dashboard-helper/jump_to_dashboard.html?dashboard=[% i.host %],[% i.service %]">Grafana</a>
+      </td>
+    </tr>
+    [%- END -%]
+  </table>
+  [%- END -%]
+  [%- IF FIRING_SERVICE != "" -%]
+  <h3>Alert Group "[% ALERTGROUP %]" Current Service Status</h3>
+  <table>
+    <tr>
+      <th>host</th>
+      <th>service</th>
+      <th>status</th>
+      <th>links</th>
+    </tr>
+    [%- FOREACH i IN FIRING_SERVICE -%]
+    <tr>
+      <td>[% i.host %]</td>
+      <td>[% i.service %]</td>
+      <td>[% i.state %]</td>
+      <td>
+        <a href="/tng/thruk/cgi-bin/extinfo.cgi?type=2&host=[% i.host %]&service=[% i.service %]">Thruk</a>
+        <a href="/tng/grafana-dashboard-helper/jump_to_dashboard.html?dashboard=[% i.host %],[% i.service %]">Grafana</a>
+      </td>
+    </tr>
+    [%- END -%]
+  </table>
+  [%- END -%]
+  [%- IF FIRING_PERF != "" -%]
+  <h3>Current Performance Status</h3>
+  <table>
+    <tr>
+      <th>host</th>
+      <th>service</th>
+      <th>performance name</th>
+      <th>state</th>
+      <th>value</th>
+      <th>links</th>
+    </tr>
+    [% FOREACH i IN FIRING_PERF %]
+    [%-     IF    i.perfstate == "under_warn" %][% s = i.value _ " < " _ i.warn -%]
+    [%-     ELSIF i.perfstate == "over_warn"  %][% s = i.warn _ " < " _ i.value -%]
+    [%-     ELSIF i.perfstate == "under_crit" %][% s = i.value _ " < " _ i.crit -%]
+    [%-     ELSIF i.perfstate == "over_crit"  %][% s = i.crit _ " < " _ i.value -%]
+    [%-     END -%]
+    <tr>
+      <td>[% i.host %]</td>
+      <td>[% i.service %]</td>
+      <td>[% i.perf %]</td>
+      <td>[% i.state %]</td>
+      <td>[% s %]</td>
+      <td><a href="#[%= i.host _ "/" _ i.service _ "/" _ i.perf %]">Graphs</a></td>
+    </tr>
+    [% END %]
+  </table>
+  [%- END -%]
+  <h3>Graphs</h3>
+  <ul>
+    [% FOREACH i IN PANELS %]
+    [%-     section = i.host _ "/" _ i.service _ "/" _ i.perf -%]
+    [%      IF section != last_section %]
+    <li id="[%= section %]">[%= i.panel_title %]<br><img src="panel_[%=i.panelid%].png"></li>
+    [%-         last_section = section -%]
+    [%      ELSE %]
+    <li>[%= i.panel_title %]<br><img src="panel_[%=i.panelid%].png"></li>
+    [%      END -%]
+    [% END %]
+  </ul>
+[% ELSIF ACTION == "rename" -%]
+  Next page is <a href="../[%=NEXT_UUID%]/">here.</a>
+[% ELSE -%]
+  Unknown action "[%=ACTION%]".
+[% END -%]
+  [% NOW %] last updated.
+</body>
+</html>

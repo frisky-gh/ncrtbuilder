@@ -1,0 +1,12 @@
+{
+    "text":
+	[%- IF    ACTION == "open" -%]
+	"This is a notification from Naemon.\nWe have a new notice for the Alert Group [%=ALERTGROUP%].\n[% IF FIRING_SERVICE != "" %][% FOREACH i IN FIRING_SERVICE %]Host:[%=i.host%] - Service:[%=i.service%] - State:[%=i.state%]\n[% END %][% END %]Please refer here for the latest information.\n[%=SESSIONURL%]"
+	[%- ELSIF ACTION == "close" -%]
+	"The notice for Alert Group [%=ALERTGROUP%] has been closed."
+	[%- ELSIF ACTION == "rename" -%]
+	"The URL for Alert Group [%=ALERTGROUP%] has been changed.\n[%=SESSIONURL%]"
+	[%- ELSE -%]
+	"Naemon has a notice of [%=ACTION%] for Alert Group [%=ALERTGROUP%]."
+	[%- END -%]
+}
