@@ -27,7 +27,7 @@ my $conf = load_conf;
 if    ( $subcmd eq "open" ){
 	debuglog "mail: $subcmd: start.";
 	my $rules = load_reportrules;
-	my @alertgroups = list_mailueue;
+	my @alertgroups = list_eventqueue;
 	foreach my $alertgroup ( @alertgroups ){
 		my ($uuid, $creation_unixtime) = read_alertid $alertgroup;
 		next unless defined $uuid;

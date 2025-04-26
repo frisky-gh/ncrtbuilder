@@ -53,7 +53,7 @@ if    ( $subcmd eq "update" ){
 
 }elsif( $subcmd eq "rename" ){
 	debuglog "panel: $subcmd: start.";
-	my @alertgroups = list_panelueue;
+	my @alertgroups = list_eventqueue;
 	foreach my $alertgroup ( @alertgroups ){
 		my ($next_uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
 		next unless defined $prev_uuid;

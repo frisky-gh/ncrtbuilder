@@ -26,7 +26,7 @@ my $conf = load_conf;
 
 if    ( $subcmd eq "open" ){
 	debuglog "web: $subcmd: start.";
-	my @alertgroups = list_webueue;
+	my @alertgroups = list_eventqueue;
 	foreach my $alertgroup ( @alertgroups ){
 		my ($uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
 		next unless defined $uuid;
@@ -119,7 +119,7 @@ if    ( $subcmd eq "open" ){
 
 }elsif( $subcmd eq "rename" ){
 	debuglog "web: $subcmd: start.";
-	my @alertgroups = list_webueue;
+	my @alertgroups = list_eventqueue;
 	foreach my $alertgroup ( @alertgroups ){
 		my ($next_uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
 		next unless defined $prev_uuid;
