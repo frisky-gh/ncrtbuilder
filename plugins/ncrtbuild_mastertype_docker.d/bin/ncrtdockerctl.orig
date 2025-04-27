@@ -841,6 +841,8 @@ sub setup_apache_conf () {
 		"\n" .
 		"ProxyPass        ${SERVERSIDE_PATH_PREFIX}grafana-dashboard-helper/ http://localhost:46846/\n" .
 		"ProxyPassReverse ${SERVERSIDE_PATH_PREFIX}grafana-dashboard-helper/ http://localhost:46846/\n" .
+		"\n" .
+		"Alias ${SERVERSIDE_PATH_PREFIX}ncrtmaster /var/www/ncrtmaster\n" .
 #		"\n" .
 #		"<Location ${SERVERSIDE_PATH_PREFIX}thruk/cgi-bin/restricted.cgi>\n" .
 #		"	Options ExecCGI FollowSymLinks\n" .
@@ -967,6 +969,33 @@ sub setup_grafana_dashboard_helper_conf () {
 	create_or_die "$SETTINGSDIR/naemon_etc_grafana-dashboard-helper/ncrt_has_setup_these_conf_files";
 }
 
+sub setup_nullmailer_conf () {
+	my $smtp_server = $CONFIG{SMTP_SERVER};
+	return if $smtp_server eq "";
+
+	return if -f "$SETTINGSDIR/naemon_etc_nullmailer/ncrt_has_setup_these_conf_files";
+	print "[setup_nullmailer_conf]\n";
+
+	write_or_die "$SETTINGSDIR/naemon_etc_nullmailer/remotes",
+		"$smtp_server\n";
+
+	create_or_die "$SETTINGSDIR/naemon_etc_nullmailer/ncrt_has_setup_these_conf_files";
+}
+
+sub setup_syslogd_conf () {
+	my $syslog_server = $CONFIG{SYSLOG_SERVER};
+	return if $syslog_server eq "";
+
+	return if -f "$SETTINGSDIR/naemon_etc_default/ncrt_has_setup_syslogd_conf_file";
+	print "[setup_syslogd_conf]\n";
+
+	system_or_die "sed -i " .
+		"-e 's|^SYSLOG_OPTS=.*|SYSLOG_OPTS=\"-C128 -R $syslog_server\"|' " .
+		"$SETTINGSDIR/naemon_etc_default/busybox-syslogd";
+
+	create_or_die "$SETTINGSDIR/naemon_etc_default/ncrt_has_setup_syslogd_conf_file";
+}
+
 ####
 
 sub cmp_new_userprofiles () {
@@ -1059,6 +1088,16 @@ sub setup_grafana_dashboard_helper () {
 	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/grafana-dashboard-helper reload";
 }
 
+sub setup_syslogd () {
+	setup_syslogd_conf;
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/busybox-syslogd restart";
+}
+
+sub setup_nullmailer () {
+	setup_nullmailer_conf;
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/nullmailer reload";
+}
+
 sub setup () {
 	exit 2 unless docker_is_running;
 	setup_influxdb;
@@ -1068,6 +1107,8 @@ sub setup () {
 	setup_thruk;
 	setup_naemon2influx_conf;
 	setup_grafana_dashboard_helper;
+	setup_syslogd;
+	setup_nullmailer;
 
 	return;
 }
@@ -1120,6 +1161,10 @@ sub status () {
 sub reload () {
 	exit 2 unless docker_is_running;
 
+	# TODO: cron
+	#  echo "* * * * * naemon /opt/ncrtmaster/bin/ncrtreport cron" > /etc/cron.d/ncrtmaster
+	#  /etc/init.d/cron reload
+	# TODO: nullmailer
 	system_or_die "rsync -ax $TOOLHOME/naemondef/  $SETTINGSDIR/naemon_etc_naemon/conf.d/";
 	system_or_die "rsync -ax $SETTINGSDIR/htpasswd $SETTINGSDIR/naemon_etc_thruk/htpasswd";
 	if( naemon_is_running ){
@@ -1127,12 +1172,18 @@ sub reload () {
 	}else{
 		system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/naemon start";
 	}
+
+	system_or_die "echo '* * * * * naemon /opt/ncrtmaster/bin/ncrtreport cron' > $SETTINGSDIR/naemon_etc_cron.d_ncrtmaster";
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG cp $SETTINGSDIR/naemon_etc_cron.d_ncrtmaster ncrt-naemon:/etc/cron.d/ncrtmaster";
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/cron reload";
 }
 
 sub start () {
 	exit 0 if docker_is_running;
 	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG build";
 	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG up -d";
+	sleep 3;
+	reload;
 }
 
 sub stop () {
@@ -1161,6 +1212,9 @@ if    ( $subcmd eq "start" ){
 	stop;
 }elsif( $subcmd eq "reload" ){
 	reload;
+}elsif( $subcmd eq "restart" ){
+	stop;
+	start;
 }elsif( $subcmd eq "status" ){
 	status;
 }elsif( $subcmd eq "setup" ){
