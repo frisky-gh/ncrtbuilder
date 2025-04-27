@@ -32,6 +32,11 @@ if [ "`ls /var/lib/grafana-dashboard-helper/`" = "" ] ;then
 	rsync -aSvx /var/lib/grafana-dashboard-helper_orig/ /var/lib/grafana-dashboard-helper/
 fi
 
+# setup nullmailer
+if [ "`ls /etc/nullmailer/`" = "" ] ;then
+	rsync -aSvx /etc/nullmailer_orig/ /etc/nullmailer/
+fi
+
 ##
 if [ "$LANG" = "" ] ; then
 	echo "LANG=$LANG" > /etc/default/locale
@@ -43,10 +48,6 @@ if [ "$TZ" != "" ] ; then
 		echo "$TZ" > /etc/timezone
 		rm /etc/localtime && ln -s /usr/share/zoneinfo/$TZ /etc/localtime
 	fi
-fi
-if [ "$SYSLOG_SERVER" != "" ] ; then
-	sed -e "s/^SYSLOG_OPTS=.*/SYSLOG_OPTS=\"-C128 -R $SYSLOG_SERVER\"/" \
-		-i /etc/default/busybox-syslogd
 fi
 
 ##

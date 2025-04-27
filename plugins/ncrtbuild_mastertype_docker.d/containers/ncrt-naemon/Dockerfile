@@ -61,6 +61,7 @@ RUN rsync -aSvx /etc/naemon/ /etc/naemon_orig/
 RUN rsync -aSvx /etc/thruk/ /etc/thruk_orig/
 RUN rsync -aSvx /etc/grafana-dashboard-helper/ /etc/grafana-dashboard-helper_orig/
 RUN rsync -aSvx /var/lib/grafana-dashboard-helper/ /var/lib/grafana-dashboard-helper_orig/
+RUN rsync -aSvx /etc/nullmailer/ /etc/nullmailer_orig/
 
 COPY --chown=root:root ./startup.sh /startup.sh
 RUN mkdir /opt/ncrtmaster

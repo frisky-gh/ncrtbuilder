@@ -71,6 +71,7 @@ my %server_settings = (
 	'PROXY'				=> '',
 
 	'SYSLOG_SERVER' => '',
+	'SMTP_SERVER' => '',
 	'LANG' => 'C',
 	'TZ' => 'GMT',
 	'MTU' => '',
