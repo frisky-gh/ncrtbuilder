@@ -20,9 +20,7 @@ print $h "alertqueue	reporter	alertqueue.alertrules		simple\n";
 print $h "alertqueue	reporter	alertqueue.reportrules		simple\n";
 print $h "alertqueue	reporter	alertqueue_mail.tt		simple\n";
 print $h "alertqueue	reporter	alertqueue_web.tt		simple\n";
-print $h "alertqueue	reporter	alertqueue_web_rename.tt	simple\n";
 print $h "alertqueue	reporter	alertqueue_slack.tt		simple\n";
-print $h "alertqueue	reporter	alertqueue_slack_rename.tt	simple\n";
 close $h;
 
 exit 0;
