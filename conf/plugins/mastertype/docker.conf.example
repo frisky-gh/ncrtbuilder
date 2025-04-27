@@ -1,12 +1,26 @@
+#
+# "mastertype_docker" assumes following system configuration:
+#     Browser (User) -> Reverse proxy (Optional) -> Master server host -> Master server docker
+#
+# "mastertype_docker" strongly recomends that you build a reverse proxy for encrypting your connections.
+#
+
+BROWSERSIDE_URL_PREFIX=http://example.com/monitoring/ncrt/
+
+SERVERSIDE_PATH_PREFIX=/ncrt/
+SERVERSIDE_PORT=20080
+
+GRAFANA_DATAOWNEREMAIL=mcdev+grafanauser@systemnotification.fccl-homecomputing.com
+GRAFANA_DATAOWNERPASSWD=GRAFANAuser-2024
+
+GRAFANA_LOCALPORT=3000
+INFLUXDB_LOCALPORT=8086
 
 PROXY=http://proxyserver.localdomain:8080/
-OUTSIDE_PREFIX=http://example.com/monitoring/
-OUTSIDE_PORT=80
-APACHE_PREFIX=/pub/
 
-GRAFANA_ADMINEMAIL=grafanaadmin@example.com
-GRAFANA_USEREMAIL=grafanauser@example.com
-
-#MANAGE_INFLUXDB=1
-#MANAGE_GRAFANA=1
+#SYSLOG_SERVER=syslog001vm
+#SMTP_SERVER=smtp001vm
+#LANG=ja_JP.UTF-8
+#MTU=1300
+#TZ=Asia/Tokyo
 
