@@ -18,7 +18,7 @@ open my $h, '<', $f or do {
 my $curr_vhost;
 my $curr_vservice;
 my %vhost2vservices;
-my @backend;
+my @rules;
 while( <$h> ){
         chomp;
         next if m"^\s*(#|$)";
@@ -27,12 +27,16 @@ while( <$h> ){
 		$curr_vservice = $2;
                 $vhost2vservices{$curr_vhost}->{$curr_vservice} = 1;
         }elsif( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
-		$curr_vhost = undef;
-		$curr_vservice = undef;
+		$curr_vhost = $1;
+		$curr_vservice = $2;
         }elsif( m"^BackendHost=([-.\w]+)$" ){
 		next unless defined $curr_vhost;
 		next unless defined $curr_vservice;
-		push @backend, [$curr_vhost, $curr_vservice, $1];
+		push @rules, {
+			'host_regexp'    => qr"^$curr_vhost$",
+			'service_regexp' => qr"^$curr_vservice$",
+			'backend'        => $1,
+		};
         }elsif( m"^\w+=.*$" ){
                 # nothing to do
         }else{
@@ -63,7 +67,8 @@ open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 
-while( my ($vhost, $vservices) = each %vhost2vservices ){
+foreach my $vhost ( sort keys %vhost2vservices ){
+	my $vservices = $vhost2vservices{$vhost};
 	foreach my $vservice ( sort keys %$vservices ){
 		my $options = $$vservices{$vservice};
 		print $h "$vhost	$vservice	ltsv\n";
@@ -76,9 +81,19 @@ my $f = "$WORKDIR/pseudohost2service2backendhost";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-foreach my $i ( @backend ){
-	my ($pseudohost, $service, $backendhost) = @$i;
-	print $h "$pseudohost $service $backendhost\n";
+foreach my $host ( sort keys %vhost2vservices ){
+	my $services = $vhost2vservices{$host};
+	foreach my $service ( sort keys %$services ){
+		foreach my $rule ( @rules ){
+			my $host_regexp    = $$rule{host_regexp};
+			my $service_regexp = $$rule{service_regexp};
+			next unless $host =~ $host_regexp;
+			next unless $service =~ $service_regexp;
+
+			my $backend        = $$rule{backend};
+			print $h "$host $service $backend\n";
+		}
+	}
 }
 close $h;
 
