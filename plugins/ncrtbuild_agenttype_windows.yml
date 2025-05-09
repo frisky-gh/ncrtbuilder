@@ -1,6 +1,6 @@
 ---
 
-- hosts: windows.__HOSTTYPE__
+- hosts: PLUGINTYPE_agenttype.HOSTTYPE_windows
   tasks:
     - name: ncrtbuild_agenttype_windows.yml DEBUG
       debug:
@@ -162,15 +162,15 @@
 
     - name: setup agent files
       win_copy:
-        src:  "{{TOOLHOME}}/resources/ncrtagent/"
+        src:  "{{DISTRIBUTEDDIR}}/{{inventory_hostname}}/"
         dest: 'C:\opt\ncrtagent'
       tags: [ commoninstall ]
 
-    - name: setup dhparam files
-      win_copy:
-        src:  "{{TOOLHOME}}/conf/agenttype/windows.dh2048.pem"
-        dest: 'C:\Program Files\NSClient++\security\nrpe_dh_2048.pem'
-      tags: [ commoninstall ]
+#    - name: setup dhparam files
+#      win_copy:
+#        src:  "{{TOOLHOME}}/conf/agenttype/windows.dh2048.pem"
+#        dest: 'C:\Program Files\NSClient++\security\nrpe_dh_2048.pem'
+#      tags: [ commoninstall ]
 
 #    - name: store cert
 #      ansible.windows.win_certificate_store:

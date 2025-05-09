@@ -3,21 +3,15 @@
 use strict;
 use Cwd 'abs_path';
 
-if( @ARGV < 3 ){
-	print "usage: % $0 CONFDIR WORKDIR TEMPLATEDIR\n";
-	exit 1;
+if( @ARGV < 4 ){
+	print "usage: % $0 PLUGINCONFDIR PLUGINWORKDIR DISTRIBUTEDDIR PLAYBOOKDIR\n";
+ 	exit 1;
 }
 
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
-our $TEMPLATEDIR = $ARGV[2];
-
-$0 =~ m"^(.*)/";
-our $TOOLHOME = abs_path "$1/..";
-while( $TOOLHOME =~ s{(^|/)[^\.][^/]*/\.\.(/|$)}{$1} ){}
-$TOOLHOME =~ s{/$}{};
-our $AGENTCONFDIR   = "$TOOLHOME/ncrtagent/conf";
-our $AGENTPLUGINDIR = "$TOOLHOME/ncrtagent/plugin";
+our $DISTRIBUTEDDIR = $ARGV[2];
+our $PLAYBOOKDIR = $ARGV[3];
 
 ####
 sub system_or_die ($) {
@@ -37,11 +31,11 @@ sub system_or_die ($) {
 
 sub original_is_newer_than_signed ($$) {
 	my ($orig, $signed) = @_;
-	return undef unless -f "$TOOLHOME/$orig";
-	return 1     unless -f "$TOOLHOME/$signed";
-	my @orig_stat    = stat "$TOOLHOME/$orig";
+	return undef unless -f "$CONFDIR/$orig";
+	return 1     unless -f "$CONFDIR/$signed";
+	my @orig_stat    = stat "$CONFDIR/$orig";
 	my $orig_mtime   = $orig_stat[9];
-	my @signed_stat  = stat "$TOOLHOME/$signed";
+	my @signed_stat  = stat "$CONFDIR/$signed";
 	my $signed_mtime = $signed_stat[9];
 	return $orig_mtime > $signed_mtime;
 }
@@ -111,25 +105,26 @@ my $conf = "$CONFDIR/agenttype/windows.openssl.conf";
 my $cert = "$CONFDIR/agenttype/windows.cert.pem";
 my $key  = "$CONFDIR/agenttype/windows.key.pem";
 if( -f $conf && ! -f $cert && ! -f $key ){
-	system_or_die "openssl req -x509 -nodes -days 3650 -newkey rsa:2048"
-		. " -config $conf"
-		. " -subj '/CN=ncrtagent_windows'"
-		. " -outform PEM -out $cert -keyout $key";
+#	system_or_die "openssl req -x509 -nodes -days 3650 -newkey rsa:2048"
+#		. " -config $conf"
+#		. " -subj '/CN=ncrtagent_windows'"
+#		. " -outform PEM -out $cert -keyout $key";
 }
 
 #### generate dhparam file.
 my $dhparam = "$CONFDIR/agenttype/windows.dh2048.pem";
 if( ! -f $dhparam ){
-	system_or_die "openssl dhparam -out $dhparam -outform PEM 2048";
+#	system_or_die "openssl dhparam -out $dhparam -outform PEM 2048";
 }
 
-#### copy selfsigned cert into Windows
+#### create agent base directories.
 
-system_or_die "cp $cert $AGENTCONFDIR/windows.cert.pem" if -f $cert;
-
+while( my ($host, $params) = each %targets ){
+	system_or_die "rsync -aJUSx $0.d/ $DISTRIBUTEDDIR/$host/";
+}
 
 #### sign plugin ps1 scripts
-#my $d = "$TOOLHOME/ncrtagent/plugins";
+#my $d = "$PLUGINDIR";
 #opendir my $h, $d or do {
 #	die "$d: cannot open, stopped";
 #};
