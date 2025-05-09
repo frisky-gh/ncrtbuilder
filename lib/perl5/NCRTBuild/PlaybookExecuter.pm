@@ -250,7 +250,11 @@ sub execAnsible ($) {
 	my $cmd = $$this{cmd};
 	my $dryrun = $$this{dryrun};
 	print "$cmd\n";
-	#system_or_die $cmd;
+	if( $dryrun ){
+		print "skip running ansible.\n";
+		return;
+	}
+	system_or_die $cmd;
 }
 
 sub deploy ($$) {

@@ -41,7 +41,7 @@ sub create ($) {
 		mkdir_or_die "$workdir/$host";
 		mkdir_or_die "$workdir/$host/pluginsconf";
 		if    ( defined $$e{agenthost} ){
-			foreach my $i ( "agent", "indirect", "agettype" ){
+			foreach my $i ( "agent", "indirect", "agenttype" ){
 				mkdir_or_die "$workdir/$host/pluginsconf/$i";
 			}
 		}elsif( defined $$e{masterhost} ){
