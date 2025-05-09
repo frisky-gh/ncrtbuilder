@@ -160,6 +160,8 @@
         state: stopped
         enabled: no
       when: "ansible_os_family in ['Debian', 'RedHat']"
+      register: result
+      failed_when: " ( 'state' in result and result.state != 'stopped' ) or ( 'msg' in result and not 'Could not find the requested service' in result.msg ) "
       tags: [ commoninstall ]
 
     - name: enable ncrtagentdaemon
