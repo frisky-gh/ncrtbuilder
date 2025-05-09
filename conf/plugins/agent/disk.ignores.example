@@ -1,5 +1,18 @@
-# hostpattern		pathpattern
+#
 
-mizuhasu		/sys/.*
-mizuhasu		/run/.*
+=== .* .* ===
+
+/run/user/\d+
+/sys/fs/cgroup
+/sys/firmware/.*
+/sys/kernel/config
+/sys/kernel/debug
+/boot/efi
+/var/lib/nfs/rpc_pipefs
+/var/lib/snapd/.*
+/var/lib/docker/.*
+/proc/sys/fs/binfmt_misc
+/dev/hugepages
+/dev/mqueue
+
 

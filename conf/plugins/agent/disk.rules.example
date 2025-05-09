@@ -1,9 +1,15 @@
-# hostpattern		path
+# path
 
-.*			/
-.*			/boot
-.*			/dev
-.*			/dev/shm
-.*			/run
-.*			/run/shm
+=== .* .* ===
+
+/
+/boot
+/dev
+/dev/shm
+/run
+/run/shm
+
+=== bigstorageserver .* ===
+
+/storage/big
 
