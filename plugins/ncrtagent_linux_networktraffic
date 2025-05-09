@@ -141,7 +141,7 @@ if( open my $h, '<', $f ){
 		chomp;
 		next if m"^\s*(#|$)";
 		die "$f:$.:$_: illegal format, stopped" unless m"^(\S+)$";
-		push @ignore_rules, qr"^$2$";
+		push @ignore_rules, qr"^$1$";
 	}
 	close $h;
 }
