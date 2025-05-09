@@ -38,11 +38,11 @@ use NCRTBuild::BackendHostServiceDistributor;
 use NCRTBuild::ResourceDistributor;
 
 use strict;
+use Carp::Always;
 use Getopt::Long;
 use URI::Escape;
 use Socket;
 use Template;
-use Carp::Always;
 
 our $TMPDIR = "/tmp";
 our $WORKDIR = "$TMPDIR/ncrt_work.$$";
