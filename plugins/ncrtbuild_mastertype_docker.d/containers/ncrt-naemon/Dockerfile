@@ -53,6 +53,8 @@ RUN update-rc.d grafana-dashboard-helper defaults
 #RUN /lib/finit/initctl enable sysv-cron
 #RUN /lib/finit/initctl enable sysv-nullmailer
 
+RUN echo "#!/bin/sh\nexit 0" > /usr/sbin/policy-rc.d
+
 ####
 
 RUN rsync -aSvx /etc/apache2/ /etc/apache2_orig/
