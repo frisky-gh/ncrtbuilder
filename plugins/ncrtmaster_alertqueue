@@ -43,16 +43,16 @@ run_as_background	"$0.d/bin/mail     open     $CONFDIR $WORKDIR";
 run_as_background	"$0.d/bin/slack    open     $CONFDIR $WORKDIR";
 run_as_background	"$0.d/bin/img      download $CONFDIR $WORKDIR" if $min == 0;
 
-# TODO: implement
-#system_or_die		"$0.d/bin/session  rename   $CONFDIR $WORKDIR" if $min == 1;
-#run_as_background	"$0.d/bin/web      rename   $CONFDIR $WORKDIR" if $min == 1;
-#run_as_background	"$0.d/bin/slack    rename   $CONFDIR $WORKDIR" if $min == 1;
+system_or_die		"$0.d/bin/session  rename   $CONFDIR $WORKDIR" if $min == 1;
+run_as_background	"$0.d/bin/web rename $CONFDIR $WORKDIR && $0.d/bin/panel rename $CONFDIR $WORKDIR"
+								       if $min == 1;
+run_as_background	"$0.d/bin/slack    rename   $CONFDIR $WORKDIR" if $min == 1;
 
 system_or_die		"$0.d/bin/session  close    $CONFDIR $WORKDIR" if $min == 2;
-run_as_background	"$0.d/bin/web      close    $CONFDIR $WORKDIR" if $min == 2;
+run_as_background	"$0.d/bin/web close $CONFDIR $WORKDIR && $0.d/bin/panel close $CONFDIR $WORKDIR"
+								       if $min == 2;
 run_as_background	"$0.d/bin/mail     close    $CONFDIR $WORKDIR" if $min == 2;
 run_as_background	"$0.d/bin/slack    close    $CONFDIR $WORKDIR" if $min == 2;
-run_as_background	"$0.d/bin/panel    close    $CONFDIR $WORKDIR" if $min == 2;
 
 system_or_die		"$0.d/bin/eventq   cleanup  $CONFDIR $WORKDIR" if $min == 3;
 system_or_die		"$0.d/bin/session  cleanup  $CONFDIR $WORKDIR" if $min == 3;
