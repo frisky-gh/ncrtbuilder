@@ -60,7 +60,7 @@ while( <$h> ){
 	next if m"^\s*(#|$)";
 	if( m"^(\w+)=(\S.*)?$" ){
 		$$curr_option{$1} = $2;
-		if( $1 eq "KeyPattern" ){ $$curr_option{KeyRegexp} = qr"$2"; }
+		if( $1 eq "KeyPattern" ){ $$curr_option{KeyRegexp} = qr"^$2$"; }
 
 	}else{
 		die "$f:$.:$_: illegal format, stopped";
