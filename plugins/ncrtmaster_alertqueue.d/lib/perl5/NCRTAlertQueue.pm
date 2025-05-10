@@ -203,15 +203,15 @@ sub load_reportrules () {
 }
 
 our %DEFAULT_REPORT_PARAM = (
-	"MAILFROM"         => 'ncrt-alertqueue@example.com',
-	"UPDATE_TIMESPAN"  => 10,
-	"RESEND_TIMESPAN"  => 30,
-	"CLOSE_TIMESPAN"   => 30,
-	"EXPIRE_TIMESPAN"  => 10080,
-	"RENAME_TIMESPAN"  => 8640,
-	"GRAPH_TIMEOUT"    => 30,
-	"GRAPH_TIMESPAN"   => 480,
-	"CLEANUP_TIMESPAN" => 7200,
+	"MAILFROM"                    => 'ncrt-alertqueue@example.com',
+	"WEB_RENEWAL_TIMESPAN"        => 10,
+	"MAIL_RESENDING_TIMESPAN"     => 30,
+	"SESSION_CLOSING_TIMESPAN"    => 30,
+	"WEB_EXPIRATION_TIMESPAN"     => 10080,
+	"SESSION_RENAMING_TIMESPAN"   => 8640,
+	"PANEL_RENDERING_TIMEOUT"     => 30,
+	"PANEL_RENEWAL_TIMESPAN"      => 480,
+	"EVENTQUEUE_CLEANUP_TIMESPAN" => 7200,
 );
 
 sub get_slack_urls ($$) {
@@ -1104,7 +1104,7 @@ sub downsample_eventqueues ($@) {
 		my $reportparam = get_report_param $rules, $alertgroup;
 		my @time_range = ( 1800, 21600, 172800, 604800 );
 		my @time_unit  = (   60,   300,   1800,  10800 );
-		parse_downsampling_rule $$reportparam{DOWNSAMPLING_RULE}, @time_range, @time_unit;
+		parse_downsampling_rule $$reportparam{EVENTQUEUE_DOWNSAMPLING_RULE}, @time_range, @time_unit;
 		my @keep;
 		my @drop;
 

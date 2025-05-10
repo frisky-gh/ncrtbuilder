@@ -43,8 +43,8 @@ our $JSON = JSON::XS->new->utf8;
 
 sub download_panel_png_from_grafana ($$$) {
 	my ($url, $token, $param) = @_;
-	my $timespan = $$param{GRAPH_TIMESPAN}+0 || 180;
-	my $timeout  = $$param{GRAPH_TIMEOUT}+0  || 10;
+	my $timespan = $$param{PANEL_RENEWAL_TIMESPAN}+0 || 180;
+	my $timeout  = $$param{PANEL_RENDERING_TIMEOUT}+0  || 10;
 	my $ua = LWP::UserAgent->new;
 	my $req = HTTP::Request->new('GET' => "${url}&timeout=${timeout}&from=now-${timespan}m&to=now");
 	$req->header( Authorization => "Bearer $token" );

@@ -248,7 +248,7 @@ if    ( $subcmd eq "open" ){
 		}elsif( $session_status eq "closed" ){
 			my $now = time;
 			my $webparam = get_report_param $rules, $alertgroup;
-			my $expire_timespan = $$webparam{EXPIRE_TIMESPAN};
+			my $expire_timespan = $$webparam{WEB_EXPIRATION_TIMESPAN};
 			next unless $reporting_unixtime + $expire_timespan*60 < $now;
 			remove_webpage $conf, $uuid;
 			remove_reportstatus "web", $uuid;

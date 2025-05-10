@@ -49,7 +49,7 @@ if    ( $subcmd eq "download" ){
 	my @imgids = list_sleeping_imgreqs;
 	foreach my $imgid ( @imgids ){
 		my ($imgreq, $unixtime) = read_sleeping_imgreq $imgid;
-		my $graph_timespan = $$imgreq{GRAPH_TIMESPAN};
+		my $graph_timespan = $$imgreq{PANEL_RENEWAL_TIMESPAN};
 		next unless $unixtime + $graph_timespan*60 < $now;
 		wakeup_imgreq $imgid;
 	}

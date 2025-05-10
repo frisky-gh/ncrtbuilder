@@ -69,7 +69,7 @@ if    ( $subcmd eq "open" ){
 		my @sorted_entry = sort { $$b{unixtime} <=> $$a{unixtime} } @entry;
 
 		my $reportparam = get_report_param $rules, $alertgroup;
-		my $coolingperiod_unixtime = $now - $$reportparam{CLOSE_TIMESPAN}*60;
+		my $coolingperiod_unixtime = $now - $$reportparam{SESSION_CLOSING_TIMESPAN}*60;
 		my $alert_has_continued;
 		foreach my $e ( @sorted_entry ){
 			my $unixtime  = $$e{unixtime};
@@ -98,7 +98,7 @@ if    ( $subcmd eq "open" ){
 		next unless defined $last_uuid;
 
 		my $reportparam = get_report_param $rules, $alertgroup;
-		next unless $creation_unixtime + $$reportparam{RENAME_TIMESPAN}*60 < $now;
+		next unless $creation_unixtime + $$reportparam{SESSION_RENAMING_TIMESPAN}*60 < $now;
 
 		my $uuid = mkuuid;
 		write_alertid $alertgroup, $uuid, $now, $last_uuid;
@@ -134,7 +134,7 @@ if    ( $subcmd eq "open" ){
 		next unless $there_is_no_alert;
 
 		my $reportparam = get_report_param $rules, $alertgroup;
-		next unless $oldest_eventbasket_unixtime + $$reportparam{CLEANUP_TIMESPAN}*60 < $now;
+		next unless $oldest_eventbasket_unixtime + $$reportparam{EVENTQUEUE_CLEANUP_TIMESPAN}*60 < $now;
 
 		remove_eventqueue $alertgroup;
 	}

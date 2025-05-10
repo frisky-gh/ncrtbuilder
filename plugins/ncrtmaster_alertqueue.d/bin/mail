@@ -114,7 +114,7 @@ if    ( $subcmd eq "open" ){
 		my $now = time;
 
 		my $mailparam = get_report_param $rules, $alertgroup;
-		next unless $reporting_unixtime + $$mailparam{RESEND_TIMESPAN}*60 < $now;
+		next unless $reporting_unixtime + $$mailparam{MAIL_RESENDING_TIMESPAN}*60 < $now;
 
 		my $fired_hosts    = $$status{fired_hosts};
 		my $fired_services = $$status{fired_services};
