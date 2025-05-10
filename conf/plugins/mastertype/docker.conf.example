@@ -5,22 +5,25 @@
 # "mastertype_docker" strongly recomends that you build a reverse proxy for encrypting your connections.
 #
 
+## BROWSERSIDE_URL_PREFIX must be set.
 BROWSERSIDE_URL_PREFIX=http://example.com/monitoring/ncrt/
 
-SERVERSIDE_PATH_PREFIX=/ncrt/
-SERVERSIDE_PORT=20080
+## These settings have default values. You can change them as needed.
+#SERVERSIDE_PATH_PREFIX=/
+#SERVERSIDE_PORT=80
+#GRAFANA_LOCALPORT=3000
+#INFLUXDB_LOCALPORT=8086
+#LANG=C
+#TZ=GMT
 
-GRAFANA_DATAOWNEREMAIL=mcdev+grafanauser@systemnotification.fccl-homecomputing.com
-GRAFANA_DATAOWNERPASSWD=GRAFANAuser-2024
+## set proxy if you need it.
+#PROXY=http://proxyserver.localdomain:8080/
 
-GRAFANA_LOCALPORT=3000
-INFLUXDB_LOCALPORT=8086
-
-PROXY=http://proxyserver.localdomain:8080/
-
+## These settings have no default values.
+## If you want to watch syslog messages in the container, SYSLOG_SERVER must be set.
 #SYSLOG_SERVER=syslog001vm
+## If you want to send alert messages by email, SYSLOG_SERVER must be set.
 #SMTP_SERVER=smtp001vm
-#LANG=ja_JP.UTF-8
+## If you want to change MTU of the container network, MTU must be set.
 #MTU=1300
-#TZ=Asia/Tokyo
 
