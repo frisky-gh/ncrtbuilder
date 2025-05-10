@@ -58,27 +58,22 @@ while( <$h> ){
 close $h;
 
 my %server_settings = (
-	'GRAFANA_DATAOWNER'		=> 'ncrt_gfuser',
-	'GRAFANA_DATAOWNERPASSWD'	=> 'XXXXSECRETXXXX',
-	'GRAFANA_DATAOWNEREMAIL'	=> 'ncrt_gfuser@example.com',
+	'BROWSERSIDE_URL_PREFIX'	=> 'http://example.com/',
 
 	'GRAFANA_LOCALPORT'		=> '3000',
 	'INFLUXDB_LOCALPORT'		=> '8086',
-
-	'BROWSERSIDE_URL_PREFIX'	=> 'http://example.com/',
 	'SERVERSIDE_PATH_PREFIX'	=> '/',
 	'SERVERSIDE_PORT'		=> '80',
+	'LANG' => 'C',
+	'TZ' => 'GMT',
+
 	'PROXY'				=> '',
 
 	'SYSLOG_SERVER' => '',
 	'SMTP_SERVER' => '',
-	'LANG' => 'C',
-	'TZ' => 'GMT',
 	'MTU' => '',
 );
 my %server_settings_which_must_be_specified_by_user = (
-	'GRAFANA_DATAOWNEREMAIL'	=> 1,
-	'GRAFANA_DATAOWNERPASSWD'	=> 1,
 	'BROWSERSIDE_URL_PREFIX'	=> 1,
 );
 

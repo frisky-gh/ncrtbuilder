@@ -535,26 +535,6 @@ sub setup_grafana_datasource () {
 		sleep 3;
 		print "ok.\n";
 	}
-'
-    - name: create datasource
-      community.grafana.grafana_datasource:
-        name: "influxdb"
-        grafana_url:  http://localhost:{{SERVERSIDE_PORT}}{{SERVERSIDE_PATH_PREFIX}}grafana/
-        url_username: "{{GRAFANA_DATAOWNER}}"
-        url_password: "{{GRAFANA_DATAOWNERPASSWD}}"
-        org_name:     "{{GRAFANA_ORG}}"
-        ds_type: "influxdb"
-        ds_url:  "http://ncrt-influxdb:8086"
-        is_default: true
-        additional_json_data:
-          version:       "Flux"
-          organization:  "{{INFLUXDB_ORG}}"
-          defaultBucket: "{{INFLUXDB_BUCKET}}"
-          tlsSkipVerify: false
-        additional_secure_json_data:
-          token:         "{{INFLUXDB_TOKEN}}"
-      tags: [ commoninstall ]
-';
 	create_or_die "$grafana_datadir/grafana_datasource_has_been_setup";
 }
 
