@@ -1,22 +1,67 @@
 
-
 alert: .*
 	MAILFROM=ncrt-alertqueue@exapmle.com
 
-	UPDATE_TIMESPAN=10
-	RESEND_TIMESPAN=30
-	CLOSE_TIMESPAN=30
-	EXPIRE_TIMESPAN=10080
-	RENAME_TIMESPAN=8640
-	CLEANUP_TIMESPAN=7200
+	# Event Queue Cleanup Timespan
+	#       Default: 5 days (7200 mins)
+	EVENTQUEUE_CLEANUP_TIMESPAN=7200
 
-	GRAPH_TIMEOUT=30
-	GRAPH_TIMESPAN=480
+	# Event Queue Down Sampling Rule
+	#    You can specify multi-level downsampling rule in the following format:
+	#       Lv1TimeRange:Lv1TimeUnit, Lv2TimeRange:Lv2TimeUnit, ...
+	#
+	#       Default: 30:1,360:5,2880:30,10080:180
+	#                lv1 range: now - 30mins   unit: 1min
+	#                lv2 range: - 6hours       unit: 5mins
+	#                lv3 range: - 2days        unit: 30mins
+	#                lv4 range: - 7days        unit: 3hours
+	EVENTQUEUE_DOWNSAMPLING_RULE=30:1,360:5,2880:30,10080:180
+
+	# Session Renaming Timespan
+	#   An alert session is opened by a Naemon critical or warning hard-state.
+	#   The alert session is renamed after a period of time while
+	#   the alert continues (for security purpose).
+	#   To change this period, specify RENAME_TIMESPAN in minutes.
+	#       Default: 6 days (8640 mins)
+	SESSION_RENAMING_TIMESPAN=8640
+
+	# Session Closing Timespan
+	#   The alert session ends after a period of time after no critical / warning occurs.
+	#   To change this period, specify CLOSE_TIMESPAN in minutes.
+	#       Default: 30 mins
+	SESSION_CLOSING_TIMESPAN=30
+
+	# Web Page Renewal Timespan
+	#       Default: 4 mins
+	WEB_RENEWAL_TIMESPAN=4
+
+	# Web Page Expiration Timepan
+	#   After an alert session is closed, you can view the state of the alert session
+	#   when it was closed as the web page. The web page is retained for some time,
+	#   and then removed.
+	#   To change this period, specify EXPIRE_TIMESPAN in minutes.
+	#       Default: 7 days (10080 mins)
+	WEB_EXPIRATION_TIMESPAN=10080
+
+	# Mail Resending Timespan
+	#   While the alert continues, alert notifications are sent periodically by email.
+	#       Default: 30 mins
+	MAIL_RESENDING_TIMESPAN=30
+
+	# Grafana Panel Rendering Timeout Period
+	#   To change this period, specify GRAPH_TIMEOUT in seconds.
+	#       Default: 10 secs
+	PANEL_RENDERING_TIMEOUT=10
+
+	# Grafana Panel Update Timespan
+	#   To change this period, specify GRAPH_TIMESPAN in minutes.
+	#       Default: 4 mins
+	PANEL_RENEWAL_TIMESPAN=4
 
 alert: .*_Staging
-	UPDATE_TIMESPAN=120
-	RESEND_TIMESPAN=720
-	CLOSE_TIMESPAN=120
+	WEB_RENEWAL_TIMESPAN=120
+	MAIL_RESENDING_TIMESPAN=720
+	SESSION_CLOSING_TIMESPAN=120
 	slack https://hooks.slack.com/services/XXXX
 
 alert: .*_Product

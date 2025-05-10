@@ -42,7 +42,8 @@ if    ( $subcmd eq "update" ){
 	my ($sortrules_of_host, $sortrules_of_service, $sortrules_of_perf, $fixed_alertgroups) = load_alertrules;
 	my @existing_alertgroups = list_eventqueue;
 
-	cleanup_eventqueues @$fixed_alertgroups, @existing_alertgroups;
+	my $rules = load_reportrules;
+	downsample_eventqueues $rules, @$fixed_alertgroups, @existing_alertgroups;
 	debuglog "eventq: $subcmd: complete.";
 
 }else{

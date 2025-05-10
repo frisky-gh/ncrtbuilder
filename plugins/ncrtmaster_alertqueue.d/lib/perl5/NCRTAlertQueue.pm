@@ -53,7 +53,7 @@ our @EXPORT = (
 
 	"new_sortedevents",
 	"write_sortedevents",
-	"cleanup_eventqueues",
+	"downsample_eventqueues",
 
 	"list_reportstatus",
 	"read_reportstatus",
@@ -1083,14 +1083,28 @@ sub write_sortedevents ($$) {
 	}
 }
 
-sub cleanup_eventqueues (@) {
-	my (@alertgroups) = @_;
+sub parse_downsampling_rule($\@\@) {
+	my ($rule, $list_of_time_range, $list_of_time_unit) = @_;
+	return unless $rule =~ m"^(\d+:\d+)(,\d+:\d+)*$";
+	@$list_of_time_range = ();
+	@$list_of_time_unit = ();
+	foreach my $entry ( split m",", $rule ){
+		my ($time_range_min, $time_unit_min) = split m":", $entry;
+		push @$list_of_time_range, $time_range_min*60;
+		push @$list_of_time_unit,  $time_unit_min*60;
+	}
+}
+
+sub downsample_eventqueues ($@) {
+	my ($rules, @alertgroups) = @_;
 	my $now = time;
 
 	foreach my $alertgroup ( @alertgroups ){
 
-		my @expiration = ( 1800, 21600, 172800, 604800 );
-		my @range      = (   60,   300,   1800,  10800 );
+		my $reportparam = get_report_param $rules, $alertgroup;
+		my @time_range = ( 1800, 21600, 172800, 604800 );
+		my @time_unit  = (   60,   300,   1800,  10800 );
+		parse_downsampling_rule $$reportparam{DOWNSAMPLING_RULE}, @time_range, @time_unit;
 		my @keep;
 		my @drop;
 
@@ -1100,18 +1114,18 @@ sub cleanup_eventqueues (@) {
 			my $diff = $now - $unixtime;
 
 			my $level = 0;
-			while( $level < @expiration ){
-				last if $diff < $expiration[$level];
+			while( $level < @time_range ){
+				last if $diff < $time_range[$level];
 				$level++;
 			}
 
-			unless( $level < @expiration ){
+			unless( $level < @time_range ){
 				push @drop, $e;
 				next;
 			}
 
-			my $range = $range[$level];
-			my $index = int($now / $range) - int($unixtime / $range);
+			my $time_unit = $time_unit[$level];
+			my $index = int($now / $time_unit) - int($unixtime / $time_unit);
 			next if $index < 0;
 			unless( defined $keep[$level]->[$index] ){
 				$keep[$level]->[$index] = $e;
