@@ -32,7 +32,9 @@ sub prepare ($) {
 	my @rules;
 	my $curr_thresholds;
 	my $vservice_re;
+	my $linenum = 0;
 	foreach( @$src ){
+		$linenum++;
 		next if m"^\s*(#|$)";
 		if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
 			my $host_regexp = qr"^$1$";
@@ -55,7 +57,7 @@ sub prepare ($) {
 				"lower" => $lower,
 			};
 		}else{
-			die "illegal format, stopped";
+			die "thresholds:$linenum: illegal format, stopped";
 		}
 	}
 
