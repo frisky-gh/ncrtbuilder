@@ -158,6 +158,13 @@ sub docker_is_running () {
 	return undef;
 }
 
+sub apache2_is_running () {
+	my $stdout = `$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/apache2 status`;
+	my $rc = $?;
+	return 1 if $rc == 0;
+	return undef;
+}
+
 sub naemon_is_running () {
 	my $stdout = `$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/naemon status`;
 	my $rc = $?;
@@ -729,31 +736,38 @@ sub create_grafana_datasource ($$$$) {
 
 ####
 
-sub update_grafana_users () {
-	print "[update_grafana_users]\n";
+sub add_or_update_users_of_grafana (\%@) {
+	my ($profiles, @users) = @_;
+	return unless @users;
 
-	my %new_profiles  = load_userprofiles "$SETTINGSDIR/userprofiles";
+	print "[add_or_update_users_of_grafana]\n";
 
 	print "getting id of organization $GRAFANA_ORG...";
 	my $res = req_grafanaadminapi_get_id_of_org $GRAFANA_ORG;
 	my $org_id = $$res{id};
 	print "found. Id is $org_id.\n";
 
-	print "create or updating all users...";
+	print "getting all existing users...";
 	my $res = req_grafanaadminapi_search_all_users;
 	my %existing_user_id;
 	foreach my $user ( @$res ){
 		$existing_user_id{ $$user{name} } = $$user{id};
 	}
+	my $num = keys %existing_user_id;
+	print "done. found $num users.\n";
 
+	print "getting all members of organization $GRAFANA_ORG...";
 	my %joining_user_id;
 	my $res = req_grafanaadminapi_search_all_members_in_org $org_id;
 	foreach my $user ( @$res ){
 		$joining_user_id{ $$user{name} } = $$user{userId};
 	}
+	my $num = keys %existing_user_id;
+	print "done. found $num members.\n";
 
-	foreach my $username ( sort keys %new_profiles ){
-		my $profile = $new_profiles{$username};
+	print "creating or updating users...";
+	foreach my $username ( sort @users ){
+		my $profile = $$profiles{$username};
 		my $passwd = $$profile{password};
 		print "$username";
 
@@ -780,8 +794,31 @@ sub update_grafana_users () {
 		print ".";
 	}
 	print "ok.\n";
-
 }
+
+sub remove_users_of_grafana (\%@) {
+	my ($profiles, @users) = @_;
+	return unless @users;
+
+	print "[remove_users_of_grafana]\n";
+
+	print "getting id of organization $GRAFANA_ORG...";
+	my $res = req_grafanaadminapi_get_id_of_org $GRAFANA_ORG;
+	my $org_id = $$res{id};
+	print "found. Id is $org_id.\n";
+
+	print "getting all existing users...";
+	my $res = req_grafanaadminapi_search_all_users;
+	my %existing_user_id;
+	foreach my $user ( @$res ){
+		$existing_user_id{ $$user{name} } = $$user{id};
+	}
+	my $num = keys %existing_user_id;
+	print "done. found $num users.\n";
+
+	# TODO: implement
+}
+
 
 ####
 
@@ -910,8 +947,7 @@ sub setup_thruk_conf () {
 		"group_paging_grid     = *30, 100, all\n" .
 		"\n";
 
-	system_or_die "rsync -aSvx $SETTINGSDIR/htpasswd $SETTINGSDIR/naemon_etc_thruk/htpasswd";
-
+	create_or_die "$SETTINGSDIR/naemon_etc_thruk/htpasswd" unless -f "$SETTINGSDIR/naemon_etc_thruk/htpasswd";
 	create_or_die "$SETTINGSDIR/naemon_etc_thruk/ncrt_has_setup_these_conf_files";
 }
 
@@ -978,7 +1014,7 @@ sub setup_syslogd_conf () {
 
 ####
 
-sub cmp_new_userprofiles () {
+sub cmp_old_and_new_userprofiles () {
 	my %new_profiles  = load_userprofiles "$SETTINGSDIR/userprofiles";
 	my %last_profiles = load_userprofiles "$SETTINGSDIR/userprofiles.last";
 
@@ -1002,37 +1038,40 @@ sub cmp_new_userprofiles () {
 		push @updatelist, $new_profile;
 	}
 
-	return \@addlist, \@removelist, \@updatelist;
+	return \%new_profiles, \@addlist, \@removelist, \@updatelist;
 }
 
-sub add_users (@) {
-	my ( @addlist ) = @_;
+sub add_users_of_thruk_htpasswd (\%@) {
+	my ( $profiles, @addlist ) = @_;
+	return unless @addlist;
+	print "[add_users_of_thruk]\n";
+
 	foreach my $profile ( @addlist ){
-		my $username = $$profile{username};
-		my $password = $$profile{password};
-		if( -f "$SETTINGSDIR/htpasswd" ){
-			system_or_die "htpasswd -b -2 $SETTINGSDIR/htpasswd $username \Q$password\E";
-		}else{
-			system_or_die "htpasswd -c -b -2 $SETTINGSDIR/htpasswd $username \Q$password\E";
-		}
+		my $username = $$profiles{username};
+		my $password = $$profiles{password};
+		system_or_die "htpasswd -b -2 $SETTINGSDIR/naemon_etc_thruk/htpasswd $username \Q$password\E";
 	}
 }
 
-sub remove_users (@) {
-	my ( @removelist ) = @_;
+sub remove_users_of_thruk_htpasswd (\%@) {
+	my ( $profiles, @removelist ) = @_;
+	return unless @removelist;
+	print "[remove_users_of_thruk]\n";
 	# TODO: implement
 }
 
-sub update_users (@) {
-	my ( @updatelist ) = @_;
+sub update_users_of_thruk_htpasswd (\%@) {
+	my ( $profiles, @updatelist ) = @_;
+	return unless @updatelist;
+	print "[update_users_of_thruk]\n";
 	foreach my $profile ( @updatelist ){
-		my $username = $$profile{username};
-		my $password = $$profile{password};
-		system_or_die "htpasswd -b -2 $SETTINGSDIR/htpasswd $username \Q$password\E";
+		my $username = $$profiles{username};
+		my $password = $$profiles{password};
+		system_or_die "htpasswd -b -2 $SETTINGSDIR/naemon_etc_thruk/htpasswd $username \Q$password\E";
 	}
 }
 
-sub accept_new_userprofiles () {
+sub replace_old_userprofiles_with_new () {
 	system_or_die "cp $SETTINGSDIR/userprofiles $SETTINGSDIR/userprofiles.last";
 }
 
@@ -1082,8 +1121,31 @@ sub setup_nullmailer () {
 	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/nullmailer reload";
 }
 
+sub setup_userprofiles () {
+	my ($profiles, $addlist, $removelist, $updatelist) = cmp_old_and_new_userprofiles;
+
+	create_or_die "$SETTINGSDIR/naemon_etc_thruk/htpasswd" unless -f "$SETTINGSDIR/naemon_etc_thruk/htpasswd";
+	add_users_of_thruk_htpasswd    %$profiles, @$addlist;
+	remove_users_of_thruk_htpasswd %$profiles, @$removelist;
+	update_users_of_thruk_htpasswd %$profiles, @$updatelist;
+
+	add_or_update_users_of_grafana %$profiles, @$addlist, @$updatelist;
+	remove_users_of_grafana        %$profiles, @$removelist;
+
+	replace_old_userprofiles_with_new;
+}
+
 sub setup () {
 	exit 2 unless docker_is_running;
+
+	foreach my $i ( 1..30 ){
+		last if apache2_is_running;
+		sleep 1;
+	}
+	foreach my $i ( 1..30 ){
+		last if naemon_is_running;
+		sleep 1;
+	}
 	setup_influxdb;
 	setup_grafana;
 	setup_apache;
@@ -1093,30 +1155,12 @@ sub setup () {
 	setup_grafana_dashboard_helper;
 	setup_syslogd;
 	setup_nullmailer;
+	setup_userprofiles;
 
 	return;
 }
 
 ####
-
-sub update_userprofiles () {
-	exit 2 unless docker_is_running;
-
-	my ($addlist, $removelist, $updatelist) = cmp_new_userprofiles;
-	add_users @$addlist;
-	remove_users @$removelist;
-	update_users @$updatelist;
-	update_grafana_users;
-	accept_new_userprofiles;
-}
-
-sub update () {
-	exit 2 unless docker_is_running;
-
-	update_userprofiles;
-	system_or_die "rsync -ax $TOOLHOME/naemondef/  $SETTINGSDIR/naemon_etc_naemon/conf.d/";
-	system_or_die "rsync -ax $SETTINGSDIR/htpasswd $SETTINGSDIR/naemon_etc_thruk/htpasswd";
-}
 
 ####
 
@@ -1150,7 +1194,6 @@ sub reload () {
 	#  /etc/init.d/cron reload
 	# TODO: nullmailer
 	system_or_die "rsync -ax $TOOLHOME/naemondef/  $SETTINGSDIR/naemon_etc_naemon/conf.d/";
-	system_or_die "rsync -ax $SETTINGSDIR/htpasswd $SETTINGSDIR/naemon_etc_thruk/htpasswd";
 	if( naemon_is_running ){
 		system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/naemon reload";
 	}else{
@@ -1166,8 +1209,6 @@ sub start () {
 	exit 0 if docker_is_running;
 	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG build";
 	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG up -d";
-	sleep 3;
-	reload;
 }
 
 sub stop () {
@@ -1192,6 +1233,9 @@ if( $ARGV[0] eq "-v" ){
 
 if    ( $subcmd eq "start" ){
 	start;
+	sleep 3;
+	setup;
+	reload;
 }elsif( $subcmd eq "stop" ){
 	stop;
 }elsif( $subcmd eq "reload" ){
@@ -1199,12 +1243,13 @@ if    ( $subcmd eq "start" ){
 }elsif( $subcmd eq "restart" ){
 	stop;
 	start;
+	sleep 3;
+	setup;
+	reload;
 }elsif( $subcmd eq "status" ){
 	status;
 }elsif( $subcmd eq "setup" ){
 	setup;
-}elsif( $subcmd eq "update" ){
-	update;
 
 ## Grafana operation
 }elsif( $subcmd eq "bash_in_naemonvm" ){
