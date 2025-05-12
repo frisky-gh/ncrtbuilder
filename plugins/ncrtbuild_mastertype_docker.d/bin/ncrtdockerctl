@@ -850,8 +850,12 @@ sub setup_apache_conf () {
 		"-e 's|/usr/share/thruk/|/etc/apache2/|' " .
 		"$SETTINGSDIR/naemon_etc_apache2/conf-available/thruk_cookie_auth_vhost.conf";
 
+	my $domain = $BROWSERSIDE_URL_PREFIX;
+	$domain =~ s|^.*://||;
+	$domain =~ s|(:\d+)?(/.*)$||;
+
 	append_or_die "$SETTINGSDIR/naemon_etc_apache2/sites-available/000-default.conf",
-		"RequestHeader set Host comope.fccl-homecomputing.com\n" .
+		"RequestHeader set Host $domain\n" .
 		"ProxyPreserveHost On\n" .
 		"ProxyPass        ${SERVERSIDE_PATH_PREFIX}grafana/ http://ncrt-grafana:3000/\n" .
 		"ProxyPassReverse ${SERVERSIDE_PATH_PREFIX}grafana/ http://ncrt-grafana:3000/\n" .
