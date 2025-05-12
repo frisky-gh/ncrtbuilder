@@ -766,8 +766,8 @@ sub add_or_update_users_of_grafana (\%@) {
 	print "done. found $num members.\n";
 
 	print "creating or updating users...";
-	foreach my $username ( sort @users ){
-		my $profile = $$profiles{$username};
+	foreach my $profile ( sort @users ){
+		my $username = $$profile{username};
 		my $passwd = $$profile{password};
 		print "$username";
 
@@ -850,12 +850,8 @@ sub setup_apache_conf () {
 		"-e 's|/usr/share/thruk/|/etc/apache2/|' " .
 		"$SETTINGSDIR/naemon_etc_apache2/conf-available/thruk_cookie_auth_vhost.conf";
 
-	my $domain = $BROWSERSIDE_URL_PREFIX;
-	$domain =~ s|^.*://||;
-	$domain =~ s|(:\d+)?(/.*)$||;
-
 	append_or_die "$SETTINGSDIR/naemon_etc_apache2/sites-available/000-default.conf",
-		"RequestHeader set Host $domain\n" .
+		"RequestHeader set Host comope.fccl-homecomputing.com\n" .
 		"ProxyPreserveHost On\n" .
 		"ProxyPass        ${SERVERSIDE_PATH_PREFIX}grafana/ http://ncrt-grafana:3000/\n" .
 		"ProxyPassReverse ${SERVERSIDE_PATH_PREFIX}grafana/ http://ncrt-grafana:3000/\n" .
@@ -1051,8 +1047,8 @@ sub add_users_of_thruk_htpasswd (\%@) {
 	print "[add_users_of_thruk]\n";
 
 	foreach my $profile ( @addlist ){
-		my $username = $$profiles{username};
-		my $password = $$profiles{password};
+		my $username = $$profile{username};
+		my $password = $$profile{password};
 		system_or_die "htpasswd -b -2 $SETTINGSDIR/naemon_etc_thruk/htpasswd $username \Q$password\E";
 	}
 }
@@ -1069,8 +1065,8 @@ sub update_users_of_thruk_htpasswd (\%@) {
 	return unless @updatelist;
 	print "[update_users_of_thruk]\n";
 	foreach my $profile ( @updatelist ){
-		my $username = $$profiles{username};
-		my $password = $$profiles{password};
+		my $username = $$profile{username};
+		my $password = $$profile{password};
 		system_or_die "htpasswd -b -2 $SETTINGSDIR/naemon_etc_thruk/htpasswd $username \Q$password\E";
 	}
 }
