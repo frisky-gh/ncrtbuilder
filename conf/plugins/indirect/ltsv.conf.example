@@ -1,6 +1,18 @@
-# host		file						field
 
-=== Database_FooDB TableSpace ===
-timeout=30
-foodb001	/home/mysql/cron/log/tablespace.ltsv		.*
+=== .* .* ===
+Timestamp=record
+TimestampRecordKey=timestamp
+TimestampRecordFormat=%Y-%m-%d
+Timeout=4320
+KeyPattern=(.*)
+
+#=== sampledb001 dbstorage ===
+#BackendHost=hostname001
+#FilePath=/service/oracle/storagemonitor/log/pdb_SAMPLEDB001_PDB1.ltsv
+
+#=== sampleapp001 javavm ===
+#BackendHost=hostname002
+#FilePath=/service/oracle/javavmmonitor/log/sampleapp.json
+#FileFormat=json
+
 

@@ -1,10 +1,14 @@
 
-=== VirtualHost001 ===
+#=== VirtualHost001 ServiceName001 ===
 
-VirtualService01	/var/cache/naemon/live	srchost001,realservice01
+#Socket=/var/cache/naemon/live
+#ImportFrom=hostname01,servicedesc01,prefix01 hostname02,servicedesc02,prefix02
 
-=== RemoteHost002 ===
+#VirtualService01	/var/cache/naemon/live	srchost001,realservice01
 
-service02		https://username:password@example.com/Livestatus-API/index.php/      RemoteHost002,service02
+#=== RemoteHost002 ServiceName002 ===
+
+#Socket=https://username:password@example.com/Livestatus-API/index.php/
+#ImportFrom=RemoteHost002,service02
 
 

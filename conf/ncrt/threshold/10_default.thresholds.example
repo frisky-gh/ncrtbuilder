@@ -1,5 +1,5 @@
 
-=== .* ===
+=== .* .* ===
 web\[.*\]_elapsed	warn	[0.00,30.00]
 # itempattern						sever	threshold
 
