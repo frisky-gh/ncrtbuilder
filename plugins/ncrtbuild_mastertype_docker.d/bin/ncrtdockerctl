@@ -1010,7 +1010,11 @@ sub add_users (@) {
 	foreach my $profile ( @addlist ){
 		my $username = $$profile{username};
 		my $password = $$profile{password};
-		system_or_die "htpasswd -b -2 $SETTINGSDIR/htpasswd $username \Q$password\E";
+		if( -f "$SETTINGSDIR/htpasswd" ){
+			system_or_die "htpasswd -b -2 $SETTINGSDIR/htpasswd $username \Q$password\E";
+		}else{
+			system_or_die "htpasswd -c -b -2 $SETTINGSDIR/htpasswd $username \Q$password\E";
+		}
 	}
 }
 
@@ -1109,9 +1113,9 @@ sub update_userprofiles () {
 sub update () {
 	exit 2 unless docker_is_running;
 
+	update_userprofiles;
 	system_or_die "rsync -ax $TOOLHOME/naemondef/  $SETTINGSDIR/naemon_etc_naemon/conf.d/";
 	system_or_die "rsync -ax $SETTINGSDIR/htpasswd $SETTINGSDIR/naemon_etc_thruk/htpasswd";
-	update_userprofiles;
 }
 
 ####
