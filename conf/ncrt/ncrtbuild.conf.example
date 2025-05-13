@@ -13,6 +13,7 @@ HELPERURL=http://example.com/grafana-dashboard-helper
 
 #### Grafana Dashboard Helper settings
 HELPERURL=https://example.com/grafana-dashboard-helper
-HELPERURL_JUMP_TO_DASHBOARD=https://example.com/grafana-dashboard-helper/jump_to_dashboard.html?dashboard=<hostname>,<servicedesc>
-HELPERURL_SEARCH_PANELS=https://example.com/grafana-dashboard-helper/search_panels.json?retention_policy=autogen&measurement=<hostname>.<servicedesc>&field_key=<performancename>
+ACTIONURL_FOR_HOST=<helperurl>/jump_to_dashboard_by_series_name.html?q=ncrt_ping,host%3d<host>
+ACTIONURL_FOR_HOSTSERVICE=<helperurl>/jump_to_dashboard_by_series_name.html?q=ncrt_<service>,host%3d<host>
+
 

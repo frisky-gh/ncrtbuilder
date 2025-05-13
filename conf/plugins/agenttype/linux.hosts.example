@@ -8,7 +8,7 @@
 #
 #      Agent Side Options:
 #          home_dir
-#          daemon_user			(not used)
+#          daemon_user			(default:ncrtagent)
 #          listen_address		(default:0.0.0.0)
 #          listen_port
 #          allow			list of IP addr, ex: x.x.x.x,y.y.y.y,...
@@ -26,11 +26,8 @@
 #          ansible_become_user
 #          ansible_become_method
 #
-*	home_dir=/opt/ncrtagent	daemon_user=ncrtagent	listen_address=0.0.0.0	listen_port=46848
-*	allow=127.0.0.0/8,10.5.3.0/24,172.18.65.0/24
-*	firewalld_port=46848
-*	timeout=50	agent_address=	agent_port=46848	agent_protocol=ncrtagent
-*	ansible_become=yes	ansible_user=opc	ansible_become_user=root	ansible_become_method=sudo
+*	home_dir=/opt/ncrtagent	daemon_user=ncrtagent	listen_address=0.0.0.0	listen_port=46848	allow=127.0.0.0/8,10.5.3.0/24,172.18.65.0/24	firewalld_port=46848	timeout=50	agent_address=	agent_port=46848	agent_protocol=ncrtagent	ansible_become=yes	ansible_user=opc	ansible_become_user=root	ansible_become_method=sudo
 
-mppfclstwa01nc
-mppfclstwa02nc
+samplevm001
+samplevm002
+
