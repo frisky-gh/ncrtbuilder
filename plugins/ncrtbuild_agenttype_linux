@@ -32,7 +32,7 @@ sub system_or_die ($) {
 
 #### load linux conf.
 my %target_hosts;
-my %default = (
+my %global_default = (
 	listen_address => "0.0.0.0",
 	listen_port => 46848,
 	daemon_user => "ncrtagent",
@@ -41,6 +41,7 @@ my %default = (
 	agent_address => undef,
 	agent_port => 46848,
 );
+my %default = %global_default;
 
 my $f = "$CONFDIR/agenttype/linux.hosts";
 open my $h, '<', $f or do {
@@ -60,7 +61,7 @@ while( <$h> ){
 	if( $host eq "*" ){
 		%default = %param;
 	}else{
-		$target_hosts{$host} = { %default, %param };
+		$target_hosts{$host} = { %global_default, %default, %param };
 	}
 }
 close $h;
