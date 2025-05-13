@@ -69,12 +69,12 @@ sub run ($) {
 
 	foreach( @$agenthosts ){
 		my $host = $$_{agenthost};
-		system_or_die "rsync -aJUSx --include=ncrtagent_\\* --exclude=\\*" .
+		system_or_die "rsync -aJUSx --include=ncrtagent_\\* --include=ncrtagent_\\*/\\* --exclude=\\*" .
 			" $plugindir/ $workdir4a/$host/plugins/";
 	}
 	foreach( @$masterhosts ){
 		my $host = $$_{masterhost};
-		system_or_die "rsync -aJUSx --include=ncrtmaster_\\* --exclude=\\*" .
+		system_or_die "rsync -aJUSx --include=ncrtmaster_\\* --include=ncrtmaster_\\*/\\* --exclude=\\*" .
 			" $plugindir/ $workdir4m/$host/plugins/";
 		system_or_die "rsync -aJUSx --include=\\*.filter     --exclude=\\*" .
 			" $filterdir/ $workdir4m/$host/filters/";
