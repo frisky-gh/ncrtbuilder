@@ -20,7 +20,7 @@
     #### for Debian / Ubuntu
     - name: install packages for docker
       apt:
-        name: [ docker.io, pip, apache2-utils ]
+        name: [ docker.io, pip, virtualenv, apache2-utils, libjson-perl ]
       when: "ansible_os_family == 'Debian'"
       tags: [ commoninstall ]
 
@@ -31,10 +31,7 @@
       when: "ansible_os_family == 'RedHat'"
       tags: [ commoninstall ]
 
-    #### for All Distros
-
     ## setup host python modules
-
     - name: setup host python modules
       pip:
         name: [ docker ]
@@ -42,7 +39,10 @@
       environment:
         http_proxy:  "{{PROXY}}"
         https_proxy: "{{PROXY}}"
+      when: "ansible_os_family == 'RedHat'"
       tags: [ commoninstall ]
+
+    #### for All Distros
 
     ## setup ncrtmaster configurations
 
