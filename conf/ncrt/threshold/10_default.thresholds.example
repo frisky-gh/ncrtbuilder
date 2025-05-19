@@ -1,11 +1,9 @@
-
-=== .* .* ===
-web\[.*\]_elapsed	warn	[0.00,30.00]
-# itempattern						sever	threshold
+# performance name regexp				severity threshold
 
 === .* .* ===
 gateway\[.*\]-status					crit	[0,0]
 realhost\[.*\]-ltsvfile\[.*\]-age			crit	[0.00,10.00]
+ncrtagent\[.*\]-error					crit	[0,0]
 
 === .* disk ===
 disk\[.*\]-avail-pct					warn	[ 5.00,100.00]
