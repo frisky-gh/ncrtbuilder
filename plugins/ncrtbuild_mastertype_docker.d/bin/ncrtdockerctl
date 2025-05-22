@@ -826,9 +826,10 @@ sub setup_apache_conf () {
 	return if -f "$SETTINGSDIR/naemon_etc_apache2/ncrt_has_setup_these_conf_files";
 	print "[setup_apache_conf]\n";
 
-#	system_or_die "sed -i " .
-#		"-e \"s|^Listen 80|Listen ${SERVERSIDE_PORT}|\" " .
-#		"$SETTINGSDIR/naemon_etc_apache2/ports.conf";
+	my $domain = $BROWSERSIDE_URL_PREFIX;
+	$domain =~ s|^.*://||;
+	$domain =~ s|(:\d+)?(/.*)$||;
+
 	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon a2enmod headers";
 
 	system_or_die "sed -i " .
@@ -851,7 +852,7 @@ sub setup_apache_conf () {
 		"$SETTINGSDIR/naemon_etc_apache2/conf-available/thruk_cookie_auth_vhost.conf";
 
 	append_or_die "$SETTINGSDIR/naemon_etc_apache2/sites-available/000-default.conf",
-		"RequestHeader set Host comope.fccl-homecomputing.com\n" .
+		"RequestHeader set Host $domain\n" .
 		"ProxyPreserveHost On\n" .
 		"ProxyPass        ${SERVERSIDE_PATH_PREFIX}grafana/ http://ncrt-grafana:3000/\n" .
 		"ProxyPassReverse ${SERVERSIDE_PATH_PREFIX}grafana/ http://ncrt-grafana:3000/\n" .
