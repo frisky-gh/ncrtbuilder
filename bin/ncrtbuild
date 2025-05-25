@@ -63,7 +63,7 @@ my $dryrun;
 my $quick;
 my $no_cleanup;
 GetOptions (
-	'workdir=s' => \$workdir,
+	'workdir|work-dir=s' => sub { $workdir = $_[1]; $no_cleanup = 1; },
 	'master-only' => \$master_only,
 	'agent-only' => \$agent_only,
 	'target-agent=s' => sub { my $re = $_[1]; $target_agent = qr"^$re$"; },
@@ -492,8 +492,9 @@ if( $plan{Step15} ){
 	$playbookexec->setDistributedDirPath ( $DISTRIBUTEDMASTERBASEDIR );
 	$playbookexec->setBaseName( "build_ncrtmasters" );
 	$playbookexec->setHosts( @masterhost );
-	$playbookexec->setPlugins( 'agent',    @agentplugins );
-	$playbookexec->setPlugins( 'indirect', @indirectplugins );
+	$playbookexec->setPlugins( 'agentless', @agentlessplugins );
+	$playbookexec->setPlugins( 'indirect',  @indirectplugins );
+	$playbookexec->setPlugins( 'reporter',  @reporterplugins );
 	$playbookexec->setTargetPattern( $target_master );
 	$playbookexec->setQuick if $quick;
 	$playbookexec->setDryRun if $dryrun;
@@ -513,9 +514,8 @@ if( $plan{Step16} ){
 	$playbookexec->setDistributedDirPath ( $DISTRIBUTEDAGENTBASEDIR );
 	$playbookexec->setBaseName( "build_ncrtagents" );
 	$playbookexec->setHosts( @agenthost );
-	$playbookexec->setPlugins( 'agentless', @agentlessplugins );
-	$playbookexec->setPlugins( 'indirect',  @indirectplugins );
-	$playbookexec->setPlugins( 'reporter',  @reporterplugins );
+	$playbookexec->setPlugins( 'agent',    @agentplugins );
+	$playbookexec->setPlugins( 'indirect', @indirectplugins );
 	$playbookexec->setTargetPattern( $target_agent );
 	$playbookexec->setQuick if $quick;
 	$playbookexec->setDryRun if $dryrun;
