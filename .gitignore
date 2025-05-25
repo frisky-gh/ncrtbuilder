@@ -35,6 +35,7 @@ inc/
 /*.zip
 
 #
+/conf/*.md
 /conf/*.deb
 /conf/*.rpm
 /conf/*.pem
@@ -62,6 +63,8 @@ inc/
 /conf/plugins/mastertype/*.htpasswd
 /conf/plugins/mastertype/*.hosts
 /conf/plugins/contact/*.conf
+# settings for NCRT core functions
+/conf/ncrt/*.conf
 # option parameters
 /conf/ncrt/naemondirective/*.optionrules
 # threshold settings
