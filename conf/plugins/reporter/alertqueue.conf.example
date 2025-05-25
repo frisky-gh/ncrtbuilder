@@ -6,3 +6,22 @@ SESSIONURLBASE=https://example.com/ncrtmaster
 
 MAILFROM=ncrt@example.com
 
+## Settings about grafana-dashboard-helper (GDH)
+##
+## Default:
+##     USE_LOCAL_GDH=1
+##     LOCALGDHCONF=/etc/grafana-dashboard-helper/grafana-dashboard-helper.conf
+##     GDHURL=https://www.example.com/grafana-dashboard-helper
+##     GRAFANATOKEN=glsa_***
+##     
+## If you use GDH daemon in the same OS environment that Naemon is running in,
+## then you can set USE_LOCAL_GDH=1 and LOCALGDHCONF=/your/gdh/conffile.
+## The alertqueue plugin then reads the local GDH configurations and
+## automatically gets the URL of GDH and API access token of Grafana.
+##
+## Othewise, if you use GDH in a remote server, you must set USE_LOCAL_GDH=0 and
+## set the URL of GDH and API access token of Grafana by yourself.
+##
+
+MAX_NUM_OF_PANEL_DOWNLOADS_PER_MIN=1
+
