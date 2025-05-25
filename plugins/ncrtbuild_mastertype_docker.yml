@@ -60,7 +60,7 @@
     - name: setup htpasswd
       copy:
         src:  "{{PLAYBOOKDIR}}/plugin_mastertype_docker.userprofiles"
-        dest: "{{NCRTMASTERHOME}}/containersettings/userprofiles"
+        dest: "{{NCRTMASTERHOME}}/pluginsconf/mastertype/docker.userprofiles"
       tags: [ common ]
 
     ## setup containers
@@ -69,7 +69,7 @@
       template:
         src:  "ncrtbuild_mastertype_docker.docker-compose.yml.tmpl"
         dest: "{{NCRTMASTERHOME}}/containers/docker-compose.yml"
-      notify: restart ncrtmaster
+      notify: rebuild ncrtmaster
       tags: [ commoninstall ]
 
     - name: start ncrtmaster
@@ -78,8 +78,8 @@
 
   handlers:
 
-    - name: restart ncrtmaster
-      shell: "{{NCRTMASTERHOME}}/bin/ncrtdockerctl restart"
+    - name: rebuild ncrtmaster
+      shell: "{{NCRTMASTERHOME}}/bin/ncrtdockerctl rebuild"
       tags: [ common ]
 
     - name: reload ncrtmaster

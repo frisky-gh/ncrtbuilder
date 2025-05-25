@@ -51,8 +51,9 @@ if [ "$TZ" != "" ] ; then
 fi
 
 ##
-mkdir -p /var/www/ncrtmaster
-chown naemon:naemon /var/www/ncrtmaster
+mkdir -p /var/www/html/ncrtmaster
+touch /var/www/html/ncrtmaster/index.html
+chown -hR naemon:naemon /var/www/html/ncrtmaster
 
 ##
 exec /sbin/init
