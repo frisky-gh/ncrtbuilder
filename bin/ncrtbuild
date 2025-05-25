@@ -70,7 +70,7 @@ GetOptions (
 	'target-master=s' => sub { my $re = $_[1]; $target_master = qr"^$re$"; },
 	'threshold-only' => \$threshold_only,
 	'no-cleanup' => \$no_cleanup,
-	'dryrun' => \$dryrun,
+	'dryrun|dry-run' => \$dryrun,
 	'quick' => \$quick,
 ) or die "Invalid command line options, stopped";
 
@@ -492,6 +492,8 @@ if( $plan{Step15} ){
 	$playbookexec->setDistributedDirPath ( $DISTRIBUTEDMASTERBASEDIR );
 	$playbookexec->setBaseName( "build_ncrtmasters" );
 	$playbookexec->setHosts( @masterhost );
+	$playbookexec->setPlugins( 'agent',    @agentplugins );
+	$playbookexec->setPlugins( 'indirect', @indirectplugins );
 	$playbookexec->setTargetPattern( $target_master );
 	$playbookexec->setQuick if $quick;
 	$playbookexec->setDryRun if $dryrun;
@@ -511,6 +513,9 @@ if( $plan{Step16} ){
 	$playbookexec->setDistributedDirPath ( $DISTRIBUTEDAGENTBASEDIR );
 	$playbookexec->setBaseName( "build_ncrtagents" );
 	$playbookexec->setHosts( @agenthost );
+	$playbookexec->setPlugins( 'agentless', @agentlessplugins );
+	$playbookexec->setPlugins( 'indirect',  @indirectplugins );
+	$playbookexec->setPlugins( 'reporter',  @reporterplugins );
 	$playbookexec->setTargetPattern( $target_agent );
 	$playbookexec->setQuick if $quick;
 	$playbookexec->setDryRun if $dryrun;

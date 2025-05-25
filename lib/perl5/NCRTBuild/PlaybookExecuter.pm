@@ -17,6 +17,9 @@ sub new ($) {
 		'playbookdir'	=> undef,
 		'basename'	=> undef,
 		'pattern'	=> qr"^.*$",
+
+		'hosts'		=> [],
+		'plugins_of_plugintype'	=> {},
 	};
 }
 
@@ -115,6 +118,11 @@ sub setHosts ($@) {
 	$$this{hosttypes} = \@hosttypes;
 }
 
+sub setPlugins ($@) {
+	my ($this, $plugintype, @plugins) = @_;
+	$$this{plugins_of_plugintype}->{$plugintype} = \@plugins;
+}
+
 sub buildVarsYML ($) {
 	my ($this) = @_;
 	my $playbookdir = $$this{playbookdir};
@@ -186,6 +194,7 @@ sub buildPlaybookYML ($) {
 	my $pattern   = $$this{pattern};
 	my $hosts     = $$this{hosts};
 	my $hosttypes = $$this{hosttypes};
+	my $plugins_of_plugintype = $$this{plugins_of_plugintype};
 
 	my $f = "$playbookdir/${basename}_playbook.yml";
 	my $vars_yml = "$playbookdir/${basename}_vars.yml";
@@ -206,10 +215,17 @@ sub buildPlaybookYML ($) {
 			print $h
 				"- name: import playbook $hosttype of $plugintype\n",
 				"  import_playbook: $plugin_playbook\n";
-#				"- hosts: PLUGINTYPE_$plugintype.HOSTTYPE_$hosttype\n",
-#				"  tasks:\n",
-#				"    - name: import playbook $hosttype of $plugintype\n",
-#				"      import_playbook: $plugin_playbook\n";
+		}
+	}
+	foreach my $plugintype ( sort keys %$plugins_of_plugintype ){
+		my $plugins = $$plugins_of_plugintype{$plugintype};
+		foreach my $plugin ( @$plugins ){
+			my $plugin_playbook = "$plugindir/ncrtbuild_${plugintype}_${plugin}.yml";
+			if( -f $plugin_playbook ){
+				print $h
+					"- name: import playbook $plugin of $plugintype\n",
+					"  import_playbook: $plugin_playbook\n";
+			}
 		}
 	}
 	close $h;
