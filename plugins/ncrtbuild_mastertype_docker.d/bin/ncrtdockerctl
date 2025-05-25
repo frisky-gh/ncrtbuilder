@@ -9,6 +9,7 @@ BEGIN {
 use lib "$TOOLHOME/lib/perl5";
 our $SETTINGSDIR = "$TOOLHOME/containersettings";
 our $DATADIR = "$TOOLHOME/containerdata";
+our $PLUGINSCONFDIR = "$TOOLHOME/pluginsconf";
 
 use strict;
 use LWP::UserAgent;
@@ -21,8 +22,8 @@ our $CONFIG = "$TOOLHOME/containers/docker-compose.yml";
 our $PROJECT = "ncrtmaster";
 
 our %CONFIG = (
-        "GRAFANA_LOCALPORT"             => "3000",
-        "INFLUXDB_LOCALPORT"            => "8086",
+	"GRAFANA_LOCALPORT"             => "3000",
+	"INFLUXDB_LOCALPORT"            => "8086",
 
 	"SERVERSIDE_PORT"		=> "7080",	
 	"SERVERSIDE_PATH_PREFIX"	=> "/ncrt",	
@@ -56,7 +57,27 @@ our $INFLUXDB_ARCHIVEBUCKET  = "ncrt_ifxarchive";
 ####
 
 sub usage () {
-	print "usage: % $0 {start|stop|reload|status}\n";
+	print "usage: % $0 COMMAND [OPTIONS]\n",
+		"\n",
+		"Docker Operation Commands\n",
+		"  start\n",
+		"  stop\n",
+		"  reload\n",
+		"  reconfigure\n",
+		"  rebuild\n",
+		"  status\n",
+		"\n",
+		"Work Files Operation Commands\n",
+		"  backup_workfiles  BACKUPDIR\n",
+		"  restore_workfiles BACKUPDIR\n",
+		"\n",
+		"Terminal Operation Commands\n",
+		"  bash_in_nemonvm\n",
+		"  zsh_in_nemonvm\n",
+		"  bash_in_influxdbvm\n",
+		"  bash_in_grafanavm\n",
+		"\n";
+
 	exit 1;
 }
 
@@ -86,6 +107,31 @@ sub read_or_die ($) {
 	my $r = join "", <$h>;
 	close $h;
 	return $r;
+}
+
+sub mkdir_or_die ($) {
+	my ($d) = @_;
+	return if -d $d;
+	mkdir $d or die "$d: cannot create, stopped";
+}
+
+sub rm_r_or_die ($) {
+	my ($r) = @_;
+	return unless -d $r;
+	opendir my $d, $r or do {
+		die "$r: cannot open, stopped";
+	};
+	my @e = readdir $d;
+	foreach my $e ( @e ){
+		next if $e eq '..' || $e eq '.';
+		if( -d "$r/$e" && ! -l "$r/$e" ){
+			rm_r_or_die( "$r/$e" );
+		}else{
+			unlink "$r/$e" or die "$r/$e, stopped";
+		}
+	}
+	closedir $d;
+	rmdir $r or die "$r: cannot remove, stopped";
 }
 
 sub system_or_die ($) {
@@ -158,6 +204,19 @@ sub docker_is_running () {
 	return undef;
 }
 
+sub docker_is_exited () {
+	my $allstatuses = `$DOCKER_COMPOSE_CMD ls -a`;
+	my @allstatuses = split m"\n", $allstatuses;
+	shift @allstatuses;
+	foreach( @allstatuses ){
+		my ($project, $status, $config) = split m"\s+";
+		next unless $project eq $PROJECT;
+		next unless $config eq $CONFIG;
+		return 1 if $status =~ m"^exited";
+	}
+	return undef;
+}
+
 sub apache2_is_running () {
 	my $stdout = `$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/apache2 status`;
 	my $rc = $?;
@@ -222,7 +281,7 @@ sub setup_influxdb_token () {
 sub req_grafanaapi ($$$;$) {
 	my ($method, $path, $authtoken, $req_body) = @_;
 	my $url = "http://localhost:$GRAFANA_LOCALPORT$path";
-        my $req = HTTP::Request->new($method => $url);
+	my $req = HTTP::Request->new($method => $url);
 
 	$req->header("Authorization" => $authtoken);
 
@@ -860,7 +919,7 @@ sub setup_apache_conf () {
 		"ProxyPass        ${SERVERSIDE_PATH_PREFIX}grafana-dashboard-helper/ http://localhost:46846/\n" .
 		"ProxyPassReverse ${SERVERSIDE_PATH_PREFIX}grafana-dashboard-helper/ http://localhost:46846/\n" .
 		"\n" .
-		"Alias ${SERVERSIDE_PATH_PREFIX}ncrtmaster /var/www/ncrtmaster\n" .
+		"Alias ${SERVERSIDE_PATH_PREFIX}ncrtmaster /var/www/html/ncrtmaster\n" .
 #		"\n" .
 #		"<Location ${SERVERSIDE_PATH_PREFIX}thruk/cgi-bin/restricted.cgi>\n" .
 #		"	Options ExecCGI FollowSymLinks\n" .
@@ -872,6 +931,9 @@ sub setup_apache_conf () {
 		"\n";
 
 	create_or_die "$SETTINGSDIR/naemon_etc_apache2/ncrt_has_setup_these_conf_files";
+
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/apache2 reload";
+	sleep 1;
 }
 
 sub setup_naemon_conf () {
@@ -886,7 +948,13 @@ sub setup_naemon_conf () {
 		"service_perfdata_file_template=\$TIMET\$\\t\$HOSTNAME\$\\t\$SERVICEDESC\$\\t\$SERVICESTATE\$\\t\$SERVICEPERFDATA\$\n" .
 		"service_perfdata_file=/var/lib/naemon/service-perfdata\n";
 
+	foreach my $f ( "conf.d/localhost.cfg", "conf.d/printer.cfg", "conf.d/switch.cfg", "conf.d/windows.cfg" ){
+		unlink "$SETTINGSDIR/naemon_etc_naemon/$f" if -f "$SETTINGSDIR/naemon_etc_naemon/$f";
+	}
 	create_or_die "$SETTINGSDIR/naemon_etc_naemon/ncrt_has_setup_these_conf_files";
+
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/naemon reload";
+	sleep 1;
 }
 
 sub setup_naemon2influx_conf () {
@@ -950,6 +1018,15 @@ sub setup_thruk_conf () {
 
 	create_or_die "$SETTINGSDIR/naemon_etc_thruk/htpasswd" unless -f "$SETTINGSDIR/naemon_etc_thruk/htpasswd";
 	create_or_die "$SETTINGSDIR/naemon_etc_thruk/ncrt_has_setup_these_conf_files";
+
+	foreach my $i ( 1 .. 30 ){
+		my $stdout = `$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/thruk reload`;
+		my $r = $?;
+		return 1 if $r == 0;
+		print "setup_thruk_conf: $stdout (rc=$r), retrying...";
+		sleep 1;
+	}
+	die "setup_thruk_conf: failed to reload thruk, stopped";
 }
 
 sub setup_grafana_dashboard_helper_conf () {
@@ -984,6 +1061,9 @@ sub setup_grafana_dashboard_helper_conf () {
 		"ulimit -n 2048\n";
 
 	create_or_die "$SETTINGSDIR/naemon_etc_grafana-dashboard-helper/ncrt_has_setup_these_conf_files";
+
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/grafana-dashboard-helper reload";
+	sleep 1;
 }
 
 sub setup_nullmailer_conf () {
@@ -997,27 +1077,54 @@ sub setup_nullmailer_conf () {
 		"$smtp_server\n";
 
 	create_or_die "$SETTINGSDIR/naemon_etc_nullmailer/ncrt_has_setup_these_conf_files";
+
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/nullmailer reload";
+	sleep 1;
 }
 
-sub setup_syslogd_conf () {
+sub setup_syslog_conf () {
 	my $syslog_server = $CONFIG{SYSLOG_SERVER};
 	return if $syslog_server eq "";
 
-	return if -f "$SETTINGSDIR/naemon_etc_default/ncrt_has_setup_syslogd_conf_file";
-	print "[setup_syslogd_conf]\n";
+	return if -f "$SETTINGSDIR/naemon_etc_syslog.conf";
+	print "[setup_syslog_conf]\n";
+
+	write_or_die "$SETTINGSDIR/naemon_etc_syslog.conf",
+		"auth,authpriv.*        /var/log/auth.log\n" .
+		"syslog.*               -/var/log/syslog\n" .
+		"cron.*                 /var/log/cron.log\n" .
+		"daemon.*               -/var/log/daemon.log\n" .
+		"mail.*                 -/var/log/mail.log\n" .
+		"user.*                 -/var/log/user.log\n" .
+		"lpr,news,uucp.*        -/var/log/messages\n" .
+		"auth,authpriv,syslog,cron,daemon,mail,user.* \@$syslog_server\n";
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG cp $SETTINGSDIR/naemon_etc_syslog.conf ncrt-naemon:/etc/syslog.conf";
 
 	system_or_die "sed -i " .
-		"-e 's|^SYSLOG_OPTS=.*|SYSLOG_OPTS=\"-C128 -R $syslog_server\"|' " .
-		"$SETTINGSDIR/naemon_etc_default/busybox-syslogd";
+		"-e 's|^SYSLOGD_OPTS=.*|SYSLOGD_OPTS=\"\"|' " .
+		"$SETTINGSDIR/naemon_etc_default/inetutils-syslogd";
 
-	create_or_die "$SETTINGSDIR/naemon_etc_default/ncrt_has_setup_syslogd_conf_file";
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/inetutils-syslogd reload";
+	sleep 1;
 }
+
+sub setup_cron () {
+	return if -f "$SETTINGSDIR/naemon_etc_cron.d_ncrtmaster";
+	print "[setup_cron]\n";
+
+	write_or_die "$SETTINGSDIR/naemon_etc_cron.d_ncrtmaster",
+		"* * * * * naemon /opt/ncrtmaster/bin/ncrtreport cron\n";
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG cp $SETTINGSDIR/naemon_etc_cron.d_ncrtmaster ncrt-naemon:/etc/cron.d/ncrtmaster";
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/cron reload";
+	sleep 1;
+}
+
 
 ####
 
 sub cmp_old_and_new_userprofiles () {
-	my %new_profiles  = load_userprofiles "$SETTINGSDIR/userprofiles";
-	my %last_profiles = load_userprofiles "$SETTINGSDIR/userprofiles.last";
+	my %new_profiles  = load_userprofiles "$PLUGINSCONFDIR/mastertype/docker.userprofiles";
+	my %last_profiles = load_userprofiles "$SETTINGSDIR/userprofiles";
 
 	my @addlist;
 	while( my ($username, $p) = each %new_profiles ){
@@ -1073,7 +1180,7 @@ sub update_users_of_thruk_htpasswd (\%@) {
 }
 
 sub replace_old_userprofiles_with_new () {
-	system_or_die "cp $SETTINGSDIR/userprofiles $SETTINGSDIR/userprofiles.last";
+	system_or_die "cp $PLUGINSCONFDIR/mastertype/docker.userprofiles $SETTINGSDIR/userprofiles";
 }
 
 ####
@@ -1090,36 +1197,6 @@ sub setup_grafana () {
 	setup_grafana_org;
 	setup_grafana_serviceaccount;
 	setup_grafana_datasource;
-}
-
-sub setup_apache () {
-	setup_apache_conf;
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/apache2 reload";
-}
-
-sub setup_naemon () {
-	setup_naemon_conf;
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/naemon reload";
-}
-
-sub setup_thruk () {
-	setup_thruk_conf;
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/thruk reload";
-}
-
-sub setup_grafana_dashboard_helper () {
-	setup_grafana_dashboard_helper_conf;
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/grafana-dashboard-helper reload";
-}
-
-sub setup_syslogd () {
-	setup_syslogd_conf;
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/busybox-syslogd restart";
-}
-
-sub setup_nullmailer () {
-	setup_nullmailer_conf;
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/nullmailer reload";
 }
 
 sub setup_userprofiles () {
@@ -1149,25 +1226,65 @@ sub setup () {
 	}
 	setup_influxdb;
 	setup_grafana;
-	setup_apache;
-	setup_naemon;
-	setup_thruk;
+	setup_apache_conf;
+	setup_naemon_conf;
+	setup_thruk_conf;
 	setup_naemon2influx_conf;
-	setup_grafana_dashboard_helper;
-	setup_syslogd;
-	setup_nullmailer;
+	setup_grafana_dashboard_helper_conf;
+	setup_syslog_conf;
+	setup_nullmailer_conf;
+	setup_cron;
 	setup_userprofiles;
 
 	return;
 }
 
-####
+sub unsetup () {
+	exit 4 if docker_is_running;
+	foreach my $d (
+		"naemon_etc_apache2", "naemon_etc_default",
+		"naemon_etc_grafana-dashboard-helper",
+		"naemon_etc_naemon",
+		"naemon_etc_nullmailer",
+		"naemon_etc_thruk"
+	) {
+		rm_r_or_die "$SETTINGSDIR/$d";
+	}
+	foreach my $f ("naemon_etc_cron.d_ncrtmaster", "userprofiles", "naemon_etc_syslog.conf"){
+		next unless -f "$SETTINGSDIR/$f";
+		unlink "$SETTINGSDIR/$f" or die "cannot remove, stopped";
+	}
+}
 
-####
+sub build () {
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG build";
+}
+
+sub down () {
+	return unless docker_is_running || docker_is_exited;
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG down";
+}
+
+#### Sub Commands
 
 sub bash_in_naemonvm () {
 	exit 2 unless docker_is_running;
+	my ($name, $passwd, $uid, $gid, $quota, $comment, $gcos, $dir, $shell, $expire) = getpwuid $<;
+
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG cp $dir/.bashrc ncrt-naemon:/root/.bashrc" 
+		if -f "$dir/.bashrc";
+
 	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon bash";
+}
+
+sub zsh_in_naemonvm () {
+	exit 2 unless docker_is_running;
+	my ($name, $passwd, $uid, $gid, $quota, $comment, $gcos, $dir, $shell, $expire) = getpwuid $<;
+
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG cp $dir/.zshrc ncrt-naemon:/root/.zshrc" 
+		if -f "$dir/.zshrc";
+
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon zsh";
 }
 
 sub bash_in_influxdbvm () {
@@ -1180,6 +1297,21 @@ sub bash_in_grafanavm () {
 	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-grafana bash";
 }
 
+sub backup_workfiles ($) {
+	my ($dir) = @_;
+	exit 2 unless docker_is_running;
+	mkdir_or_die $dir;
+	system_or_die "rsync -aSx --delete --chown=root:root --blocking-io -e \Q$DOCKER_COMPOSE_CMD -f $CONFIG exec -i\E ncrt-naemon:/var/lib/naemon/.ncrt/ $dir/ncrt/";
+	system_or_die "rsync -aSx --delete --chown=root:root --blocking-io -e \Q$DOCKER_COMPOSE_CMD -f $CONFIG exec -i\E ncrt-naemon:/var/www/html/ncrtmaster/ $dir/ncrtmaster/";
+}
+
+sub restore_workfiles ($) {
+	my ($dir) = @_;
+	exit 2 unless docker_is_running;
+	system_or_die "rsync -aSx --delete --chown=naemon:naemon --blocking-io -e \Q$DOCKER_COMPOSE_CMD -f $CONFIG exec -i\E $dir/ncrt/ ncrt-naemon:/var/lib/naemon/.ncrt/";
+	system_or_die "rsync -aSx --delete --chown=naemon:naemon --blocking-io -e \Q$DOCKER_COMPOSE_CMD -f $CONFIG exec -i\E $dir/ncrtmaster/ ncrt-naemon:/var/www/html/ncrtmaster/";
+}
+
 sub status () {
 	exit 2 unless docker_is_running;
 	exit 3 unless naemon_is_running;
@@ -1190,30 +1322,35 @@ sub status () {
 sub reload () {
 	exit 2 unless docker_is_running;
 
-	# TODO: cron
-	#  echo "* * * * * naemon /opt/ncrtmaster/bin/ncrtreport cron" > /etc/cron.d/ncrtmaster
-	#  /etc/init.d/cron reload
-	# TODO: nullmailer
 	system_or_die "rsync -ax $TOOLHOME/naemondef/  $SETTINGSDIR/naemon_etc_naemon/conf.d/";
 	if( naemon_is_running ){
 		system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/naemon reload";
 	}else{
 		system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/naemon start";
 	}
-
-	system_or_die "echo '* * * * * naemon /opt/ncrtmaster/bin/ncrtreport cron' > $SETTINGSDIR/naemon_etc_cron.d_ncrtmaster";
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG cp $SETTINGSDIR/naemon_etc_cron.d_ncrtmaster ncrt-naemon:/etc/cron.d/ncrtmaster";
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/cron reload";
 }
 
 sub start () {
-	exit 0 if docker_is_running;
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG build";
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG up -d";
+	if( docker_is_running ){
+		return;
+	}
+
+	if( docker_is_exited ){
+		system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG start";
+	}else{
+		system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG build";
+		system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG up -d";
+	}
 }
 
 sub stop () {
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG down";
+	if( docker_is_exited ){
+		return;
+	}
+
+	if( docker_is_running ){
+		system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG stop";
+	}
 }
 
 
@@ -1239,8 +1376,6 @@ if    ( $subcmd eq "start" ){
 	reload;
 }elsif( $subcmd eq "stop" ){
 	stop;
-}elsif( $subcmd eq "reload" ){
-	reload;
 }elsif( $subcmd eq "restart" ){
 	stop;
 	start;
@@ -1251,14 +1386,46 @@ if    ( $subcmd eq "start" ){
 	status;
 }elsif( $subcmd eq "setup" ){
 	setup;
+}elsif( $subcmd eq "reload" ){		# reload naemon settings
+	reload;
+}elsif( $subcmd eq "reconfigure" ){	# remove all ncrt container settings and setup
+	stop;
+	unsetup;
+	start;
+	sleep 3;
+	setup;
+	reload;
 
-## Grafana operation
+}elsif( $subcmd eq "rebuild" ){		# down ncrt containers and build
+	build;
+	down;
+	unsetup;
+	start;
+	sleep 3;
+	setup;
+	reload;
+
+## Terminal operation
 }elsif( $subcmd eq "bash_in_naemonvm" ){
 	bash_in_naemonvm;
+}elsif( $subcmd eq "zsh_in_naemonvm" ){
+	zsh_in_naemonvm;
 }elsif( $subcmd eq "bash_in_influxdbvm" ){
 	bash_in_influxdbvm;
 }elsif( $subcmd eq "bash_in_grafanavm" ){
 	bash_in_grafanavm;
+
+## Work files operation
+}elsif( $subcmd eq "backup_workfiles" ){
+	my $dir = $ARGV[0];
+	exit 5 if $dir eq "";
+	backup_workfiles $dir;
+}elsif( $subcmd eq "restore_workfiles" ){
+	my $dir = $ARGV[0];
+	exit 5 if $dir eq "";
+	exit 6 unless -d $dir;
+	restore_workfiles $dir;
+
 
 ## Grafana operation
 }elsif( $subcmd eq "list_grafana_users" ){

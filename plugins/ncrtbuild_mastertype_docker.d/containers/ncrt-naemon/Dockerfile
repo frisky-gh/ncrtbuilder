@@ -4,17 +4,39 @@ ARG APT_PROXY
 FROM debian:bookworm-slim
 RUN test "$APT_PROXY" = "" || ( echo "Acquire::http::Proxy \"$APT_PROXY\";" >> /etc/apt/apt.conf )
 
+RUN apt update && apt install --no-install-recommends -y \
+	ansible iproute2 git vim \
+	sysv-rc apache2 nullmailer cron sudo rsync curl \
+	liburi-query-perl libhttp-daemon-perl libjson-xs-perl libtemplate-perl \
+	libstring-random-perl libmime-encwords-perl libjson-perl libjson-xs-perl \
+	libjson-pp-perl libemail-sender-perl libemail-mime-perl liburi-query-perl \
+	libossp-uuid-perl libcarp-always-perl \
+	locales-all \
+	lv zsh strace lsof jq
+
+#### Naemon / Thruk Installation
+
+##
 COPY --chown=root:root ./naemon.list /etc/apt/sources.list.d/naemon.list
 COPY --chown=root:root ./naemon.asc /etc/apt/keyrings/naemon.asc
-RUN apt update
-RUN apt install --no-install-recommends -y ansible iproute2 git vim
-RUN apt update
-RUN apt install --no-install-recommends -y sysv-rc apache2 nullmailer cron sudo rsync curl naemon naemon-core naemon-livestatus nagios-plugins nagios-nrpe-plugin thruk naemon-thruk
+RUN apt update && apt install --no-install-recommends -y \
+	naemon naemon-core naemon-livestatus nagios-plugins nagios-nrpe-plugin thruk naemon-thruk
 
-#### init option
+##
+RUN curl -L -o /root/naemon2influx-1.4-rc2.deb \
+	https://github.com/frisky-gh/naemon2influx/releases/download/v1.4.2/naemon2influx-1.4-2.deb \
+	&& dpkg -i /root/naemon2influx-1.4-rc2.deb
+
+RUN curl -L -o /root/grafana-dashboard-helper_1.0-rc4_amd64.deb \
+	https://github.com/frisky-gh/grafana-dashboard-helper/releases/download/v1.0-RC4/grafana-dashboard-helper_1.0_amd64.1.deb \
+	&& dpkg -i /root/grafana-dashboard-helper_1.0-rc4_amd64.deb
+
+#### Init System Option
 
 # sysv init
-RUN apt install --no-install-recommends -y sysvinit-core busybox-syslogd
+RUN apt update && apt install --no-install-recommends -y \
+	sysvinit-core inetutils-syslogd \
+	&& update-rc.d grafana-dashboard-helper defaults
 
 # finit
 #RUN apt install --no-install-recommends -y finit rsyslog
@@ -22,30 +44,7 @@ RUN apt install --no-install-recommends -y sysvinit-core busybox-syslogd
 #    /lib/finit/initctl disable acpid && \
 #    /lib/finit/initctl disable sshd  && \
 #    /lib/finit/initctl disable modules 
-
-####
-
-##
-RUN apt install --no-install-recommends -y liburi-query-perl libhttp-daemon-perl libjson-xs-perl libtemplate-perl libstring-random-perl libmime-encwords-perl
-RUN apt install --no-install-recommends -y libjson-perl libjson-xs-perl libjson-pp-perl libemail-sender-perl libemail-mime-perl liburi-query-perl libossp-uuid-perl libcarp-always-perl
-RUN apt install --no-install-recommends -y locales-all
-
-RUN curl -o /root/naemon2influx-1.4-rc2.deb -L https://github.com/frisky-gh/naemon2influx/releases/download/v1.4.2/naemon2influx-1.4-2.deb
-RUN dpkg -i /root/naemon2influx-1.4-rc2.deb
-
-RUN curl -o /root/grafana-dashboard-helper_1.0-rc4_amd64.deb -L https://github.com/frisky-gh/grafana-dashboard-helper/releases/download/v1.0-RC4/grafana-dashboard-helper_1.0_amd64.1.deb
-RUN dpkg -i /root/grafana-dashboard-helper_1.0-rc4_amd64.deb
-
-##
-RUN apt install --no-install-recommends -y lv zsh strace lsof jq
-COPY --chown=root:root ./.zshrc /root/.zshrc
-
-#### init start up
-
-# sysv init
-RUN update-rc.d grafana-dashboard-helper defaults
-
-# finit
+#
 #COPY --chown=root:root ./sysv-*.conf /etc/finit.d/available/
 #RUN /lib/finit/initctl enable sysv-apache2
 #RUN /lib/finit/initctl enable sysv-naemon
@@ -57,15 +56,15 @@ RUN echo "#!/bin/sh\nexit 0" > /usr/sbin/policy-rc.d
 
 ####
 
-RUN rsync -aSvx /etc/apache2/ /etc/apache2_orig/
-RUN rsync -aSvx /etc/default/ /etc/default_orig/
-RUN rsync -aSvx /etc/naemon/ /etc/naemon_orig/
-RUN rsync -aSvx /etc/thruk/ /etc/thruk_orig/
-RUN rsync -aSvx /etc/grafana-dashboard-helper/ /etc/grafana-dashboard-helper_orig/
-RUN rsync -aSvx /var/lib/grafana-dashboard-helper/ /var/lib/grafana-dashboard-helper_orig/
-RUN rsync -aSvx /etc/nullmailer/ /etc/nullmailer_orig/
+RUN mkdir /opt/ncrtmaster \
+	&& rsync -aSx /etc/apache2/ /etc/apache2_orig/ \
+	&& rsync -aSvx /etc/default/ /etc/default_orig/ \
+	&& rsync -aSx /etc/naemon/ /etc/naemon_orig/ \
+	&& rsync -aSx /etc/thruk/ /etc/thruk_orig/ \
+	&& rsync -aSx /etc/grafana-dashboard-helper/ /etc/grafana-dashboard-helper_orig/ \
+	&& rsync -aSx /var/lib/grafana-dashboard-helper/ /var/lib/grafana-dashboard-helper_orig/ \
+	&& rsync -aSx /etc/nullmailer/ /etc/nullmailer_orig/
 
 COPY --chown=root:root ./startup.sh /startup.sh
-RUN mkdir /opt/ncrtmaster
 
 CMD ["/startup.sh"]
