@@ -91,6 +91,7 @@ sub load_conf () {
 		"LOCALGDHCONF"   => "/etc/grafana-dashboard-helper/grafana-dashboard-helper.conf",
 		"GDHURL"         => "https://www.example.com/grafana-dashboard-helper",
 		"GRAFANATOKEN"   => "glsa_***",
+		"MAX_NUM_OF_PANEL_DOWNLOADS_PER_MIN" => 1,
 	);
 
 	my $f = "$main::CONFDIR/reporter/alertqueue.conf";
@@ -401,7 +402,7 @@ sub list_eventqueue () {
 	my $f = "$main::WORKDIR/aq_event";
 	opendir my $h, $f or die "$f: cannot open, stopped";
 	while( my $e = readdir $h ){
-		next unless $e =~ m"^([a-zA-Z][.-\w]*)$";
+		next unless $e =~ m"^([-\w][-.\w]*)$";
 		next unless -d "$f/$e";
 		push @r, $1;
 	}

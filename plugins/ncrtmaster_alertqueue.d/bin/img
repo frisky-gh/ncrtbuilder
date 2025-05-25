@@ -28,7 +28,8 @@ if    ( $subcmd eq "download" ){
 	debuglog "img: $subcmd: start.";
 	my ($gdhurl, $grafanatoken) = get_gdhurl_and_grafanatoken;
 
-	foreach my $i ( 1 .. 20 ){
+	my $max = $$conf{MAX_NUM_OF_PANEL_DOWNLOADS_PER_MIN}*5;
+	foreach my $i ( 1 .. $max ){
 		my ($imgid, $imgreq, $unixtime) = pickup_imgreq;
 		last unless defined $imgid;
 
