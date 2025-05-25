@@ -1,0 +1,133 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 3 ){
+	print "usage: % $0 CONFDIR WORKDIR PLAYBOOKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $PLAYBOOKDIR = $ARGV[2];
+
+#### load linuxhosts.
+my %targets;
+my $f = "$WORKDIR/agenthosts";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	my ($host, $agenttype) = split m"\s+";
+	next unless $agenttype =~ m"^(linux)$";
+	$targets{$host} = $1;
+}
+close $f;
+
+#### append measure info.
+my $f = "$WORKDIR/measurements";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "filecount	agent	display_name=\"File Counting\"\n";
+close $h;
+
+#### append conf info.
+my $f = "$WORKDIR/plugin2type2pluginconf2format";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "filecount	agent	filecount.conf	default\n";
+close $h;
+
+#### append service mapping
+my $f = "$WORKDIR/monitoredhost2service2measurement";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+foreach my $i ( keys %targets ){
+	print $h "$i	filecount	filecount\n";
+}
+close $h;
+
+#### parse setting
+my @rules;
+my $entries = [];
+my $f = "$CONFDIR/agent/filecount.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+
+	if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+		$entries = [];
+		push @rules, {
+			'host_regexp'    => qr"^$1$",
+			'service_regexp' => qr"^$2$",
+			'entries' => $entries,
+		};
+	}elsif( m"^(\w+)\s+(/[-/.\w]+(?:\s+/[-/.\w]+)*)(?:\s+(\w+=\S*(?:\s+\w+=\S*)*))?\s*$" ){
+		my $perfname = $1;
+		my $dirs = $2;
+		my $options = $3;
+		push @$entries, {
+			'perfname' => $perfname,
+			'dirs'     => [ split m"\s+", $dirs ],
+			'options'  => {
+				map { m"^(\w+)=(.*)" or die; $1 => $2 } split m"\s+", $options
+			}
+		}
+	}else{
+		die "$f:$.: illegal format, stopped";
+	}
+}
+close $h;
+
+my %entries_of_host;
+while( my ($host, undef) = each %targets ){
+	foreach my $r ( @rules ){
+		my $host_regexp = $$r{host_regexp};
+		my $entries     = $$r{entries};
+		next unless $host =~ $host_regexp;
+		foreach my $entry ( @$entries ){
+			my $options = $$entry{options};
+			next unless $$options{SUDO} =~ m"^(yes|true)$"i;
+			push @{ $entries_of_host{$host} }, $entry;
+		}
+	}
+}
+
+#### generate sudoers file
+my $f = "$PLAYBOOKDIR/plugin_agent_filecount_vars.yml";
+open my $h, '>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "  'hosts_using_sudo' :\n";
+foreach my $host ( sort keys %entries_of_host ){
+	print $h "    - '$host'\n";
+}
+close $h;
+
+while( my ($host, $entries) = each %entries_of_host ){
+	my $f = "$PLAYBOOKDIR/plugin_agent_filecount_sudoers_setting_of_$host";
+	open my $h, '>', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	print $h
+		"########\n",
+		"######## This file is auto-generated. Don't modify.\n",
+		"########\n";
+	foreach my $entry ( @$entries ){
+		my $dirs = $$entry{dirs};
+		my $cmd = "/usr/bin/find @$dirs -type f";
+		print $h
+			"ncrtagent ALL = (root) NOPASSWD: $cmd\n";
+	}
+	close $h;
+}
+
+exit 0;
+

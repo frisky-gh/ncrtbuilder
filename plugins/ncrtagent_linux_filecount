@@ -1,0 +1,85 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 5 ){
+	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $MEASURE = $ARGV[2];
+our $HOST = $ARGV[3];
+our $SERVICE = $ARGV[4];
+
+####
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+sub nP ($) {
+	return sprintf "%.2f%%", $_[0];
+}
+sub nMB ($) {
+	return sprintf "%.2fMB", $_[0];
+}
+
+#### parse setting
+my @entries;
+my $f = "$CONFDIR/agent/filecount.conf.$HOST.$SERVICE";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	if( m"^(\w+)\s+(/[-/.\w]+(?:\s+/[-/.\w]+)*)(?:\s+(\w+=\S*(?:\s+\w+=\S*)*))?\s*$" ){
+		my $perfname = $1;
+		my $dirs = $2;
+		my $options = $3;
+		my @dirs = split m"\s+", $dirs;
+		my %options = map { m"^(\w+)=(.*)" or die; $1 => $2 } split m"\s+", $options;
+		my $cmd;
+		if( $options{SUDO} =~ m"^(yes|true)$"i ){
+			$cmd = "/usr/bin/find @dirs -type f";
+		}else{
+			$cmd = "sudo /usr/bin/find @dirs -type f";
+		}
+
+		push @entries, {
+			'perfname' => $perfname,
+			'dirs'     => \@dirs,
+			'options'  => \%options,
+			'cmd'      => $cmd,
+		};
+	}else{
+		die "$f:$.: illegal format, stopped";
+	}
+}
+close $h;
+
+####
+my %r;
+foreach my $entry ( @entries ){
+	my $perfname = $$entry{perfname};
+	my $cmd      = $$entry{cmd};
+
+	open my $h, '-|', $cmd or do {
+		die "$entry: cannot execute, stopped";
+	};
+	my $count = 0;
+	while( <$h> ){
+		$count++;
+	}
+	$r{$perfname} = $count;
+	close $h;
+}
+
+# output
+foreach my $perfname ( sort keys %r ){
+	my $count = $r{$perfname};
+	print "$perfname=$count\n";
+}
+
+exit 0;
+
