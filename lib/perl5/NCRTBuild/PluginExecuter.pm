@@ -107,8 +107,8 @@ sub execAgentTypePlugins ($) {
 	my @plugins = sort @{ $$this{agenttype_plugins} };
 	foreach my $e ( @plugins ){
 		print         "$pluginsdir/$e $confdir $workdir $agentsworkdir $playbookdir\n";
-                system_or_die "$pluginsdir/$e $confdir $workdir $agentsworkdir $playbookdir";
-        }
+		system_or_die "$pluginsdir/$e $confdir $workdir $agentsworkdir $playbookdir";
+	}
 }
 
 sub execMasterTypePlugins ($) {
@@ -121,8 +121,8 @@ sub execMasterTypePlugins ($) {
 	my @plugins = sort @{ $$this{mastertype_plugins} };
 	foreach my $e ( @plugins ){
 		print         "$pluginsdir/$e $confdir $workdir $mastersworkdir $playbookdir\n";
-                system_or_die "$pluginsdir/$e $confdir $workdir $mastersworkdir $playbookdir";
-        }
+		system_or_die "$pluginsdir/$e $confdir $workdir $mastersworkdir $playbookdir";
+	}
 }
 
 sub execAgentPlugins ($) {
@@ -130,11 +130,12 @@ sub execAgentPlugins ($) {
 	my $confdir = $$this{confdir};
 	my $workdir = $$this{workdir};
 	my $pluginsdir = $$this{pluginsdir};
+	my $playbookdir = $$this{playbookdir};
 	my @plugins = sort @{ $$this{agent_plugins} };
 	foreach my $e ( @plugins ){
-		print "$pluginsdir/$e $confdir $workdir\n";
-                system_or_die "$pluginsdir/$e $confdir $workdir";
-        }
+		print "$pluginsdir/$e $confdir $workdir $playbookdir\n";
+		system_or_die "$pluginsdir/$e $confdir $workdir $playbookdir";
+	}
 }
 
 sub execAgentlessPlugins ($) {
@@ -142,11 +143,12 @@ sub execAgentlessPlugins ($) {
 	my $confdir = $$this{confdir};
 	my $workdir = $$this{workdir};
 	my $pluginsdir = $$this{pluginsdir};
+	my $playbookdir    = $$this{playbookdir};
 	my @plugins = sort @{ $$this{agentless_plugins} };
 	foreach my $e ( @plugins ){
-		print "$pluginsdir/$e $confdir $workdir\n";
-                system_or_die "$pluginsdir/$e $confdir $workdir";
-        }
+		print "$pluginsdir/$e $confdir $workdir $playbookdir\n";
+		system_or_die "$pluginsdir/$e $confdir $workdir $playbookdir";
+	}
 }
 
 sub execIndirectPlugins ($) {
@@ -154,11 +156,12 @@ sub execIndirectPlugins ($) {
 	my $confdir = $$this{confdir};
 	my $workdir = $$this{workdir};
 	my $pluginsdir = $$this{pluginsdir};
+	my $playbookdir = $$this{playbookdir};
 	my @plugins = sort @{ $$this{indirect_plugins} };
 	foreach my $e ( @plugins ){
-		print "$pluginsdir/$e $confdir $workdir\n";
-                system_or_die "$pluginsdir/$e $confdir $workdir";
-        }
+		print "$pluginsdir/$e $confdir $workdir $playbookdir\n";
+		system_or_die "$pluginsdir/$e $confdir $workdir $playbookdir";
+	}
 }
 
 sub execContactPlugins ($) {
@@ -169,8 +172,8 @@ sub execContactPlugins ($) {
 	my @plugins = sort @{ $$this{contact_plugins} };
 	foreach my $e ( @plugins ){
 		print "$pluginsdir/$e $confdir $workdir\n";
-                system_or_die "$pluginsdir/$e $confdir $workdir";
-        }
+		system_or_die "$pluginsdir/$e $confdir $workdir";
+	}
 }
 
 sub execReporterPlugins ($) {
@@ -178,11 +181,12 @@ sub execReporterPlugins ($) {
 	my $confdir = $$this{confdir};
 	my $workdir = $$this{workdir};
 	my $pluginsdir = $$this{pluginsdir};
+	my $playbookdir = $$this{playbookdir};
 	my @plugins = sort @{ $$this{reporter_plugins} };
 	foreach my $e ( @plugins ){
-		print "$pluginsdir/$e $confdir $workdir\n";
-                system_or_die "$pluginsdir/$e $confdir $workdir";
-        }
+		print "$pluginsdir/$e $confdir $workdir $playbookdir\n";
+		system_or_die "$pluginsdir/$e $confdir $workdir $playbookdir";
+	}
 }
 
 ####
