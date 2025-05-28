@@ -29,7 +29,7 @@ my $f = "$WORKDIR/measurements";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "logfile	agent	display_name=\"Log File\"	check_interval=60	retry_interval=60\n";
+print $h "logfile	agent	display_name=\"Log File\"	check_interval=4	retry_interval=4\n";
 close $h;
 
 #### append conf info.
@@ -37,8 +37,7 @@ my $f = "$WORKDIR/plugin2type2pluginconf2format";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "logfile	agent	logfile_path.conf	default\n";
-print $h "logfile	agent	logfile_term.conf	default\n";
+print $h "logfile	agent	logfile.conf	default\n";
 close $h;
 
 #### append service mapping

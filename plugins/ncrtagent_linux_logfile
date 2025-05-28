@@ -1,44 +1,22 @@
 #!/usr/bin/perl
 
 use strict;
+use JSON::PP;
 
 if( @ARGV < 5 ){
 	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST\n";
 	exit 1;
 }
 
-our $CONFDIR  = $ARGV[0];
-our $WORKDIR  = $ARGV[1];
-our $MEASURE  = $ARGV[2];
-our $VHOST    = $ARGV[3];
-our $VSERVICE = $ARGV[4];
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $MEASURE = $ARGV[2];
+our $HOST    = $ARGV[3];
+our $SERVICE = $ARGV[4];
+
+our $JSONCODEC = JSON::PP->new;
 
 ####
-sub var2ltsv ( \% ){
-	my ($var) = @_;
-	my @ltsv;
-	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
-	foreach my $k ( sort {$a cmp $b} keys %$var ){
-		next if $k eq 'timestamp';
-		push @ltsv, "$k:".$var->{$k};
-	}
-	return join "\t", @ltsv;
-}
-
-sub ltsv2var ($) {
-	my ($ltsv) = @_;
-	my %var;
-	foreach my $kv ( split m"\t", $ltsv ){
-		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
-			next;
-		};
-		my $k = $1;
-		my $v = $2;
-		$var{$k} = $v;
-	}
-	return %var;
-}
-
 sub n ($) {
 	return sprintf "%.2f", $_[0];
 }
@@ -57,295 +35,292 @@ sub debuglog ($) {
 
 ####
 
-sub read_conf () {
-	my %pathconf;
-	my %termconf;
-	my $f = "$CONFDIR/agent/logfile_path.conf.$VHOST.$VSERVICE";
+sub load_conf () {
+	my %entries;
+	my $f = "$CONFDIR/agent/logfile.conf.$HOST.$SERVICE";
 	open my $h, '<', $f or do {
 		die "$f: cannot open, stopped";
 	};
 	while( <$h> ){
 		chomp;
 		next if m"^\s*(#|$)";
-		if( m"^([-.\w]+)\s+(\S+)" ){
+		if( m"^(\w+)\s+(/[-/%.\w]+)(?:\s+(\w+=\S*(?:\s+\w+=\S*)*))?\s*$" ){
 			my $logname = $1;
 			my $logpath = $2;
-			push @{$pathconf{$logname}}, $logpath;
+			my $options = $3;
+			my %options = map { m"^(\w+)=(.*)" or die; $1 => $2 } split m"\s+", $options;
+
+			my $has_date_placeholder;
+			my $has_hour_placeholder;
+			if( $logpath =~ m"%[Ymd]" ){ $has_date_placeholder = 1; }
+			if( $logpath =~ m"%[H]"   ){ $has_date_placeholder = 1; $has_hour_placeholder = 1; }
+			$entries{$logname} = {
+				'logname' => $logname,
+				'logpath' => $logpath,
+				'options' => \%options,
+				'has_date_placeholder' => $has_date_placeholder,
+				'has_hour_placeholder' => $has_hour_placeholder,
+			};
 		}else{
-			die "$f:$.:$_: illegal format, stopped";
+			die "$f:$.: illegal format, stopped";
 		}
 	}
 	close $h;
+	return %entries;
+}
 
-	my $f = "$CONFDIR/agent/logfile_term.conf.$VHOST.$VSERVICE";
-	open my $h, '<', $f or do {
-		die "$f: cannot open, stopped";
-	};
-	while( <$h> ){
-		chomp;
-		next if m"^\s*(#|$)";
-		if( m"^([-.\w]+)\s+(\d+)" ){
-			my $logname = $1;
-			my $term = $2;
-			$termconf{$logname} = $term;
+#### Functions about Remaining Time
+sub count_remainingtimes (\%$) {
+	my ($curr, $now) = @_;
+
+	my %remainingtimes;
+	while( my ($k, $curr_e) = each %$curr ){
+		my $options = $$curr_e{options};
+		next unless $$options{EXPIRATION_TERM_H};
+
+		my $mtime = $$curr_e{mtime};
+		my $remainingtime = $$options{EXPIRATION_TERM_H} - ($now - $mtime);
+		if( !defined $mtime ){
+			$remainingtimes{$k} = undef;
+		}elsif( $remainingtime > 0 ){
+			$remainingtimes{$k} = $remainingtime;
 		}else{
-			die "$f:$.:$_: illegal format, stopped";
+			$remainingtimes{$k} = 0;
 		}
 	}
+	return %remainingtimes;
+}
+
+#### Functions about Increments
+sub load_latest_entries () {
+	my $f = "$WORKDIR/logfile_entries.json";
+	open my $h, '<', $f or return ();
+	my $json = join "", <$h>;
 	close $h;
-
-	return \%pathconf, \%termconf;
+	my $obj = eval { $JSONCODEC->decode( $json ); };
+	return () unless defined $obj;
+	return %$obj;
 }
 
-sub listup_target (@) {
-	my @target;
-	foreach my $i (@_) {
-		my @curr = ( "" );
-		my @next;
-		my (@regexp) = split m"/", $i;
-		foreach my $regexp ( @regexp ){
-			next if $regexp eq '';
-			if( $regexp =~ m"^[-\w]+$" ){
-				foreach my $c ( @curr ){
-					push @next, "$c/$regexp";
-				}
-			}else{
-				foreach my $c ( @curr ){
-					opendir my $h, "$c/" or next;
-					while( my $e = readdir $h ){
-						next if $e eq '.';
-						next if $e eq '..';
-						next unless $e =~ m"^$regexp$";
-						push @next, "$c/$e";
-					}
-					closedir $h;
-				}
-			}
-			@curr = @next;
-			@next = ();
-		}
-		foreach my $f ( @curr ){
-			next unless -f $f;
-			push @target, $f;
-		}
+sub store_latest_entries (%) {
+	my (%entries) = @_;
+	my $f = "$WORKDIR/logfile_entries.json";
+	my $json = eval { $JSONCODEC->encode( \%entries ); };
+	die "$f: cannot encode json, stopped" unless defined $json;
+	open my $h, '>', $f or die "$f: cannot create, stopped";
+	print $h "$json\n";
+	close $h;
+}
+
+sub locate_logfile_having_date_placeholder ($) {
+	my ($basename) = @_;
+
+	my $now = time;
+	for( my $i = 0; $i < 3; ++$i ){
+		my $target_time = $now - $i * 24*60*60;
+		my ($sec, $min, $hour, $day, $mon, $year) = localtime $target_time;
+		my %placeholder = (
+			"%" => "%",
+			"Y" => sprintf("%04d", $year+1900),
+			"m" => sprintf("%02d", $mon+1),
+			"d" => sprintf("%02d", $day),
+		);
+		my $filename = $basename;
+		$filename =~ s{%([%Ymd])}{$placeholder{$1}}eg;
+		return $filename if -f $filename;
 	}
-	return @target;
+	return undef;
 }
 
-sub get_targetstats ($) {
-	my ($target) = @_;
-	my %targetstat;
-	foreach my $f ( @$target ){
+sub locate_entries (%) {
+	my (%entries) = @_;
+	foreach my $entry ( values %entries ){
+		my $logpath = $$entry{logpath};
+		my $logfile;
+		if    ( $$entry{has_hour_placeholder} ){
+			die "not implemented, stopped";
+		}elsif( $$entry{has_date_placeholder} ){
+			$logfile = locate_logfile_having_date_placeholder $$entry{logpath};
+		}else{
+			$logfile = $$entry{logpath};
+		}
 		my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
-		    $atime,$mtime,$ctime,$blksize,$blocks) = stat $f;
-		$targetstat{$f} = ["$dev:$ino", $size, $mtime];
+		    $atime,$mtime,$ctime,$blksize,$blocks) = stat $logfile;
+		my ($logdir) = $logfile =~ m"^(.*)/[^/]+$";
+
+		$$entry{logfile} = $logfile;
+		$$entry{logdir} = $logdir;
+		$$entry{inode} = $ino;
+		$$entry{mtime} = $mtime;
+		$$entry{size} = $size;
 	}
-	return \%targetstat, time;
 }
 
-sub read_targetstats () {
-	my $f = "$WORKDIR/logfile.stats";
-	my %stats;
-	open my $h, '<', $f or return \%stats, time;
-	my $time = <$h>;
-	chomp $time;
-	while( <$h> ){
-		chomp;
-		my ($inode, $size, $mtime, $path) = split m"\t";
-		next unless $mtime > 0;
-		next unless $path ne "";
-		$stats{$path} = [$inode, $size, $mtime];
-	}
-	close $h;
-	return \%stats, $time;
-}
+sub count_increments (\%\%) {
+	my ($last, $curr) = @_;
 
-sub write_targetstats ($$) {
-	my ($stats, $time) = @_;
-	my $f = "$WORKDIR/logfile.stats";
-	open my $h, '>', $f or do {
-		die "$f: cannot open, stopped";
-	};
-	print $h "$time\n";
-	foreach my $path ( sort keys %$stats ){
-		my ($inode, $size, $mtime) = @{$$stats{$path}};
-		print $h "$inode\t$size\t$mtime\t$path\n";
+	my @add;
+	my @remove;
+	while( my ($k, $v) = each %$last ){
+		push @remove, $k unless exists $$last{$k};
 	}
-	close $h;
-}
-
-sub eval_changes ($$$) {
-	my ($groups, $curr_stats, $last_stats) = @_;
-
-	my %status;
-	my %curr_inode2file;
-	my %last_inode2file;
-	while( my ($f, $s) = each %$curr_stats ){
-		$status{$f} |= 1;
-		my ($curr_inode, $curr_size, $curr_mtime) = @$s;
-		$curr_inode2file{$curr_inode} = $f;
-	}
-	while( my ($f, $s) = each %$last_stats ){
-		$status{$f} |= 2;
-		my ($last_inode, $last_size, $last_mtime) = @$s;
-		$last_inode2file{$last_inode} = $f unless $last_inode eq 'renamed';
-	}
-	while( my ($f, $s) = each %status ){
-		next unless $s == 2;
-		my ($last_inode, $last_size, $last_mtime) = @{$$last_stats{$f}};
-		next unless defined $curr_inode2file{$last_inode};
-
-		$$curr_stats{$f} = ['renamed', 0, 0];
+	while( my ($k, $v) = each %$curr ){
+		push @add, $k unless exists $$curr{$k};
 	}
 
-	#	LAST			CURR
-	# A)	log	inode=1000	(none)			out of scope
-	# B)	log.1	inode=1001	(none)			out of scope
-	# C)	log.2	inode=1002	log.2	inode=1001
-	# 	log.3	inode=1003	log.3	inode=1002
-	# D)	(none)			log.4	inode=1003
-	# E)    hoge	inode=2000	hoge	inode=2001
-	# F)	(none)			fuga	inode=2002
-	# G)	foo	inode=3000	(none)
-	# 	(none)			bar	inode=3000
-	my %changes;
-	while( my ($group, $files) = each %$groups ){
-		my $changes = 0;
-		foreach my $file ( @$files ){
-			my $curr_stat = $$curr_stats{$file};
-			my ($curr_inode, $curr_size, $curr_mtime) = @$curr_stat;
-			my $last_stat = $$last_stats{$file};
-			my $orig_file = $last_inode2file{$curr_inode};
+	my %increments;
+	while( my ($k, $curr_e) = each %$curr ){
+		next unless exists $$last{$k};
+		my $last_e = $$last{$k};
 
-			if    ( defined  $orig_file ){
-				my $orig_stat = $$last_stats{$orig_file};
-				my ($orig_inode, $orig_size, $orig_mtime) = @$orig_stat;
-				# C) D) G)
-				if( $curr_size >= $orig_size ){
-					$changes += $curr_size - $orig_size;
-
-				# F)
-				}else{
-					$changes = $curr_size;
-					debuglog "F) $orig_file=>$file: inode:$orig_inode=>$curr_inode mtime:$orig_mtime=>$curr_mtime, size:$orig_size=>$curr_size";
-				}
-			}elsif( defined  $last_stat ){
-				# E) replaced with new file
-				$changes += $curr_size;
-			}elsif( !defined $last_stat ){
-				# F) found new file
-				;
-			}else{ die; }
+		if( $$last_e{logfile} eq $$curr_e{logfile} ){
+			if( !defined($$last_e{size}) && !defined($$curr_e{size}) ){
+				$increments{$k} = undef;
+			}elsif( $$last_e{size} <= $$curr_e{size} ){
+				$increments{$k} = $$curr_e{size} - $$last_e{size};
+			}elsif( $$last_e{inode} == $$curr_e{inode} ){
+				$increments{$k} = $$curr_e{size};
+			}else{
+				# TODO
+				$increments{$k} = $$curr_e{size};
+			}
+		}else{
+			# TODO
+			$increments{$k} = $$curr_e{size};
 		}
-		$changes{$group} = $changes;
 	}
-	return \%changes;
+	return %increments;
 }
 
-sub read_historyofchanges () {
-	my @historyofchanges;
-
-	my $f = "$WORKDIR/logfile.history";
-	open my $h, '<', $f or return \@historyofchanges;
-	while( <$h> ){
-		chomp;
-		next unless m"^(\d+)\t(\d+)\t(.*)$";
-		my $begin = $1;
-		my $end = $2;
-		my $changes = $3;
-		my %changes = ltsv2var $changes;
-		push @historyofchanges, [$begin, $end, \%changes];
-	}
+#### Functions about History
+sub load_history () {
+	my $f = "$WORKDIR/logfile_history.json";
+	open my $h, '<', $f or return {"timestamps"=>[], "values"=>{}};
+	my $json = join "", <$h>;
 	close $h;
-
-	return \@historyofchanges;
+	my $obj = eval { $JSONCODEC->decode( $json ); };
+	return {"timestamps"=>[], "values"=>{}} unless defined $obj;
+	return $obj;
 }
 
-sub write_historyofchanges ($) {
-	my ($historyofchanges) = @_;
-
-	my $f = "$WORKDIR/logfile.history";
-	open my $h, '>', $f or do {
-		die "$f: cannot open, stopped";
-	};
-	foreach my $e ( @$historyofchanges ){
-		my ($begin, $end, $changes) = @$e;
-		my $changes_ltsv = var2ltsv %$changes;
-		print $h "$begin\t$end\t$changes_ltsv\n";
-	}
+sub store_history ($) {
+	my ($history) = @_;
+	my $f = "$WORKDIR/logfile_history.json";
+	my $json = eval { $JSONCODEC->encode( $history ); };
+	die "$f: cannot encode json, stopped" unless defined $json;
+	open my $h, '>', $f or die "$f: cannot create, stopped";
+	print $h "$json\n";
 	close $h;
 }
 
-sub search_all_targets ($) {
-	my ($pathconf) = @_;
-	my %target;
-	my %group2target;
-	while( my ($group, $pathregexp) = each %$pathconf ){
-		my @t = listup_target @$pathregexp;
-		$group2target{$group} = \@t;
-		foreach my $t ( @t ){ $target{$t} = 1; }
-	}
-	return \%group2target, [ sort keys %target ];
-}
+sub validate_history ($$\%) {
+	my ($history, $now, $entries) = @_;
+	my $timestamps = $$history{timestamps};
+	my $values     = $$history{values};
 
-sub update_historyofchanges ($$$$$) {
-	my ($historyofchanges, $termconf, $last_time, $time, $changes) = @_;
-	push @$historyofchanges, [$last_time, $time, $changes];
-
-	my $longest_hours = 1;
-	while( my ($group, $hours) = each %$termconf ){
-		$longest_hours = $hours if $hours > $longest_hours;
-	}
-	
-	my $now = time;
-	while( @$historyofchanges > 1 ){
-		my $head = $$historyofchanges[0];
-		my ($head_begin, $head_end, $changes) = @$head;
-		last if $head_end > $now - $longest_hours*60*60;
-		shift @$historyofchanges;
-	}
-}
-
-sub eval_totals ($$) {
-	my ($historyofchanges, $termconf) = @_;
-	my %totals;
-	
-	my $now = time;
-	while( my ($group, $hours) = each %$termconf ){
-		my $total = 0;
-		foreach my $i ( @$historyofchanges ){
-			my ($begin, $end, $changes) = @$i;
-			next if $end < $now - $hours*60*60;
-			$total += $$changes{$group};
+	my @add;
+	my @remove;
+	while( my ($k, $v) = each %$values ){
+		unless( exists $$entries{$k} ){
+			push @remove, $k;
+			next;
 		}
-		$totals{$group} = $total;
+		unless( $$entries{$k}->{options}->{MONITORING_TERM_H} > 0 ){
+			push @remove, $k;
+			next;
+		}
 	}
-	return \%totals;
+	while( my ($k, $v) = each %$entries ){
+		unless( $$v{options}->{MONITORING_TERM_H} > 0 ){
+			next;
+		}
+		if( exists $$values{$k} ){
+			next;
+		}
+		push @add, $k;
+	}
+
+	foreach my $k ( @add )   { $$values{$k} = []; }
+	foreach my $k ( @remove ){ delete $$values{$k}; }
+
+	my $longest_index = 0;
+	while( my ($k, $v) = each %$values ){
+		my $options = $$entries{$k}->{options};
+		my $monitoring_limit = $now - int($$options{MONITORING_TERM_H} // 0) * 60 * 60;
+
+		my $index = 0;
+		foreach my $t ( @$timestamps ){
+			last if $t < $monitoring_limit;
+			$index++;
+		}
+		$longest_index = $index if $longest_index < $index;
+		next if @$v < $index;
+		splice @$v, $index;
+	}
+	splice @$timestamps, $longest_index;
 }
 
+sub add_increments_to_history ($$\%) {
+	my ($history, $now, $increments) = @_;
+	my $timestamps = $$history{timestamps};
+	my $values     = $$history{values};
+
+	unshift @$timestamps, $now;
+	while( my ($k, $v) = each %$values ){
+		unshift @$v, $$increments{$k};
+	}
+}
+
+sub count_longterm_increments ($) {
+	my ($history) = @_;
+	my $timestamps = $$history{timestamps};
+	my $values     = $$history{values};
+
+	my %longterm_increments;
+	while( my ($k, $v) = each %$values ){
+		next unless @$v > 1;
+		my $sum;
+		foreach( @$v ){ $sum += $_; }
+		$longterm_increments{$k} = $sum;
+	}
+	return %longterm_increments;
+}
 
 ####
-my $realhost = ` hostname `;
-chomp $realhost;
 
-my ($pathconf, $termconf) = read_conf;
-my ($last_targetstats, $last_time) = read_targetstats;
-my $historyofchanges = read_historyofchanges;
+my $now = time;
 
-my ($groups, $targets) = search_all_targets $pathconf;
-my ($targetstats, $time) = get_targetstats $targets;
-my $changes = eval_changes $groups, $targetstats, $last_targetstats;
-update_historyofchanges $historyofchanges, $termconf, $last_time, $time, $changes;
+my %entries = load_conf;
+locate_entries %entries;
 
-my $totals = eval_totals $historyofchanges, $termconf;
+my %remainingtimes = count_remainingtimes %entries, $now;
 
-write_targetstats      $targetstats, $time;
-write_historyofchanges $historyofchanges;
+my %latest_entries = load_latest_entries;
+my %increments = count_increments %latest_entries, %entries;
 
-foreach my $group ( sort keys %$totals ){
-	my $total = $$totals{$group};
-	print "logfile[$group]-increased-by=$total\n";
+my $history = load_history;
+add_increments_to_history $history, $now, %increments;
+validate_history $history, $now, %entries;
+my %longterm_increments = count_longterm_increments $history;
+
+store_latest_entries %entries;
+store_history $history;
+
+foreach my $logname ( sort keys %remainingtimes ){
+	my $remainingtime = $remainingtimes{$logname};
+	$remainingtime = -1 unless defined $remainingtime;
+	print "logfile[$logname]-has-remaining-time-of=$remainingtime\n";
+}
+foreach my $logname ( sort keys %increments ){
+	my $size = $increments{$logname};
+	$size = -1 unless defined $size;
+	print "logfile[$logname]-increased-by=$size\n";
+}
+foreach my $logname ( sort keys %longterm_increments ){
+	my $size = $longterm_increments{$logname};
+	print "with-long-term-logfile[$logname]-increased-by=$size\n";
 }
 
 exit 0;
+
 

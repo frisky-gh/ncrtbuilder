@@ -1,0 +1,11 @@
+
+=== .* .* ===
+syslog		/var/log/messages	MONITORING_TERM_H=24
+maillog		/var/log/maillog	MONITORING_TERM_H=24
+authlog		/var/log/secure 	MONITORING_TERM_H=24
+
+
+=== vm_for_batch.* .* ===
+batch001log		/batch/root/batch001/log/%Y-%m-%d.watchedlog	MONITORING_TERM_H=24 EXPIRATION_TERM_H=8
+
+
