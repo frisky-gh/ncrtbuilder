@@ -31,6 +31,8 @@ RUN curl -L -o /root/grafana-dashboard-helper_1.0-rc4_amd64.deb \
 	https://github.com/frisky-gh/grafana-dashboard-helper/releases/download/v1.0-RC4/grafana-dashboard-helper_1.0_amd64.1.deb \
 	&& dpkg -i /root/grafana-dashboard-helper_1.0-rc4_amd64.deb
 
+RUN echo "ulimit -n 1024" > /etc/default/grafana-dashboard-helper
+
 #### Init System Option
 
 # sysv init

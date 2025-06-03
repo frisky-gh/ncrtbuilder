@@ -1057,9 +1057,6 @@ sub setup_grafana_dashboard_helper_conf () {
 		"PLUGIN_NCRT_GENERIC_PANELPRIORITY=50\n" .
 		"PLUGIN_GENERIC_PANELPRIORITY=90\n";
 
-	write_or_die "$SETTINGSDIR/naemon_etc_default/grafana-dashboard-helper",
-		"ulimit -n 2048\n";
-
 	create_or_die "$SETTINGSDIR/naemon_etc_grafana-dashboard-helper/ncrt_has_setup_these_conf_files";
 
 	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/grafana-dashboard-helper reload";
