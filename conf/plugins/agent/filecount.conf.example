@@ -1,0 +1,8 @@
+=== .* .* ===
+
+postfix_queue		/var/spool/postfix		SUDO=yes
+
+fluentd_queue		/var/log/fluent/buffer
+
+nullmailer_queue	/var/spool/nullmailer		SUDO=yes
+
