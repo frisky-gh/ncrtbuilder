@@ -113,10 +113,8 @@ sub rename_webpage ($$$) {
 	};
 }
 
-sub write_webpage ($$$$$$$$$$$$;$) {
-	my ($conf, $alertgroup, $uuid, $now, $action,
-	    $host_story, $service_story, $perf_story, $firing_host, $firing_service, $firing_perf,
-    	    $panels, $next_uuid) = @_;
+sub write_webpage ($$$$$\%$;$) {
+	my ($conf, $alertgroup, $uuid, $now, $action, $stats_summary, $panels, $next_uuid) = @_;
 	my $sessiondir = $$conf{SESSIONDIR};
 	my $sessionurlbase = $$conf{SESSIONURLBASE};
 	my $sessionurl     = "$sessionurlbase/$uuid/";
@@ -128,13 +126,8 @@ sub write_webpage ($$$$$$$$$$$$;$) {
 		"NOW"            => mktimestamp $now,
 		"ACTION"         => $action,
 		"SESSIONURL"     => $sessionurl,
-		"HOST_STORY"     => $host_story,
-		"SERVICE_STORY"  => $service_story,
-		"PERF_STRORY"    => $perf_story,
-		"FIRING_HOST"    => $firing_host,
-		"FIRING_SERVICE" => $firing_service,
-		"FIRING_PERF"    => $firing_perf,
 		"PANELS"         => $panels,
+		%$stats_summary,
 		;
 
 	my $d = "$sessiondir/$uuid";
@@ -173,16 +166,16 @@ sub new_panelbasket ($) {
 }
 
 sub download_panels_in_panelbasket ($$$) {
-	my ($panelbasket, $gdhurl, $fired_perfs) = @_;                                                          
+	my ($panelbasket, $gdhurl, $moid_list_of_fired_perfs) = @_;
 	my $panels_of_perf = $$panelbasket{panels_of_perf};
 	my $panels         = $$panelbasket{panels};
 
-	while( my ($fired_host_service_perf, undef) = each %$fired_perfs ){
-		next if defined $$panels_of_perf{$fired_host_service_perf};
+	foreach my $moid_of_fired_perf ( @$moid_list_of_fired_perfs ){
+		next if defined $$panels_of_perf{$moid_of_fired_perf};
 
-		my ($host, $service, $perf) = split " ", $fired_host_service_perf;
+		my ($host, $service, $perf) = split " ", $moid_of_fired_perf;
 		my $panels_of_fired_perf = download_panels_of_perf $gdhurl, $host, $service, $perf;
-		$$panels_of_perf{$fired_host_service_perf} = $panels_of_fired_perf;
+		$$panels_of_perf{$moid_of_fired_perf} = $panels_of_fired_perf;
 		foreach my $panel_of_fired_perf ( @$panels_of_fired_perf ){
 			my $panelid = sprintf "%03d", int( @$panels + 1 );
 			$$panel_of_fired_perf{panelid} = $panelid;

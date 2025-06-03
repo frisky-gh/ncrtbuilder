@@ -39,8 +39,8 @@ if    ( $subcmd eq "update" ){
 		my $panelbasket = $$last_status{panelbasket} // new_panelbasket $uuid;
 
 		my $now = time;
-		my $web_fired_perfs = $$web_status{fired_perfs};
-		download_panels_in_panelbasket $panelbasket, $gdhurl, $web_fired_perfs;
+		my $moid_list_of_fired_perfs = $$web_status{moid_list_of_fired_perfs};
+		download_panels_in_panelbasket $panelbasket, $gdhurl, $moid_list_of_fired_perfs;
 
 		my $downloadparam = get_report_param $rules, $alertgroup;
 		create_imgreqs_of_panelbasket_if_not_exists $panelbasket, $uuid, $downloadparam;

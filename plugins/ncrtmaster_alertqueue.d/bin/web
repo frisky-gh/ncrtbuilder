@@ -8,6 +8,7 @@ BEGIN {
 }
 use lib "$TOOLHOME/lib/perl5";
 use NCRTAlertQueue;
+use NCRTAlertQueue::Stats;
 use NCRTAlertQueue::Web;
 
 use strict;
@@ -22,6 +23,29 @@ our $CONFDIR = $ARGV[1];
 our $WORKDIR = $ARGV[2];
 my $conf = load_conf;
 
+#### Functions
+
+sub write_webpage_and_reportstatus ($$$$$$$$) {
+	my ($alertgroup, $uuid, $creation_unixtime,
+	    $action, $webpage_status,
+	    $last_reportstatus, $curr_eventbasket, $panels) = @_;
+
+	my $now = time;
+	my $stats = create_new_stats $alertgroup;
+	compute_stats_in_range $stats, $creation_unixtime, $now;
+	my %stats_summary = output_stats_summary $stats;
+
+	write_webpage $conf, $alertgroup, $uuid, $now, $action, %stats_summary, $panels;
+
+	write_reportstatus "web", $uuid, $alertgroup, $now, {
+		"session_status" => $webpage_status,
+		"creation_unixtime" => $creation_unixtime,
+		"current_unixtime"  => $now,
+		"stats" => $stats,
+		"moid_list_of_fired_perfs" => [list_perf_moids_of_stats $stats],
+	};
+}
+
 #### Main Entry Point of Wwb Page Management
 
 if    ( $subcmd eq "open" ){
@@ -32,41 +56,19 @@ if    ( $subcmd eq "open" ){
 		next unless defined $uuid;
 		next if defined $prev_uuid;
 		my ($last_alertgroup, $reporting_unixtime) = read_reportstatus "web", $uuid;
-		next if $last_alertgroup eq $alertgroup;
+		next if defined $last_alertgroup;
+
+		debuglog "web: $subcmd: opening a new session $uuid.";
+
+		my ($curr_eventbasket) = read_latest_eventbasket $alertgroup;
+		my $new_reportstatus = get_new_reportstatus;
 
 		my ($panel_alertgroup, $panel_unixtime, $panel_status) = read_reportstatus "panel", $uuid;
 		my $panels = $$panel_status{panelbasket}->{panels};
 
-		my $now = time;
-		my $fired_hosts = {};
-		my $fired_services = {};
-		my $fired_perfs = {};
-		my ($host_story, $service_story, $perf_story) = output_course_of_events
-			$alertgroup, $creation_unixtime, $now,
-			$fired_hosts, $fired_services,  $fired_perfs;
-
-		my ($latest_status) = read_latest_eventbasket $alertgroup;
-		my $firing_hosts    = $$latest_status{host_events};
-		my $firing_services = $$latest_status{service_events};
-		my $firing_perfs    = $$latest_status{perf_events};
-
-		write_webpage $conf, $alertgroup, $uuid, $now, "open",
-	       		$host_story, $service_story, $perf_story,
-			$firing_hosts, $firing_services, $firing_perfs,
-			$panels;
-
-		write_reportstatus "web", $uuid, $alertgroup, $now, {
-			"session_status" => "opened",
-			"fired_hosts" => $fired_hosts,
-			"fired_services" => $fired_services,
-			"fired_perfs" => $fired_perfs,
-			"latest_firing_hosts" => $firing_hosts,
-			"latest_firing_services" => $firing_services,
-			"latest_firing_perfs" => $firing_perfs,
-			"latest_host_story" => $host_story,
-			"latest_service_story" => $service_story,
-			"latest_perf_story" => $perf_story,
-		};
+		write_webpage_and_reportstatus $alertgroup, $uuid, $creation_unixtime,
+			"open", "opened",
+			$new_reportstatus, $curr_eventbasket, $panels;
 	}
 	debuglog "web: $subcmd: complete.";
 
@@ -74,46 +76,23 @@ if    ( $subcmd eq "open" ){
 	debuglog "web: $subcmd: start.";
 	my @uuids = list_reportstatus "web";
 	foreach my $uuid ( @uuids ){
-		my ($alertgroup, $reporting_unixtime, $status) = read_reportstatus "web", $uuid;
+		my ($alertgroup, $reporting_unixtime, $reportstatus) = read_reportstatus "web", $uuid;
 		next unless defined $alertgroup;
-		my $session_status = $$status{session_status};
+		my $session_status = $$reportstatus{session_status};
 		next unless $session_status eq "opened";
 		my ($last_uuid, $creation_unixtime) = read_alertid $alertgroup;
 		next if $uuid eq $last_uuid;
 
-		my ($panel_alertgroup, $panel_unixtime, $panel_status) = read_reportstatus "panel", $uuid;
-		my $panels = $$panel_status{panelbasket}->{panels};
+		debuglog "web: $subcmd: closing a session $uuid.";
 
-		my $now = time;
-		my $fired_hosts    = $$status{fired_hosts};
-		my $fired_services = $$status{fired_services};
-		my $fired_perfs    = $$status{fired_perfs};
-		my ($host_story, $service_story, $perf_story) = output_course_of_events
-			$alertgroup, $creation_unixtime, $now,
-			$fired_hosts, $fired_services,  $fired_perfs;
+		my ($latest_eventbasket) = read_latest_eventbasket $alertgroup;
 
-		my ($latest_status) = read_latest_eventbasket $alertgroup;
-		my $firing_hosts    = $$latest_status{host_events};
-		my $firing_services = $$latest_status{service_events};
-		my $firing_perfs    = $$latest_status{perf_events};
+		my ($panel_alertgroup, $panel_unixtime, $panel_reportstatus) = read_reportstatus "panel", $uuid;
+		my $panels = $$panel_reportstatus{panelbasket}->{panels};
 
-		write_webpage $conf, $alertgroup, $uuid, $now, "close",
-	       		$host_story, $service_story, $perf_story,
-			$firing_hosts, $firing_services, $firing_perfs,
-			$panels;
-
-		write_reportstatus "web", $uuid, $alertgroup, $now, {
-			"session_status" => "closed",
-			"fired_hosts" => $fired_hosts,
-			"fired_services" => $fired_services,
-			"fired_perfs" => $fired_perfs,
-			"latest_firing_hosts" => $firing_hosts,
-			"latest_firing_services" => $firing_services,
-			"latest_firing_perfs" => $firing_perfs,
-			"latest_host_story" => $host_story,
-			"latest_service_story" => $service_story,
-			"latest_perf_story" => $perf_story,
-		};
+		write_webpage_and_reportstatus $alertgroup, $uuid, $creation_unixtime,
+			"close", "closed",
+			$reportstatus, $latest_eventbasket, $panels;
 	}
 	debuglog "web: $subcmd: complete.";
 
@@ -123,62 +102,21 @@ if    ( $subcmd eq "open" ){
 	foreach my $alertgroup ( @alertgroups ){
 		my ($next_uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
 		next unless defined $prev_uuid;
-		my ($prev_alertgroup, $reporting_unixtime, $status) = read_reportstatus "web", $prev_uuid;
-		my $session_status = $$status{session_status};
+		my ($prev_alertgroup, $reporting_unixtime, $reportstatus) = read_reportstatus "web", $prev_uuid;
+		my $session_status = $$reportstatus{session_status};
 		next unless $session_status eq "opened";
 
-		my ($panel_alertgroup, $panel_unixtime, $panel_status) = read_reportstatus "panel", $prev_uuid;
-		my $panels = $$panel_status{panelbasket}->{panels};
+		debuglog "web: $subcmd: renaming a session $prev_uuid to $next_uuid.";
 
-		my $now = time;
-		my $fired_hosts    = $$status{fired_hosts};
-		my $fired_services = $$status{fired_services};
-		my $fired_perfs    = $$status{fired_perfs};
-		my ($host_story, $service_story, $perf_story) = output_course_of_events
-			$alertgroup, $creation_unixtime, $now,
-			$fired_hosts, $fired_services,  $fired_perfs;
+		my ($latest_eventbasket) = read_latest_eventbasket $alertgroup;
 
-		my ($latest_status) = read_latest_eventbasket $alertgroup;
-		my $firing_hosts    = $$latest_status{host_events};
-		my $firing_services = $$latest_status{service_events};
-		my $firing_perfs    = $$latest_status{perf_events};
+		my ($panel_alertgroup, $panel_unixtime, $panel_reportstatus) = read_reportstatus "panel", $prev_uuid;
+		my $panels = $$panel_reportstatus{panelbasket}->{panels};
 
 		rename_webpage $conf, $prev_uuid, $next_uuid;
-		write_webpage $conf, $alertgroup, $prev_uuid, $now, "rename",
-	       		$host_story, $service_story, $perf_story,
-			$firing_hosts, $firing_services, $firing_perfs,
-			$panels, $next_uuid;
-
-		write_reportstatus "web", $prev_uuid, $alertgroup, $now, {
-			"session_status" => "renamed",
-			"fired_hosts" => $fired_hosts,
-			"fired_services" => $fired_services,
-			"fired_perfs" => $fired_perfs,
-			"latest_firing_hosts" => $firing_hosts,
-			"latest_firing_services" => $firing_services,
-			"latest_firing_perfs" => $firing_perfs,
-			"latest_host_story" => $host_story,
-			"latest_service_story" => $service_story,
-			"latest_perf_story" => $perf_story,
-		};
-
-		write_webpage $conf, $alertgroup, $next_uuid, $now, "update",
-	       		$host_story, $service_story, $perf_story,
-			$firing_hosts, $firing_services, $firing_perfs,
-			$panels;
-
-		write_reportstatus "web", $next_uuid, $alertgroup, $now, {
-			"session_status" => "opened",
-			"fired_hosts" => $fired_hosts,
-			"fired_services" => $fired_services,
-			"fired_perfs" => $fired_perfs,
-			"latest_firing_hosts" => $firing_hosts,
-			"latest_firing_services" => $firing_services,
-			"latest_firing_perfs" => $firing_perfs,
-			"latest_host_story" => $host_story,
-			"latest_service_story" => $service_story,
-			"latest_perf_story" => $perf_story,
-		};
+		write_webpage_and_reportstatus $alertgroup, $next_uuid, $creation_unixtime,
+			"rename", "opened",
+			$reportstatus, $latest_eventbasket, $panels;
 	}
 	debuglog "web: $subcmd: complete.";
 
@@ -186,44 +124,20 @@ if    ( $subcmd eq "open" ){
 	debuglog "web: $subcmd: start.";
 	my @uuids = list_reportstatus "web";
 	foreach my $uuid ( @uuids ){
-		my ($alertgroup, $reporting_unixtime, $status) = read_reportstatus "web", $uuid;
+		my ($alertgroup, $reporting_unixtime, $reportstatus) = read_reportstatus "web", $uuid;
 		next unless defined $alertgroup;
-		my $session_status = $$status{session_status};
+		my $session_status = $$reportstatus{session_status};
 		next unless $session_status eq "opened";
+		my $creation_unixtime = $$reportstatus{creation_unixtime};
 
-		my ($panel_alertgroup, $panel_unixtime, $panel_status) = read_reportstatus "panel", $uuid;
-		my $panels = $$panel_status{panelbasket}->{panels};
+		my ($latest_eventbasket) = read_latest_eventbasket $alertgroup;
 
-		my $now = time;
-		my $fired_hosts    = $$status{fired_hosts};
-		my $fired_services = $$status{fired_services};
-		my $fired_perfs    = $$status{fired_perfs};
-		my ($host_story, $service_story, $perf_story) = output_course_of_events
-			$alertgroup, $reporting_unixtime, $now,
-			$fired_hosts, $fired_services,  $fired_perfs;
+		my ($panel_alertgroup, $panel_unixtime, $panel_reportstatus) = read_reportstatus "panel", $uuid;
+		my $panels = $$panel_reportstatus{panelbasket}->{panels};
 
-		my ($latest_status) = read_latest_eventbasket $alertgroup;
-		my $firing_hosts    = $$latest_status{host_events};
-		my $firing_services = $$latest_status{service_events};
-		my $firing_perfs    = $$latest_status{perf_events};
-
-		write_webpage $conf, $alertgroup, $uuid, $now, "update",
-	       		$host_story, $service_story, $perf_story,
-			$firing_hosts, $firing_services, $firing_perfs,
-			$panels;
-
-		write_reportstatus "web", $uuid, $alertgroup, $now, {
-			"session_status" => "opened",
-			"fired_hosts" => $fired_hosts,
-			"fired_services" => $fired_services,
-			"fired_perfs" => $fired_perfs,
-			"latest_firing_hosts" => $firing_hosts,
-			"latest_firing_services" => $firing_services,
-			"latest_firing_perfs" => $firing_perfs,
-			"latest_host_story" => $host_story,
-			"latest_service_story" => $service_story,
-			"latest_perf_story" => $perf_story,
-		};
+		write_webpage_and_reportstatus $alertgroup, $uuid, $creation_unixtime,
+			"update", "opened",
+			$reportstatus, $latest_eventbasket, $panels;
 	}
 	debuglog "web: $subcmd: complete.";
 
@@ -232,13 +146,15 @@ if    ( $subcmd eq "open" ){
 	my $rules = load_reportrules;
 	my @uuids = list_reportstatus "web";
 	foreach my $uuid ( @uuids ){
-		my ($alertgroup, $reporting_unixtime, $status) = read_reportstatus "web", $uuid;
+		my ($alertgroup, $reporting_unixtime, $reportstatus) = read_reportstatus "web", $uuid;
 		next unless defined $alertgroup;
 		my ($last_uuid, $creation_unixtime, $prev_uuid) = read_alertid $alertgroup;
 		next if $uuid eq $last_uuid;
 		next if $uuid eq $prev_uuid;
 
-		my $session_status = $$status{session_status};
+		debuglog "web: $subcmd: expiring a session $uuid.";
+
+		my $session_status = $$reportstatus{session_status};
 		if    ( $session_status eq "opened" ){
 			remove_webpage $conf, $uuid;
 			remove_reportstatus "web", $uuid;
@@ -253,7 +169,7 @@ if    ( $subcmd eq "open" ){
 			remove_webpage $conf, $uuid;
 			remove_reportstatus "web", $uuid;
 		}else{
-			debuglog "web: cleanup: unknown session status $session_status.";
+			debuglog "web: $subcmd: a session $uuid has unknown status $session_status.";
 			remove_webpage $conf, $uuid;
 			remove_reportstatus "web", $uuid;
 		}

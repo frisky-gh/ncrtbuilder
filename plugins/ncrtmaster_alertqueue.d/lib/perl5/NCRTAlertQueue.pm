@@ -37,6 +37,7 @@ our @EXPORT = (
 	"output_course_of_events",
 	"list_eventbasket",
 	"write_eventbasket",
+	"read_eventbasket",
 	"unlink_eventbasket",
 	"get_size_of_eventbasket",
 	"read_latest_eventbasket",
@@ -60,6 +61,7 @@ our @EXPORT = (
 	"write_reportstatus",
 	"remove_reportstatus",
 	"reportstatus_exists",
+	"get_new_reportstatus",
 
 	"generate_by_template",
 );
@@ -392,7 +394,6 @@ sub run_as_background ($) {
 	my $pid = fork;
 	return if $pid;
 
-	print "DEBUG: background: $cmd\n";
 	exec $cmd or die "Failed to execute: $!";
 	exit 126;
 }
@@ -485,6 +486,25 @@ sub get_size_of_eventbasket ($$) {
 	my ( $dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size,
              $atime,$mtime,$ctime,$blksize,$blocks ) = stat $f;
 	return $size;
+}
+
+sub get_new_reportstatus () {
+	return {
+		"session_status"	 => undef,
+		"fired_hosts"		 => {},
+		"fired_services"	 => {},
+		"fired_perfs"		 => {},
+
+		# Do not use with this plug-in. These are for diagnostic purposes.
+		# Latest firing items are created from a eventbasket each time. reportstatus is not used.
+		"latest_firing_hosts"	 => undef,
+		"latest_firing_services" => undef,
+		"latest_firing_perfs"	 => undef,
+		# Story items are created from that eventqueue each time. reportstatus is not used.
+		"latest_host_story"	 => undef,
+		"latest_service_story"	 => undef,
+		"latest_perf_story"	 => undef,
+	};
 }
 
 ####
@@ -706,6 +726,98 @@ sub add_perf_story ($$$$$) {
 	}
 }
 
+sub analyze_host_events ($$) {
+	my ($events, $stats) = @_;
+
+	foreach my $e ( @$events ){
+		my $host = $$e{host};
+		my $state = $$e{state};
+		next if $state eq "";
+
+		# update most severe state
+		my $last_state = $$stats{$host}->{most_severe_state};
+		if    ( $last_state eq "" ){
+			$$stats{$host}->{most_severe_state} = $state;
+		}elsif( $last_state eq "Warning" ){
+			if( $state eq "Critical" ){
+				$$stats{$host}->{most_severe_state} = $state;
+			}
+		}elsif( $last_state eq "Critical" ){
+		}else{
+			$$stats{$host}->{most_severe_state} = $state;
+		}
+	}
+}
+
+sub analyze_service_events ($$) {
+	my ($events, $stats) = @_;
+
+	foreach my $e ( @$events ){
+		my $host    = $$e{host};
+		my $service = $$e{service};
+		my $state = $$e{state};
+		next if $state eq "";
+
+		# update most severe state
+		my $last_state = $$stats{$host}->{$service}->{most_severe_state};
+		if    ( $last_state eq "" ){
+			$$stats{$host}->{$service}->{most_severe_state} = $state;
+		}elsif( $last_state eq "Warning" ){
+			if( $state eq "Critical" ){
+				$$stats{$host}->{$service}->{most_severe_state} = $state;
+			}
+		}elsif( $last_state eq "Critical" ){
+		}else{
+			$$stats{$host}->{$service}->{most_severe_state} = $state;
+		}
+	}
+}
+
+sub analyze_perf_events ($$) {
+	my ($events, $stats) = @_;
+
+	foreach my $e ( @$events ){
+		my $host    = $$e{host};
+		my $service = $$e{service};
+		my $perf    = $$e{perf};
+		my $value   = $$e{value};
+		my $state     = $$e{state};
+		my $perfstate = $$e{perfstate};
+
+		# update most severe state
+		if( $state ne "" ){
+			my $last_state = $$stats{$host}->{$service}->{$perf}->{most_severe_state};
+			if    ( $last_state eq "" ){
+				$$stats{$host}->{$service}->{$perf}->{most_severe_state} = $state;
+			}elsif( $last_state eq "Warning" ){
+				if( $state eq "Critical" ){
+					$$stats{$host}->{$service}->{$perf}->{most_severe_state} = $state;
+				}
+			}elsif( $last_state eq "Critical" ){
+			}else{
+				$$stats{$host}->{$service}->{$perf}->{most_severe_state} = $state;
+			}
+		}
+
+		# update max / min values
+		if    ( $perfstate eq "under_warn" || $perfstate eq "under_crit" ){
+			my $last_min = $$stats{$host}->{$service}->{$perf}->{min};
+			if    ( $last_min eq "" ){
+				$$stats{$host}->{$service}->{$perf}->{min} = $value;
+			}elsif( $last_min < $value ){
+				$$stats{$host}->{$service}->{$perf}->{min} = $value;
+			}
+		}elsif( $perfstate eq "over_warn"  || $perfstate eq "over_crit" ){
+			my $last_max = $$stats{$host}->{$service}->{$perf}->{max};
+			if    ( $last_max eq "" ){
+				$$stats{$host}->{$service}->{$perf}->{max} = $value;
+			}elsif( $last_max > $value ){
+				$$stats{$host}->{$service}->{$perf}->{max} = $value;
+			}
+		}
+	}
+}
+
 sub output_course_of_events ($$$$$$) {
 	my ($alertgroup, $start_unixtime, $end_unixtime,
 	    $fired_hosts, $fired_services, $fired_perfs) = @_;
@@ -715,6 +827,9 @@ sub output_course_of_events ($$$$$$) {
 	my @hosts_story;
 	my @services_story;
 	my @perfs_story;
+	my %stats_of_host_events;
+	my %stats_of_service_events;
+	my %stats_of_perf_events;
 	foreach my $i ( @sorted_names ){
 		my $unixtime  = $$i{unixtime};
 		my $timestamp = $$i{timestamp};
@@ -725,16 +840,20 @@ sub output_course_of_events ($$$$$$) {
 			if    ( $k eq "host_events" ){
 				add_host_story    $alertgroup, $unixtime, $v,
 					$fired_hosts, \@hosts_story;
+				analyze_host_events $v, \%stats_of_host_events;
 			}elsif( $k eq "service_events" ){
 				add_service_story $alertgroup, $unixtime, $v,
 					$fired_services, \@services_story;
+				analyze_service_events $v, \%stats_of_service_events;
 			}elsif( $k eq "perf_events" ){
 				add_perf_story    $alertgroup, $unixtime, $v,
 					$fired_perfs, \@perfs_story;
+				analyze_perf_events $v, \%stats_of_perf_events;
 			}
 		}
 	}
-	return \@hosts_story, \@services_story, \@perfs_story;
+	return \@hosts_story, \@services_story, \@perfs_story,
+		\%stats_of_host_events, \%stats_of_service_events, \%stats_of_perf_events;
 }
 
 sub read_latest_eventbasket ($) {
@@ -860,7 +979,7 @@ sub load_and_sort_hoststate ($$$) {
 		
 		#
 		my @host_groups;
-		@host_groups = split m"\s+", $host_groups unless $host_groups eq '';
+		@host_groups = split m",+", $host_groups unless $host_groups eq '';
 
 		#
 		my %custom_variables;
@@ -968,7 +1087,7 @@ sub load_and_sort_servicestate ($$$) {
 		
 		#
 		my @service_groups;
-		@service_groups = split m"\s+", $service_groups unless $service_groups eq '';
+		@service_groups = split m",+", $service_groups unless $service_groups eq '';
 
 		#
 		my %custom_variables;

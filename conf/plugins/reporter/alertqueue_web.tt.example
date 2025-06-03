@@ -15,7 +15,7 @@
 </head>
 <body>
 [% IF ACTION == "open" || ACTION == "update" || ACTION == "close" -%]
-  [%- IF FIRING_HOST != "" -%]
+  [%- IF FIRED_HOSTS_IN_LIST_FORM.size > 0 -%]
   <h3>Alert Group "[% ALERTGROUP %]" Current Host Status</h3>
   <table>
     <tr>
@@ -24,10 +24,11 @@
       <th>status</th>
       <th>links</th>
     </tr>
-    [%- FOREACH i IN FIRING_HOST -%]
+    [%- FOREACH i IN FIRED_HOSTS_IN_LIST_FORM -%]
+    [%-     s = FIRING_HOSTS_IN_HASH_FORM.${i.host} -%]
     <tr>
       <td>[% i.host %]</td>
-      <td>[% i.state %]</td>
+      <td>[% s.state %]</td>
       <td>
         <a href="/tng/thruk/cgi-bin/extinfo.cgi?type=2&host=[% i.host %]&service=[% i.service %]">Thruk</a>
         <a href="/tng/grafana-dashboard-helper/jump_to_dashboard.html?dashboard=[% i.host %],[% i.service %]">Grafana</a>
@@ -36,7 +37,7 @@
     [%- END -%]
   </table>
   [%- END -%]
-  [%- IF FIRING_SERVICE != "" -%]
+  [%- IF FIRED_SERVICES_IN_LIST_FORM.size > 0 -%]
   <h3>Alert Group "[% ALERTGROUP %]" Current Service Status</h3>
   <table>
     <tr>
@@ -45,7 +46,8 @@
       <th>status</th>
       <th>links</th>
     </tr>
-    [%- FOREACH i IN FIRING_SERVICE -%]
+    [%- FOREACH i IN FIRED_SERVICES_IN_LIST_FORM -%]
+    [%-     s = FIRING_SERVICES_IN_HASH_FORM.${i.host}.${i.service} -%]
     <tr>
       <td>[% i.host %]</td>
       <td>[% i.service %]</td>
@@ -58,7 +60,7 @@
     [%- END -%]
   </table>
   [%- END -%]
-  [%- IF FIRING_PERF != "" -%]
+  [%- IF FIRED_PERFS_IN_LIST_FORM.size > 0 -%]
   <h3>Current Performance Status</h3>
   <table>
     <tr>
@@ -69,23 +71,26 @@
       <th>value</th>
       <th>links</th>
     </tr>
-    [% FOREACH i IN FIRING_PERF %]
-    [%-     IF    i.perfstate == "under_warn" %][% s = i.value _ " < " _ i.warn -%]
-    [%-     ELSIF i.perfstate == "over_warn"  %][% s = i.warn _ " < " _ i.value -%]
-    [%-     ELSIF i.perfstate == "under_crit" %][% s = i.value _ " < " _ i.crit -%]
-    [%-     ELSIF i.perfstate == "over_crit"  %][% s = i.crit _ " < " _ i.value -%]
+    [% FOREACH i IN FIRED_PERFS_IN_LIST_FORM %]
+    [%-     s = FIRING_PERFS_IN_HASH_FORM.${i.host}.${i.service}.${i.perf} -%]
+    [%-     IF    s.perfstate == "under_warn" %][% state = s.value _ " < " _ s.warn  -%]
+    [%-     ELSIF s.perfstate == "over_warn"  %][% state = s.warn  _ " < " _ s.value -%]
+    [%-     ELSIF s.perfstate == "under_crit" %][% state = s.value _ " < " _ s.crit  -%]
+    [%-     ELSIF s.perfstate == "over_crit"  %][% state = s.crit  _ " < " _ s.value -%]
+    [%-     ELSE                              %][% state = "" -%]
     [%-     END -%]
     <tr>
       <td>[% i.host %]</td>
       <td>[% i.service %]</td>
       <td>[% i.perf %]</td>
-      <td>[% i.state %]</td>
-      <td>[% s %]</td>
-      <td><a href="#[%= i.host _ "/" _ i.service _ "/" _ i.perf %]">Graphs</a></td>
+      <td>[% s.state %]</td>
+      <td>[% state %]</td>
+      <td><a href="#[%= s.host _ "/" _ s.service _ "/" _ s.perf %]">Graphs</a></td>
     </tr>
     [% END %]
   </table>
   [%- END -%]
+  [%- IF PANELS.size > 0 -%]
   <h3>Graphs</h3>
   <ul>
     [% FOREACH i IN PANELS %]
@@ -98,6 +103,7 @@
     [%      END -%]
     [% END %]
   </ul>
+  [%- END -%]
 [% ELSIF ACTION == "rename" -%]
   Next page is <a href="../[%=NEXT_UUID%]/">here.</a>
 [% ELSE -%]
