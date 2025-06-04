@@ -41,9 +41,9 @@ while( <$h> ){
 		my %options = map { m"^(\w+)=(.*)" or die; $1 => $2 } split m"\s+", $options;
 		my $cmd;
 		if( $options{SUDO} =~ m"^(yes|true)$"i ){
-			$cmd = "/usr/bin/find @dirs -type f";
-		}else{
 			$cmd = "sudo /usr/bin/find @dirs -type f";
+		}else{
+			$cmd = "/usr/bin/find @dirs -type f";
 		}
 
 		push @entries, {
