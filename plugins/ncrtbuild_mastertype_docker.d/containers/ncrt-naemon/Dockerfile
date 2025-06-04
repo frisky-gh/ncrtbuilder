@@ -27,9 +27,9 @@ RUN curl -L -o /root/naemon2influx-1.4-rc2.deb \
 	https://github.com/frisky-gh/naemon2influx/releases/download/v1.4.2/naemon2influx-1.4-2.deb \
 	&& dpkg -i /root/naemon2influx-1.4-rc2.deb
 
-RUN curl -L -o /root/grafana-dashboard-helper_1.0-rc4_amd64.deb \
-	https://github.com/frisky-gh/grafana-dashboard-helper/releases/download/v1.0-RC4/grafana-dashboard-helper_1.0_amd64.1.deb \
-	&& dpkg -i /root/grafana-dashboard-helper_1.0-rc4_amd64.deb
+RUN curl -L -o /root/grafana-dashboard-helper_1.0-rc5_amd64.deb \
+	https://github.com/frisky-gh/grafana-dashboard-helper/releases/download/v1.0-RC5/grafana-dashboard-helper_1.0_amd64.deb \
+	&& dpkg -i /root/grafana-dashboard-helper_1.0-rc5_amd64.deb
 
 RUN echo "ulimit -n 1024" > /etc/default/grafana-dashboard-helper
 
