@@ -231,6 +231,25 @@ sub naemon_is_running () {
 	return undef;
 }
 
+sub grafana_port_is_working () {
+	my $stdout = `curl -o /dev/null -s -w "%{http_code}\n" http://localhost:$GRAFANA_LOCALPORT/`;
+	my $rc = $?;
+	chomp $stdout;
+	return undef unless $rc == 0;
+	return undef unless $stdout eq "302";
+	return 1;
+}
+
+sub influxdb_port_is_working () {
+	my $stdout = `curl -o /dev/null -s -w "%{http_code}\n" http://localhost:$INFLUXDB_LOCALPORT/`;
+	my $rc = $?;
+	chomp $stdout;
+	return undef unless $rc == 0;
+	return undef unless $stdout eq "200";
+	return 1;
+}
+
+
 ####
 
 sub setup_influxdb_admin () {
@@ -1019,7 +1038,7 @@ sub setup_thruk_conf () {
 	create_or_die "$SETTINGSDIR/naemon_etc_thruk/htpasswd" unless -f "$SETTINGSDIR/naemon_etc_thruk/htpasswd";
 	create_or_die "$SETTINGSDIR/naemon_etc_thruk/ncrt_has_setup_these_conf_files";
 
-	foreach my $i ( 1 .. 30 ){
+	foreach my $i ( 1..60 ){
 		my $stdout = `$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/thruk reload`;
 		my $r = $?;
 		return 1 if $r == 0;
@@ -1213,12 +1232,8 @@ sub setup_userprofiles () {
 sub setup () {
 	exit 2 unless docker_is_running;
 
-	foreach my $i ( 1..30 ){
-		last if apache2_is_running;
-		sleep 1;
-	}
-	foreach my $i ( 1..30 ){
-		last if naemon_is_running;
+	foreach my $i ( 1..60 ){
+		last if apache2_is_running and naemon_is_running;
 		sleep 1;
 	}
 	setup_influxdb;
@@ -1337,6 +1352,11 @@ sub start () {
 	}else{
 		system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG build";
 		system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG up -d";
+	}
+
+	foreach my $i ( 1..60 ){
+		last if influxdb_port_is_working and grafana_port_is_working;
+		sleep 1;
 	}
 }
 
