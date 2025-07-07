@@ -30,7 +30,7 @@ sub sendmail ($$$$) {
 		last if $_ eq '';
 
 		my $text;
-		while( m"\G(?:(\s+)|([-:<>.\@_a-zA-Z0-9\x7F-\xFF]+)|(\S+))"g ){
+		while( m"\G(?:(\s+)|([-:<>.\@_a-zA-Z0-9]+)|(\S+))"g ){
 			if   ( $1 ne '' ){ $text .= $1; }
 			elsif( $2 ne '' ){ $text .= $2; }
 			else{ $text .= encode_mimeword $3, 'B', 'UTF-8'; }

@@ -41,7 +41,6 @@ sub read ($$) {
 	};
 	while( <$h> ){
 		chomp;
-		next if m"^\s*(#|$)";
 		push @content, $_;
 	}
 	close $f;
