@@ -50,6 +50,7 @@ if    ( $subcmd eq "open" ){
 
 		my $urls = get_slack_urls $rules, $alertgroup;
 
+		debuglog "slack: $subcmd: notify for a new session $uuid.";
 		write_to_slack $alertgroup, $uuid, $now, "open", $urls,
 	       		$host_story, $service_story, $perf_story,
 			$firing_hosts, $firing_services, $firing_perfs;
@@ -95,6 +96,7 @@ if    ( $subcmd eq "open" ){
 
 		my $urls = get_slack_urls $rules, $alertgroup;
 
+		debuglog "slack: $subcmd: notifying for a session $uuid...";
 		write_to_slack $alertgroup, $uuid, $now, "close", $urls,
 	       		$host_story, $service_story, $perf_story,
 			$firing_hosts, $firing_services, $firing_perfs;
@@ -128,6 +130,7 @@ if    ( $subcmd eq "open" ){
 
 		my $urls = get_slack_urls $rules, $alertgroup;
 
+		debuglog "slack: $subcmd: notifying for a session $prev_uuid, $next_uuid...";
 		write_to_slack $alertgroup, $next_uuid, $now, "rename", $urls,
 	       		$host_story, $service_story, $perf_story,
 			$firing_hosts, $firing_services, $firing_perfs;

@@ -49,6 +49,7 @@ if    ( $subcmd eq "open" ){
 
 		my $addresses = get_mail_addresses $rules, $alertgroup;
 
+		debuglog "mail: $subcmd: notifying for a new session $uuid...";
 		send_mail $alertgroup, $uuid, $now, "open", $addresses,
 	       		$host_story, $service_story, $perf_story,
 			$firing_hosts, $firing_services, $firing_perfs;
@@ -93,6 +94,7 @@ if    ( $subcmd eq "open" ){
 
 		my $addresses = get_mail_addresses $rules, $alertgroup;
 
+		debuglog "mail: $subcmd: notifying for a session $uuid...";
 		send_mail $alertgroup, $uuid, $now, "close", $addresses,
 	       		$host_story, $service_story, $perf_story,
 			$firing_hosts, $firing_services, $firing_perfs;
@@ -130,6 +132,7 @@ if    ( $subcmd eq "open" ){
 
 		my $addresses = get_mail_addresses $rules, $alertgroup;
 
+		debuglog "mail: $subcmd: notifying for a session $uuid...";
 		send_mail $alertgroup, $uuid, $now, "update", $addresses,
 	       		$host_story, $service_story, $perf_story,
 			$firing_hosts, $firing_services, $firing_perfs;

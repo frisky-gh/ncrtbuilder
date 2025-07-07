@@ -58,14 +58,13 @@ if    ( $subcmd eq "open" ){
 		my ($last_alertgroup, $reporting_unixtime) = read_reportstatus "web", $uuid;
 		next if defined $last_alertgroup;
 
-		debuglog "web: $subcmd: opening a new session $uuid.";
-
 		my ($curr_eventbasket) = read_latest_eventbasket $alertgroup;
 		my $new_reportstatus = get_new_reportstatus;
 
 		my ($panel_alertgroup, $panel_unixtime, $panel_status) = read_reportstatus "panel", $uuid;
 		my $panels = $$panel_status{panelbasket}->{panels};
 
+		debuglog "web: $subcmd: opening a new session $uuid...";
 		write_webpage_and_reportstatus $alertgroup, $uuid, $creation_unixtime,
 			"open", "opened",
 			$new_reportstatus, $curr_eventbasket, $panels;
@@ -83,13 +82,12 @@ if    ( $subcmd eq "open" ){
 		my ($last_uuid, $creation_unixtime) = read_alertid $alertgroup;
 		next if $uuid eq $last_uuid;
 
-		debuglog "web: $subcmd: closing a session $uuid.";
-
 		my ($latest_eventbasket) = read_latest_eventbasket $alertgroup;
 
 		my ($panel_alertgroup, $panel_unixtime, $panel_reportstatus) = read_reportstatus "panel", $uuid;
 		my $panels = $$panel_reportstatus{panelbasket}->{panels};
 
+		debuglog "web: $subcmd: closing a session $uuid...";
 		write_webpage_and_reportstatus $alertgroup, $uuid, $creation_unixtime,
 			"close", "closed",
 			$reportstatus, $latest_eventbasket, $panels;
@@ -106,13 +104,12 @@ if    ( $subcmd eq "open" ){
 		my $session_status = $$reportstatus{session_status};
 		next unless $session_status eq "opened";
 
-		debuglog "web: $subcmd: renaming a session $prev_uuid to $next_uuid.";
-
 		my ($latest_eventbasket) = read_latest_eventbasket $alertgroup;
 
 		my ($panel_alertgroup, $panel_unixtime, $panel_reportstatus) = read_reportstatus "panel", $prev_uuid;
 		my $panels = $$panel_reportstatus{panelbasket}->{panels};
 
+		debuglog "web: $subcmd: renaming a session $prev_uuid to $next_uuid...";
 		rename_webpage $conf, $prev_uuid, $next_uuid;
 		write_webpage_and_reportstatus $alertgroup, $next_uuid, $creation_unixtime,
 			"rename", "opened",
@@ -152,13 +149,13 @@ if    ( $subcmd eq "open" ){
 		next if $uuid eq $last_uuid;
 		next if $uuid eq $prev_uuid;
 
-		debuglog "web: $subcmd: expiring a session $uuid.";
-
 		my $session_status = $$reportstatus{session_status};
 		if    ( $session_status eq "opened" ){
+			debuglog "web: $subcmd: expiring a session $uuid...";
 			remove_webpage $conf, $uuid;
 			remove_reportstatus "web", $uuid;
 		}elsif( $session_status eq "renamed" ){
+			debuglog "web: $subcmd: expiring a session $uuid...";
 			remove_webpage $conf, $uuid;
 			remove_reportstatus "web", $uuid;
 		}elsif( $session_status eq "closed" ){
@@ -166,6 +163,7 @@ if    ( $subcmd eq "open" ){
 			my $webparam = get_report_param $rules, $alertgroup;
 			my $expire_timespan = $$webparam{WEB_EXPIRATION_TIMESPAN};
 			next unless $reporting_unixtime + $expire_timespan*60 < $now;
+			debuglog "web: $subcmd: expiring a session $uuid...";
 			remove_webpage $conf, $uuid;
 			remove_reportstatus "web", $uuid;
 		}else{
