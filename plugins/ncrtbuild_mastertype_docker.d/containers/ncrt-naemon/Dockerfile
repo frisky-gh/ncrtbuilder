@@ -29,16 +29,16 @@ RUN curl -L -o /root/naemon2influx-1.4-rc2.deb \
 
 RUN curl -L -o /root/grafana-dashboard-helper_1.0-rc5_amd64.deb \
 	https://github.com/frisky-gh/grafana-dashboard-helper/releases/download/v1.0-RC5/grafana-dashboard-helper_1.0_amd64.deb \
-	&& dpkg -i /root/grafana-dashboard-helper_1.0-rc5_amd64.deb
-
-RUN echo "ulimit -n 1024" > /etc/default/grafana-dashboard-helper
+	&& dpkg -i /root/grafana-dashboard-helper_1.0-rc5_amd64.deb && \
+	echo "ulimit -n 1024" > /etc/default/grafana-dashboard-helper
 
 #### Init System Option
 
 # sysv init
 RUN apt update && apt install --no-install-recommends -y \
 	sysvinit-core inetutils-syslogd \
-	&& update-rc.d grafana-dashboard-helper defaults
+	&& update-rc.d grafana-dashboard-helper defaults \; \
+	echo "ulimit -n 1024" >> /etc/default/inetutils-syslogd
 
 # finit
 #RUN apt install --no-install-recommends -y finit rsyslog
@@ -54,11 +54,10 @@ RUN apt update && apt install --no-install-recommends -y \
 #RUN /lib/finit/initctl enable sysv-cron
 #RUN /lib/finit/initctl enable sysv-nullmailer
 
-RUN echo "#!/bin/sh\nexit 0" > /usr/sbin/policy-rc.d
-
 ####
 
-RUN mkdir /opt/ncrtmaster \
+RUN echo "#!/bin/sh\nexit 0" > /usr/sbin/policy-rc.d \; \
+	mkdir /opt/ncrtmaster \
 	&& rsync -aSx /etc/apache2/ /etc/apache2_orig/ \
 	&& rsync -aSvx /etc/default/ /etc/default_orig/ \
 	&& rsync -aSx /etc/naemon/ /etc/naemon_orig/ \
