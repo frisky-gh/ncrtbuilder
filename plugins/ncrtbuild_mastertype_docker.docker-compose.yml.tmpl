@@ -51,6 +51,14 @@ services:
       context: ./ncrt-naemon
       args:
         - APT_PROXY={{PROXY}}
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 1000M
+        reservations:
+          cpus: '0.20'
+          memory: 200M
     hostname:       ncrt-naemon
     privileged:     true
     ports:
@@ -73,7 +81,6 @@ services:
       - ../containersettings/naemon_etc_nullmailer:/etc/nullmailer
       - ../containersettings/naemon_etc_grafana-dashboard-helper:/etc/grafana-dashboard-helper
       - ../containerdata/naemon_var_lib_grafana-dashboard-helper:/var/lib/grafana-dashboard-helper
-      - ../containerdata/naemon_var_www_ncrtmaster:/var/www/ncrtmaster
 
 {% if MTU != "" %} 
 networks:

@@ -171,6 +171,7 @@
         enabled: yes
         state: started
       when: "ansible_os_family in ['Debian', 'RedHat']"
+      notify: restart ncrtagentdaemon
       tags: [ commoninstall ]
 
     - name: check existance of customer's playbook
