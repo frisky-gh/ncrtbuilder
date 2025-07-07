@@ -302,8 +302,7 @@ sub put_imgreq_to_sleep ($) {
 	my $f = "$main::WORKDIR/aq_imgdl/$imgid.json";
 	my $g = "$main::WORKDIR/aq_img/$imgid.json";
 	rename $f, $g or die "$f: cannot rename, stopped";
-	open my $h, ">>", $g or die "$g: cannot open, stopped";
-	close $h;
+	utime undef, undef, $g or die "$g: cannot change mtime, stopped";
 }
 
 sub wakeup_imgreq ($) {

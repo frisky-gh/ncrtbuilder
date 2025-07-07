@@ -13,7 +13,7 @@ use NCRTAlertQueue::Web;
 use strict;
 
 if( @ARGV < 3 ){
-	print "usage: % $0 {open|close|update|cleanup} CONFDIR WORKDIR\n";
+	print "usage: % $0 {download|refresh|cleanup} CONFDIR WORKDIR\n";
 	exit 1;
 }
 
@@ -25,7 +25,9 @@ my $conf = load_conf;
 #### Main Entry Point of Image Dowload Management
 
 if    ( $subcmd eq "download" ){
+	my $l = lock_following_steps "download";
 	debuglog "img: $subcmd: start.";
+
 	my ($gdhurl, $grafanatoken) = get_gdhurl_and_grafanatoken;
 
 	my $max = $$conf{MAX_NUM_OF_PANEL_DOWNLOADS_PER_MIN}*5;
@@ -42,7 +44,9 @@ if    ( $subcmd eq "download" ){
 		download_img $conf, $grafanatoken, $imgreq;
 		put_imgreq_to_sleep $imgid;
 	}
+
 	debuglog "img: $subcmd: complete.";
+	unlock_previous_steps $l;
 
 }elsif( $subcmd eq "refresh" ){
 	debuglog "img: $subcmd: start.";

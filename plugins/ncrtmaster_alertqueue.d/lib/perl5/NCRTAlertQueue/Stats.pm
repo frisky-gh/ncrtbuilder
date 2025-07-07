@@ -334,7 +334,7 @@ sub update_summary_stats (\%\%) {
 				'moid'   => $moid,
 				'motype' => $$event{motype},
 				'alertgroup' => $$event{alertgroup},
-				'max_severity' => 'Ok',
+				'highest_severity' => 'Ok',
 			};
 			$$stats{host}    = $$event{host}    if defined $$event{host};
 			$$stats{service} = $$event{service} if defined $$event{service};
@@ -343,17 +343,17 @@ sub update_summary_stats (\%\%) {
 			$$moid2stats{$moid} = $stats;
 		}
 
-		my $max_severity  = $$stats{max_severity};
+		my $highest_severity  = $$stats{max_severity};
 		my $curr_severity = $$event{state};
-		if    ( $max_severity eq 'Ok' ){
-			$$stats{max_severity} = $curr_severity;
-		}elsif( $max_severity eq 'Warning' ){
+		if    ( $highest_severity eq 'Ok' ){
+			$$stats{highest_severity} = $curr_severity;
+		}elsif( $highest_severity eq 'Warning' ){
 			if( $curr_severity eq 'Critical' ){
-				$$stats{max_severity} = $curr_severity;
+				$$stats{highest_severity} = $curr_severity;
 			}
-		}elsif( $max_severity eq 'Critical' ){
+		}elsif( $highest_severity eq 'Critical' ){
 		}else{
-			$$stats{max_severity} = $curr_severity;
+			$$stats{highest_severity} = $curr_severity;
 		}
 		
 		my $highest_value = $$stats{highest_value};

@@ -3,6 +3,8 @@
 package NCRTAlertQueue;
 
 use Exporter import;
+use Fcntl ':flock';
+
 our @EXPORT = (
 	"mktimestamp",
 	"mkuuid",
@@ -64,6 +66,9 @@ our @EXPORT = (
 	"get_new_reportstatus",
 
 	"generate_by_template",
+
+	"lock_following_steps",
+	"unlock_previous_steps",
 );
 
 use strict;
@@ -1339,6 +1344,19 @@ sub generate_by_template ($%) {
 	return $output;
 }
 
+sub lock_following_steps ($) {
+	my ($lockname) = @_;
+
+	my $f = "$main::WORKDIR/aq_lock.$lockname";
+	open my $h, ">>", $f or die "$f: cannot open, stopped";
+	flock $h, (LOCK_EX | LOCK_NB) or exit 0;
+	return $h;
+}
+
+sub unlock_previous_steps ($) {
+	my ($h) = @_;
+	close $h;
+}
 
 ####
 
