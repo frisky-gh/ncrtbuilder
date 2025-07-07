@@ -72,8 +72,8 @@ sub usage () {
 		"  restore_workfiles BACKUPDIR\n",
 		"\n",
 		"Terminal Operation Commands\n",
-		"  bash_in_nemonvm\n",
-		"  zsh_in_nemonvm\n",
+		"  bash_in_naemonvm\n",
+		"  zsh_in_naemonvm\n",
 		"  bash_in_influxdbvm\n",
 		"  bash_in_grafanavm\n",
 		"\n";
