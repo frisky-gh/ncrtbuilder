@@ -1,0 +1,17 @@
+# shortname		url					status
+
+
+=== .* .* ===
+
+=== SampleHost SampleAJP ===
+URL=http://192.168.67.16:10211/xxx/xxx?hoge=fuga
+StatusCode=200
+ResponseBody="status":"OK",
+
+=== SampleTestHost SampleTestAJP ===
+URL=http://192.168.67.18:10211/xxx/xxx?hoge=fuga
+StatusCode=200
+ResponseBody="status":"OK",
+
+
+
