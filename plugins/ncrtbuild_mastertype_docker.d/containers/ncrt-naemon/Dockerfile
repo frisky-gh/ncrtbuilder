@@ -12,7 +12,8 @@ RUN apt update && apt install --no-install-recommends -y \
 	libjson-pp-perl libemail-sender-perl libemail-mime-perl liburi-query-perl \
 	libossp-uuid-perl libcarp-always-perl \
 	locales-all \
-	lv zsh strace lsof jq
+	lv zsh strace lsof jq \
+	golang
 
 #### Naemon / Thruk Installation
 
