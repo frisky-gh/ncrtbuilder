@@ -1,7 +1,5 @@
 #!/usr/bin/perl
 
-use strict;
-
 our $TOOLHOME;
 BEGIN {
 	$0 =~ m"^(.*)/";
@@ -26,6 +24,8 @@ our $WORKDIR = $ARGV[1];
 ####
 
 my $min = int( time / 60 ) % 5;
+
+my $h = lock_following_steps "run";
 
 mkdir_or_die		"$WORKDIR/aq_event";
 mkdir_or_die		"$WORKDIR/aq_web";
@@ -64,6 +64,8 @@ run_as_background	"$0.d/bin/web      update   $CONFDIR $WORKDIR" if $min == 4;
 run_as_background	"$0.d/bin/mail     update   $CONFDIR $WORKDIR" if $min == 4;
 run_as_background	"$0.d/bin/panel    update   $CONFDIR $WORKDIR" if $min == 4;
 run_as_background	"$0.d/bin/img      refresh  $CONFDIR $WORKDIR" if $min == 4;
+
+unlock_following_steps $h;
 
 exit 0;
 
