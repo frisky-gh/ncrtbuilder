@@ -1,0 +1,64 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 2 ){
+	print "usage: % $0 CONFDIR WORKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+
+#### load detector conf.
+my $f = "$CONFDIR/agentless/ajpactivity.conf";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+my %vhost2vservices;
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	if    ( m"^===\s+([-\w]+)\s+([-\w]+)\s+===$" ){
+		$vhost2vservices{$1}->{$2} = 1;
+	}elsif( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+		# nothing to do
+	}elsif( m"^\w+=.*$" ){
+		# nothing to do
+	}else{
+		die "$f:$.: illegal format, stopped";
+	}
+}
+close $h;
+
+#### append measure info.
+my $f = "$WORKDIR/measurements";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "ajpactivity	agentless\n";
+close $h;
+
+#### append conf info.
+my $f = "$WORKDIR/plugin2type2pluginconf2format";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "ajpactivity	agentless	ajpactivity.conf	default\n";
+close $h;
+
+#### append service mapping
+my $f = "$WORKDIR/monitoredhost2service2measurement";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( my ($vhost, $vservices) = each %vhost2vservices ){
+	while( my ($vservice, undef) = each %$vservices ){
+		print $h "$vhost	$vservice	ajpactivity\n";
+	}
+}
+close $h;
+
+
+
+
