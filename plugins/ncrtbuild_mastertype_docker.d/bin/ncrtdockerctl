@@ -231,6 +231,13 @@ sub naemon_is_running () {
 	return undef;
 }
 
+sub nullmailer_is_running () {
+	my $stdout = `$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/nullmailer status`;
+	my $rc = $?;
+	return 1 if $rc == 0;
+	return undef;
+}
+
 sub grafana_port_is_working () {
 	my $stdout = `curl -o /dev/null -s -w "%{http_code}\n" http://localhost:$GRAFANA_LOCALPORT/`;
 	my $rc = $?;
@@ -1095,7 +1102,12 @@ sub setup_nullmailer_conf () {
 	create_or_die "$SETTINGSDIR/naemon_etc_nullmailer/ncrt_has_setup_these_conf_files";
 
 	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/nullmailer reload";
-	sleep 1;
+
+	foreach my $i ( 1..10 ){
+		sleep 1;
+		return if nullmailer_is_running;
+	}
+	die "nullmailer is not running, stopped";
 }
 
 sub setup_syslog_conf () {

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+ulimit -n 1024
+
 env > /tmp/startup.env
 
 ##

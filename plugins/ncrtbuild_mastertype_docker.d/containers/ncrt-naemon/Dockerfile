@@ -15,6 +15,8 @@ RUN apt update && apt install --no-install-recommends -y \
 	lv zsh strace lsof jq \
 	golang
 
+RUN sed -i -Ez -e 's|(\n[\t ]*chmod 0622[^\n]*\n[\t ]*#[^\n]*\n)([\t ]*)(start-stop-daemon.*\n[\t ]*> >\()logger|\1\2trap "" HUP\n\2\3setsid logger|' /etc/init.d/nullmailer
+
 #### Naemon / Thruk Installation
 
 ##
@@ -38,7 +40,7 @@ RUN curl -L -o /root/grafana-dashboard-helper_1.0-rc5_amd64.deb \
 # sysv init
 RUN apt update && apt install --no-install-recommends -y \
 	sysvinit-core inetutils-syslogd \
-	&& update-rc.d grafana-dashboard-helper defaults \; \
+	&& update-rc.d grafana-dashboard-helper defaults ; \
 	echo "ulimit -n 1024" >> /etc/default/inetutils-syslogd
 
 # finit
@@ -57,7 +59,7 @@ RUN apt update && apt install --no-install-recommends -y \
 
 ####
 
-RUN echo "#!/bin/sh\nexit 0" > /usr/sbin/policy-rc.d \; \
+RUN echo "#!/bin/sh\nexit 0" > /usr/sbin/policy-rc.d ; \
 	mkdir /opt/ncrtmaster \
 	&& rsync -aSx /etc/apache2/ /etc/apache2_orig/ \
 	&& rsync -aSvx /etc/default/ /etc/default_orig/ \
@@ -67,6 +69,6 @@ RUN echo "#!/bin/sh\nexit 0" > /usr/sbin/policy-rc.d \; \
 	&& rsync -aSx /var/lib/grafana-dashboard-helper/ /var/lib/grafana-dashboard-helper_orig/ \
 	&& rsync -aSx /etc/nullmailer/ /etc/nullmailer_orig/
 
-COPY --chown=root:root ./startup.sh /startup.sh
+COPY --chown=root:root ./startup.sh ./healthcheck.sh /
 
 CMD ["/startup.sh"]
