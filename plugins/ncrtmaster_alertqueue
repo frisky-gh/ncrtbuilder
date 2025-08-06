@@ -65,7 +65,7 @@ run_as_background	"$0.d/bin/mail     update   $CONFDIR $WORKDIR" if $min == 4;
 run_as_background	"$0.d/bin/panel    update   $CONFDIR $WORKDIR" if $min == 4;
 run_as_background	"$0.d/bin/img      refresh  $CONFDIR $WORKDIR" if $min == 4;
 
-unlock_following_steps $h;
+unlock_previous_steps $h;
 
 exit 0;
 
