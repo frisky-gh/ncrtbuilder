@@ -12,7 +12,7 @@ our $WORKDIR = $ARGV[1];
 our $PLAYBOOKDIR = $ARGV[2];
 
 #### load linuxhosts.
-my %targets;
+my %candidate_hosts;
 my $f = "$WORKDIR/agenthosts";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
@@ -21,7 +21,7 @@ while( <$h> ){
 	chomp;
 	my ($host, $agenttype) = split m"\s+";
 	next unless $agenttype =~ m"^(linux)$";
-	$targets{$host} = $1;
+	$candidate_hosts{$host} = $1;
 }
 close $f;
 
@@ -39,16 +39,6 @@ open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
 print $h "filecount	agent	filecount.conf	default\n";
-close $h;
-
-#### append service mapping
-my $f = "$WORKDIR/monitoredhost2service2measurement";
-open my $h, '>>', $f or do {
-	die "$f: cannot open, stopped";
-};
-foreach my $i ( keys %targets ){
-	print $h "$i	filecount	filecount\n";
-}
 close $h;
 
 #### parse setting
@@ -86,16 +76,22 @@ while( <$h> ){
 }
 close $h;
 
-my %entries_of_host;
-while( my ($host, undef) = each %targets ){
+my %target_hosts;
+my %sudoers_entries_of_host;
+while( my ($host, undef) = each %candidate_hosts ){
 	foreach my $r ( @rules ){
-		my $host_regexp = $$r{host_regexp};
-		my $entries     = $$r{entries};
+		my $host_regexp    = $$r{host_regexp};
+		my $service_regexp = $$r{service_regexp};
+		my $entries        = $$r{entries};
 		next unless $host =~ $host_regexp;
+		next unless "filecount" =~ $service_regexp;
+
+		$target_hosts{$host} = 1;
 		foreach my $entry ( @$entries ){
 			my $options = $$entry{options};
 			next unless $$options{SUDO} =~ m"^(yes|true)$"i;
-			push @{ $entries_of_host{$host} }, $entry;
+			push @{ $sudoers_entries_of_host{$host} }, $entry;
+			
 		}
 	}
 }
@@ -106,12 +102,12 @@ open my $h, '>', $f or do {
 	die "$f: cannot open, stopped";
 };
 print $h "  'hosts_using_sudo' :\n";
-foreach my $host ( sort keys %entries_of_host ){
+foreach my $host ( sort keys %sudoers_entries_of_host ){
 	print $h "    - '$host'\n";
 }
 close $h;
 
-while( my ($host, $entries) = each %entries_of_host ){
+while( my ($host, $entries) = each %sudoers_entries_of_host ){
 	my $f = "$PLAYBOOKDIR/plugin_agent_filecount_sudoers_setting_of_$host";
 	open my $h, '>', $f or do {
 		die "$f: cannot open, stopped";
@@ -128,6 +124,16 @@ while( my ($host, $entries) = each %entries_of_host ){
 	}
 	close $h;
 }
+
+#### append service mapping
+my $f = "$WORKDIR/monitoredhost2service2measurement";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+foreach my $i ( keys %target_hosts ){
+	print $h "$i	filecount	filecount\n";
+}
+close $h;
 
 exit 0;
 
