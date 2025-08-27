@@ -10,20 +10,27 @@ if( @ARGV < 2 ){
 our $CONFDIR = $ARGV[0];
 our $WORKDIR = $ARGV[1];
 
+exit 0 unless -f "$CONFDIR/reporter/servicegroup.conf";
+exit 0 unless -f "$CONFDIR/reporter/servicegroup.rules";
+
 #### append conf info.
 my $f = "$WORKDIR/plugin2type2pluginconf2format";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "contact	reporter	servicegroup.conf		simple\n";
-print $h "contact	reporter	servicegroup.rules		simple\n";
-print $h "contact	reporter	servicegroup_activesession.tt	simple\n";
-print $h "contact	reporter	servicegroup_inactivesession.tt	simple\n";
+print $h "servicegroup	reporter	servicegroup.conf		simple\n";
+print $h "servicegroup	reporter	servicegroup.rules		simple\n";
+print $h "servicegroup	reporter	servicegroup_activesession.tt	simple\n"
+	if -f "$CONFDIR/reporter/servicegroup_activesession.tt";
+print $h "servicegroup	reporter	servicegroup_inactivesession.tt	simple\n"
+	if -f "$CONFDIR/reporter/servicegroup_inactivesession.tt";
 foreach my $f ( "mail", "slack_open", "slack_close" ){
 	my $p = "reporter/servicegroup_$f.tt";
 	next unless -f "$CONFDIR/$p";
-	print $h "contact	reporter	servicegroup_$f.tt	simple\n";
+	print $h "contact	reporter	servicegroup_$f.tt	simple\n"
+		if -f "$CONFDIR/reporter/servicegroup_$f.tt";
 }
 close $h;
 
 exit 0;
+
