@@ -1,0 +1,286 @@
+#!/usr/bin/perl
+
+use strict;
+use JSON::PP;
+
+if( @ARGV < 5 ){
+	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $MEASURE = $ARGV[2];
+our $HOST    = $ARGV[3];
+our $SERVICE = $ARGV[4];
+
+our $JSONCODEC = JSON::PP->new;
+our $LONGTERM_H = 24;
+
+####
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+sub nP ($) {
+	return sprintf "%.2f%%", $_[0];
+}
+sub nMB ($) {
+	return sprintf "%.2fMB", $_[0];
+}
+
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
+	foreach my $k ( sort {$a cmp $b} keys %$var ){
+		next if $k eq 'timestamp';
+		push @ltsv, "$k:".$var->{$k};
+	}
+	return join "\t", @ltsv;
+}
+
+sub ltsv2var ( $ ){
+	my ($ltsv) = @_;
+	my %var;
+	foreach my $kv ( split m"\t", $ltsv ){
+		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
+			next;
+		};
+		my $k = $1;
+		my $v = $2;
+		$var{$k} = $v;
+	}
+	return %var;
+}
+
+sub calc_delta ($$\%) {
+	my ($f, $longterm_h, $curr) = @_;
+	my @history;
+
+	my $now = time;
+	my $longterm_limit  = $now - $longterm_h * 60 * 60;
+	my $shortterm_limit = $now - 59;
+
+	# load history
+	if( open my $h, '<', $f ){
+		while( <$h> ){
+			chomp;
+			my %v = ltsv2var $_;
+			push @history, \%v;
+		}
+		close $h;
+	}
+
+	# search origin
+	my $shortterm_origin;
+	foreach my $e ( @history ){
+		last	if $e->{timestamp} > $shortterm_limit;
+		$shortterm_origin = $e;
+	}
+	my $longterm_origin;
+	foreach my $e ( @history ){
+		last	if $e->{timestamp} > $shortterm_limit;
+		last	if $e->{timestamp} > $longterm_limit and
+			defined $longterm_origin;
+		$longterm_origin = $e;
+	}
+
+	# store history
+	open my $h, '>', "$f.$$" or do {
+		die "$f.$$: cannot open, stopped";
+	};
+	push @history, { 'timestamp' => $now,  %$curr };
+	foreach my $e ( @history ){
+		next if $e->{timestamp} < $longterm_limit;
+		print $h var2ltsv( %$e ), "\n";
+	}
+	close $h;
+	unlink $f;
+	rename "$f.$$", $f;
+
+	# calc difference
+	my %shortterm_delta;
+	if( $shortterm_origin ){
+		my $deltat = $now - $shortterm_origin->{timestamp};
+		while( my ($k, $v) = each %$curr ){
+			my $v2 = $shortterm_origin->{$k} // next;
+			my $deltav = $v - $v2;
+			next if $deltav < 0;
+			$shortterm_delta{$k} = $deltav / $deltat;
+		}
+	}
+	my %longterm_delta;
+	if( $longterm_origin ){
+		my $deltat = $now - $longterm_origin->{timestamp};
+		while( my ($k, $v) = each %$curr ){
+			my $v2 = $longterm_origin->{$k} // next;
+			my $deltav = $v - $v2;
+			next if $deltav < 0;
+			$longterm_delta{$k} = $deltav / $deltat;
+		}
+	}
+
+	return \%shortterm_delta, \%longterm_delta;
+}
+
+sub toMiB (@) {
+	my @r;
+	foreach( @_ ){
+		unless( m"^(\d+(?:\.\d+)?)(k|ki|M|Mi|G|Gi)B$" ){
+			push @r, $_;
+			next;
+		}
+		if   ( $2 eq "k"  ){ push @r, $1 * 1000 / 1024 / 1024; }
+		elsif( $2 eq "ki" ){ push @r, $1 / 1024 ; }
+		elsif( $2 eq "M"  ){ push @r, $1 * 1000 * 1000 / 1024 / 1024; }
+		elsif( $2 eq "Mi" ){ push @r, $1 ; }
+		elsif( $2 eq "G"  ){ push @r, $1 * 1000 * 1000 * 1000 / 1024 / 1024 / 1024; }
+		elsif( $2 eq "Gi" ){ push @r, $1 * 1024 ; }
+	}
+	return @r;
+}
+
+sub toGiB (@) {
+	my @r;
+	foreach( @_ ){
+		unless( m"^(\d+(?:\.\d+)?)(k|ki|M|Mi|G|Gi)B$" ){
+			push @r, $_;
+			next;
+		}
+		if   ( $2 eq "k"  ){ push @r, $1 * 1000 / 1024 / 1024 / 1024; }
+		elsif( $2 eq "ki" ){ push @r, $1 / 1024 / 1024 ; }
+		elsif( $2 eq "M"  ){ push @r, $1 * 1000 * 1000 / 1024 / 1024 / 1024; }
+		elsif( $2 eq "Mi" ){ push @r, $1 / 1024 ; }
+		elsif( $2 eq "G"  ){ push @r, $1 * 1000 * 1000 * 1000 / 1024 / 1024 / 1024 / 1024; }
+		elsif( $2 eq "Gi" ){ push @r, $1 ; }
+	}
+	return @r;
+}
+
+####
+
+my @category_rules;
+my $f = "$CONFDIR/agent/networktraffic.conf.$HOST.$SERVICE";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*($|#)";
+		die "$f:$.: illegal format, stopped" unless m"^(\w+)=(.*)$";
+		$LONGTERM_H = 0 + $2 if $1 eq 'LONGTERM_H';
+	}
+	close $h;
+}
+#### parse setting
+my $sudo;
+my %must_exist;
+my %must_not_exist;
+
+my $f = "$CONFDIR/agent/dockercontainers.conf.$HOST.$SERVICE";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	if( m"^(\w+)=(.*)$" ){
+		my $paramname = $1;
+		my $paramvalues = $2;
+
+		if    ( $paramname eq "SUDO" ){
+			if( $paramvalues =~ m"^(yes|true)$"i ){ $sudo = 1; }
+			else{ $sudo = undef; }
+		}elsif( $paramname eq "MUST_EXIST" ){
+			foreach my $i ( split m"(\s+|,)", $paramvalues ){
+				next if $i eq "";
+				$must_exist{$i} = 1;
+			}
+		}elsif( $paramname eq "MUST_NOT_EXIST" ){
+			foreach my $i ( split m"(\s+|,)", $paramvalues ){
+				next if $i eq "";
+				$must_not_exist{$i} = 1;
+			}
+		}
+	}else{
+		die "$f:$.: illegal format, stopped";
+	}
+}
+close $h;
+
+####
+my %r;
+my %d;
+my %running;
+
+my $cmd;
+if( $sudo ){
+	$cmd = "sudo /usr/bin/docker container stats --format json --no-stream --no-trunc";
+}else{
+	$cmd = "/usr/bin/docker container stats --format json --no-stream --no-trunc";
+}
+open my $h, '-|', $cmd or do {
+	die "$cmd: cannot execute, stopped";
+};
+while( <$h> ){
+	my $obj = eval { $JSONCODEC->decode($_); };
+	next unless defined $obj;
+
+	my $name = $$obj{Name};
+	my ($read, $write) = toMiB split " / ", $$obj{BlockIO};
+	my ($recv, $send)  = toMiB split " / ", $$obj{NetIO};
+	my $cpu_pct = $$obj{CPUPerc};
+	my $mem_pct = $$obj{MemPerc};
+	my ($mem_used, $mem_avail) = toMiB split " / ", $$obj{MemUsage};
+	my $procs   = int $$obj{PIDs};
+	$running{$name} = 1;
+	if( $must_exist{$name} )    { $d{"container[$name]-failure-for-existing"} = 0; }
+	if( $must_not_exist{$name} ){ $d{"container[$name]-failure-for-non-existent"} = 1; }
+
+	$d{"container[$name]-read"}      = $read;
+	$d{"container[$name]-write"}     = $write;
+	$d{"container[$name]-send"}      = $send;
+	$d{"container[$name]-recv"}      = $recv;
+
+	$r{"container[$name]-read-cnt"}  = nMB $read;
+	$r{"container[$name]-write-cnt"} = nMB $write;
+	$r{"container[$name]-send-cnt"}  = nMB $send;
+	$r{"container[$name]-recv-cnt"}  = nMB $recv;
+	$r{"container[$name]-cpu-pct"}   = nP  $cpu_pct;
+	$r{"container[$name]-mem-pct"}   = nP  $mem_pct;
+	$r{"container[$name]-mem-avail"} = nMB $mem_avail;
+	$r{"container[$name]-mem-used"}  = nMB $mem_used;
+	$r{"container[$name]-procs"}     = $procs;
+}
+close $h;
+
+while( my ($i, undef) = each %must_exist ){
+	next if $running{$i};
+	$d{"container[$i]-failure-for-existing"} = 1;
+}
+while( my ($i, undef) = each %must_not_exist ){
+	next if $running{$i};
+	$d{"container[$i]-failure-for-non-existent"} = 0;
+}
+
+# calculate differences
+my ($shortd, $longd) = calc_delta "$WORKDIR/dockercontainers.history", $LONGTERM_H, %d;
+foreach my $k ( keys %$shortd ){
+	my $shortv = $$shortd{$k};
+	my $longv  = $$longd {$k};
+	die unless $k =~ m"-(\w+)$";
+	if( $1 eq 'read' || $1 eq 'write' || $1 eq 'send' || $1 eq 'recv' ){
+		$r{"$`-$1-mbps"} = n $shortv / 1000000 * 8;
+		$r{"longtermavg-of-$`-$1-mbps"} = n $longv / 1000000 * 8;
+	}else{
+		die;
+	}
+}
+
+# output
+foreach my $perfname ( sort keys %r ){
+	my $value = $r{$perfname};
+	print "$perfname=$value\n";
+}
+
+exit 0;
+
+

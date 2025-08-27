@@ -1,0 +1,141 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 3 ){
+	print "usage: % $0 CONFDIR WORKDIR PLAYBOOKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $PLAYBOOKDIR = $ARGV[2];
+
+#### load linuxhosts.
+my %candidate_hosts;
+my $f = "$WORKDIR/agenthosts";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	my ($host, $agenttype) = split m"\s+";
+	next unless $agenttype =~ m"^(linux)$";
+	$candidate_hosts{$host} = $1;
+}
+close $f;
+
+#### append measure info.
+my $f = "$WORKDIR/measurements";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "dockercontainers	agent	display_name=\"Docker Containers\"\n";
+close $h;
+
+#### read setting file
+my @rules;
+my $entries = [];
+my $f = "$CONFDIR/agent/dockercontainers.conf";
+if( open my $h, '<', $f ){
+	while( <$h> ){
+		chomp;
+		next if m"^\s*(#|$)";
+
+		if( m"^===\s+(\S+)\s+(\S+)\s+===$" ){
+			$entries = [];
+			push @rules, {
+				'host_regexp'    => qr"^$1$",
+				'service_regexp' => qr"^$2$",
+				'entries' => $entries,
+			};
+		}elsif( m"^(\w+)=(.*)$" ){
+			my $perfname = $1;
+			my $perfvalues = $2;
+			push @$entries, {
+				'perfname' => $perfname,
+				'perfvalues' => $perfvalues,
+			}
+		}else{
+			die "$f:$.: illegal format, stopped";
+		}
+	}
+	close $h;
+
+	#### append conf info.
+	my $f = "$WORKDIR/plugin2type2pluginconf2format";
+	open my $h, '>>', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	print $h "dockercontainers	agent	dockercontainers.conf	default\n";
+	close $h;
+}
+
+#### parse rules
+my %target_hosts;
+my %setting_entries_of_host;
+my %hosts_using_sudo;
+while( my ($host, undef) = each %candidate_hosts ){
+	foreach my $r ( @rules ){
+		my $host_regexp    = $$r{host_regexp};
+		my $service_regexp = $$r{service_regexp};
+		my $entries        = $$r{entries};
+		next unless $host              =~ $host_regexp;
+		next unless "dockercontainers" =~ $service_regexp;
+
+		$target_hosts{$host} = 1;
+		$setting_entries_of_host{$host} = [] unless defined $setting_entries_of_host{$host};
+
+		my $sudo;
+		foreach my $entry ( @$entries ){
+			push @{ $setting_entries_of_host{$host} }, $entry;
+			if( $$entry{perfname} eq "SUDO" ){
+				if( $$entry{perfvalues} =~ m"^(yes|true)$"i ){ $sudo = 1; }
+				else                                         { $sudo = undef; }
+			}
+		}
+		$hosts_using_sudo{$host} = 1 if $sudo;
+	}
+}
+
+#### generate sudoers file
+my $f = "$PLAYBOOKDIR/plugin_agent_dockercontainers_vars.yml";
+open my $h, '>', $f or do {
+	die "$f: cannot open, stopped";
+};
+if( %hosts_using_sudo ){
+	print $h "  'hosts_using_sudo' :\n";
+	foreach my $host ( sort keys %hosts_using_sudo ){
+		print $h "    - '$host'\n";
+	}
+}else{
+	print $h "  'hosts_using_sudo' : []\n";
+}
+close $h;
+
+while( my ($host, undef) = each %hosts_using_sudo ){
+	my $f = "$PLAYBOOKDIR/plugin_agent_dockercontainers_sudoers_setting_of_$host";
+	open my $h, '>', $f or do {
+		die "$f: cannot open, stopped";
+	};
+	print $h
+		"########\n",
+		"######## This file is auto-generated. Don't modify.\n",
+		"########\n";
+	print $h "ncrtagent ALL = (root) NOPASSWD: /usr/bin/docker container stats*\n";
+	close $h;
+}
+
+#### append service mapping
+my $f = "$WORKDIR/monitoredhost2service2measurement";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+foreach my $i ( keys %target_hosts ){
+	next unless exists $setting_entries_of_host{$i};
+	print $h "$i	dockercontainers	dockercontainers\n";
+}
+close $h;
+
+exit 0;
+
