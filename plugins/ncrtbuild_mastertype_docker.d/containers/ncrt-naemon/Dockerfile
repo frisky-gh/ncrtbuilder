@@ -15,7 +15,7 @@ RUN apt update && apt install --no-install-recommends -y \
 	lv zsh strace lsof jq \
 	golang
 
-RUN sed -i -Ez -e 's|(\n[\t ]*chmod 0622[^\n]*\n[\t ]*#[^\n]*\n)([\t ]*)(start-stop-daemon.*\n[\t ]*> >\()logger|\1\2trap "" HUP\n\2\3setsid logger|' /etc/init.d/nullmailer
+RUN sed -i -Ez -e 's|(\n[\t ]*chmod 0622[^\n]*\n[\t ]*#[^\n]*\n)([\t ]*)(start-stop-daemon.*\n[\t ]*[^\n>]*> >\()logger|\1\2trap "" HUP\n\2\3setsid logger|' /etc/init.d/nullmailer
 
 #### Naemon / Thruk Installation
 
