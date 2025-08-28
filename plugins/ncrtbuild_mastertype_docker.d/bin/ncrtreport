@@ -134,6 +134,15 @@ sub path_decode ($) {
 
 ####
 
+if( open my $h, "<", "/proc/loadavg" ){
+	my ($loadavg) = split m"\s+", <$h>;
+	close $h;
+	if( $loadavg > 10 ){
+		errorlog "exit because of high load average.";
+		exit 1;
+	}
+}
+
 debuglog "execute reporter plugins...";
 
 foreach my $e ( sort @reporters ){
