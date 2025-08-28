@@ -252,7 +252,7 @@ sub ping_by_nrpeprotocol ($$) {
 	elsif( $nrpever == 4 ){ }
 
 	####
-	open my $h, '-|', "$client $option -c check_ok" or do {
+	open my $h, '-|', "$client $option -c check_ok_bat" or do {
 		return undef;
 	};
 	my $r = <$h>;
