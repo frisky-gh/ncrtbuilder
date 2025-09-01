@@ -1330,6 +1330,7 @@ sub generate_by_template ($%) {
 	$vars{urlencode} //= \&tmplfunc_urlencode;
 	$vars{localtime} //= \&tmplfunc_localtime;
 	$vars{obj2json} //= \&tmplfunc_obj2json;
+	$vars{JSONCODEC} //= $JSON;
 
 	my $f = "$main::CONFDIR/reporter/alertqueue_$templatename.tt";
 	open my $h, "<", $f or die "$f: cannot open, stopped";

@@ -31,7 +31,7 @@
       <td>[% s.state %]</td>
       <td>
         <a href="/tng/thruk/cgi-bin/extinfo.cgi?type=2&host=[% i.host %]&service=[% i.service %]">Thruk</a>
-        <a href="/tng/grafana-dashboard-helper/jump_to_dashboard_by_series_name.html?q=ncrt_[% i.service %],host%3d[% i.host %]">Grafana</a>
+        <a href="/tng/grafana-dashboard-helper/jump_to_dashboard.html?dashboard=[% i.host %],[% i.service %]">Grafana</a>
       </td>
     </tr>
     [%- END -%]
@@ -104,6 +104,13 @@
     [% END %]
   </ul>
   [%- END -%]
+
+  <h3>Story of Performance Items</h3>
+
+  <pre>
+[% JSON.encode( STORY_OF_PERFORMANCES ) %]
+  </pre>
+
 [% ELSIF ACTION == "rename" -%]
   Next page is <a href="../[%=NEXT_UUID%]/">here.</a>
 [% ELSE -%]
