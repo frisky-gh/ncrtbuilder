@@ -1,6 +1,6 @@
 === .* .* ===
 
-postfix_queue		/var/spool/postfix		SUDO=yes
+postfix_queue		/var/spool/postfix/active /var/spool/postfix/bounce /var/spool/postfix/corrupt /var/spool/postfix/defer /var/spool/postfix/deferred /var/spool/postfix/flush /var/spool/postfix/hold /var/spool/postfix/incoming /var/spool/postfix/maildrop /var/spool/postfix/restart /var/spool/postfix/saved /var/spool/postfix/trace	SUDO=yes
 
 fluentd_queue		/var/log/fluent/buffer
 
