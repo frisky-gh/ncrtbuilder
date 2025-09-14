@@ -1,0 +1,36 @@
+---
+
+- hosts: PLUGINTYPE_agenttype.HOSTTYPE_linux
+  tasks:
+
+    - name: include plugin-specific variables
+      include_vars: "{{PLAYBOOKDIR}}/plugin_agent_smart_vars.yml"
+      tags: [ common, commoninstall ]
+
+    - name: check existance of customer's playbook
+      stat:
+        path: "{{PLUGINCONFDIR}}/agent/smart.yml"
+      register: file_check
+      tags: [ common, commoninstall ]
+
+    - name: play customer's playbook
+      include_tasks: "{{PLUGINCONFDIR}}/agent/smart.yml"
+      when: file_check.stat.exists
+      tags: [ common, commoninstall ]
+
+    - name: install smartmon package
+      apt:
+        name: [ smartmontools ]
+      when:
+        - "ansible_os_family == 'Debian'"
+        - "inventory_hostname in hosts_using_smart"
+      tags: [ commoninstall ]
+
+    - name: install sudoers setting files
+      copy:
+        dest: /etc/sudoers.d/settings_for_ncrt_smart
+        src:  "{{PLAYBOOKDIR}}/plugin_agent_smart_sudoers_setting_of_{{inventory_hostname}}"
+      when: "inventory_hostname in hosts_using_sudo"
+      tags: [ commoninstall ]
+
+

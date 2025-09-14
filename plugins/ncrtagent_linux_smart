@@ -100,6 +100,7 @@ sub calc_delta ($$\%) {
 
 	# calc difference
 	my %shortterm_delta;
+	my %shortterm_diff;
 	if( $shortterm_origin ){
 		my $deltat = $now - $shortterm_origin->{timestamp};
 		while( my ($k, $v) = each %$curr ){
@@ -107,9 +108,11 @@ sub calc_delta ($$\%) {
 			my $deltav = $v - $v2;
 			next if $deltav < 0;
 			$shortterm_delta{$k} = $deltav / $deltat;
+			$shortterm_diff{$k}  = $deltav;
 		}
 	}
 	my %longterm_delta;
+	my %longterm_diff;
 	if( $longterm_origin ){
 		my $deltat = $now - $longterm_origin->{timestamp};
 		while( my ($k, $v) = each %$curr ){
@@ -117,10 +120,11 @@ sub calc_delta ($$\%) {
 			my $deltav = $v - $v2;
 			next if $deltav < 0;
 			$longterm_delta{$k} = $deltav / $deltat;
+			$longterm_diff{$k}  = $deltav;
 		}
 	}
 
-	return \%shortterm_delta, \%longterm_delta;
+	return \%shortterm_delta, \%longterm_delta, \%shortterm_diff, \%longterm_diff;
 }
 
 sub toMiB (@) {
@@ -175,7 +179,7 @@ my $sudo;
 my %must_exist;
 my %must_not_exist;
 
-my $f = "$CONFDIR/agent/dockercontainers.conf.$HOST.$SERVICE";
+my $f = "$CONFDIR/agent/smart.conf.$HOST.$SERVICE";
 open my $h, '<', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -209,92 +213,99 @@ close $h;
 ####
 my %r;
 my %d;
-my %running;
+my %existing;
 
+my @devices;
 my $cmd;
 if( $sudo ){
-	$cmd = "sudo /usr/bin/docker container stats --format json --no-stream --no-trunc";
+	$cmd = "sudo /usr/sbin/smartctl --scan";
 }else{
-	$cmd = "/usr/bin/docker container stats --format json --no-stream --no-trunc";
+	$cmd = "/usr/sbin/smartctl --scan";
 }
 open my $h, '-|', $cmd or do {
 	die "$cmd: cannot execute, stopped";
 };
 while( <$h> ){
-	my $obj = eval { $JSONCODEC->decode($_); };
-	next unless defined $obj;
-
-	my $id   = $$obj{ID};
-	my $name = $$obj{Name};
-	my ($stats_read, $stats_write) = toMiB split " / ", $$obj{BlockIO};
-	my ($stats_recv, $stats_send)  = toMiB split " / ", $$obj{NetIO};
-	my $cpu_pct = $$obj{CPUPerc};
-	my $mem_pct = $$obj{MemPerc};
-	my ($mem_used, $mem_avail) = toMiB split " / ", $$obj{MemUsage};
-	my $procs   = int $$obj{PIDs};
-	$running{$name} = 1;
-	if( $must_exist{$name} )    { $d{"container[$name]-failure-for-existing"} = 0; }
-	if( $must_not_exist{$name} ){ $d{"container[$name]-failure-for-non-existent"} = 1; }
-
-	my $curlcmd;
-	if( $sudo ){ $curlcmd = "sudo /usr/bin/curl --silent --unix-socket /var/run/docker.sock http://localhost/containers/$id/stats?stream=false"; }
-	else       { $curlcmd = "/usr/bin/curl --silent --unix-socket /var/run/docker.sock http://localhost/containers/$id/stats?stream=false"; }
-	my $json = ` $curlcmd `;
-	my $obj = eval { $JSONCODEC->decode($json); };
-	# IO
-	my ($read, $write);
-	my $dev_list = $$obj{blkio_stats}->{io_service_bytes_recursive} // [];
-	foreach my $e ( @$dev_list ){
-		if    ( $$e{op} eq "read" ){ $read  += $$e{value}; }
-		elsif( $$e{op} eq "write" ){ $write += $$e{value}; }
-	}
-	# Nerwork
-	my ($send, $sendpkt, $recv, $recvpkt);
-	my $net_hash = $$obj{networks} // {};
-	while( my ($dev, $e) = each %$net_hash ){
-		$send    += $$e{tx_bytes};
-		$sendpkt += $$e{tx_packets};
-		$recv    += $$e{rx_bytes};
-		$recvpkt += $$e{rx_packets};
-	}
-
-	$d{"container[$name]-read"}      = $read;
-	$d{"container[$name]-write"}     = $write;
-	$d{"container[$name]-send"}      = $send;
-	$d{"container[$name]-recv"}      = $recv;
-
-	$r{"container[$name]-read-cnt"}  = nMB $read  / 1024 / 1024;
-	$r{"container[$name]-write-cnt"} = nMB $write / 1024 / 1024;
-	$r{"container[$name]-send-cnt"}  = nMB $send  / 1024 / 1024;
-	$r{"container[$name]-recv-cnt"}  = nMB $recv  / 1024 / 1024;
-	$r{"container[$name]-cpu-pct"}   = nP  $cpu_pct;
-	$r{"container[$name]-mem-pct"}   = nP  $mem_pct;
-	$r{"container[$name]-mem-avail"} = nMB $mem_avail / 1024 / 1024;
-	$r{"container[$name]-mem-used"}  = nMB $mem_used  / 1024 / 1024;
-	$r{"container[$name]-procs"}     = $procs;
+	chomp;
+	next unless m"^/dev/(\w+)\s+-d\s+(\w+)(?:\s+#\s+(.*))?$";
+	my $device     = $1;
+	my $devicetype = $2;
+	my $comment    = $3;
+	push @devices, {
+		device     => $device,
+		devicetype => $devicetype,
+		comment    => $comment,
+	};
+	$existing{$device} = 1;
 }
 close $h;
 
+foreach my $d ( @devices ){
+	my $device     = $$d{device};
+	my $devicetype = $$d{devicetype};
+
+	my $cmd;
+	if( $sudo ){ $cmd = "sudo /usr/sbin/smartctl -a /dev/$device -d $devicetype"; }
+	else       { $cmd = "/usr/sbin/smartctl -a /dev/$device -d $devicetype"; }
+	my %t;
+	open my $h, '-|', $cmd or do {
+		die "$cmd: cannot execute, stopped";
+	};
+	while( <$h> ){
+		chomp;
+		if   ( m"^(\w[^:]+):\s+(\S+)" ){ $t{$1} = $2; }
+		elsif( m"^\s*\d+\s*(\w+)(?:\s+\S+){7}\s+(\d+)" ){ $t{$1} = $2; }
+	}
+	close $h;
+
+	while( my ($k, $v) = each %t ){
+		$k =~ tr/ /_/;
+		$v =~ tr/,//d;
+		if   ( $k eq "Temperature" )        { $r{"device[$device]-metric[$k]"}     = n $v; }
+		elsif( $k eq "Available_Spare" )    { $r{"device[$device]-metric[$k]"} = nP $v; }
+		elsif( $k eq "Total_NVM_Capacity" ) { $r{"device[$device]-metric[$k]"} = nMB $v / 1024 / 1024; }
+		elsif( $k eq "Unsafe_Shutdowns" )   { $d{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Power_On_Hours" )     { $d{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Power_Cycles" )       { $d{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Data_Units_Read" )    { $d{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Data_Units_Write" )   { $d{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Host_Read_Commands" ) { $d{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Host_Write_Commands" ){ $d{"device[$device]-metric[$k]"} = $v; }
+
+		elsif( $k eq "Airflow_Temperature_Cel" ){ $r{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Temperature_Celsius" )    { $r{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Start_Stop_Count" )       { $d{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Power_On_Hours" )         { $d{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Raw_Read_Error_Rate" )    { $d{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Hardware_ECC_Recovered" ) { $d{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Total_LBAs_Written" )     { $r{"device[$device]-metric[$k]"} = $v; }
+		elsif( $k eq "Total_LBAs_Read" )        { $r{"device[$device]-metric[$k]"} = $v; }
+	}
+}
+
 while( my ($i, undef) = each %must_exist ){
-	next if $running{$i};
-	$d{"container[$i]-failure-for-existing"} = 1;
+	next if $existing{$i};
+	$d{"device[$i]-failure-for-existing"} = 1;
 }
 while( my ($i, undef) = each %must_not_exist ){
-	next if $running{$i};
-	$d{"container[$i]-failure-for-non-existent"} = 0;
+	next if $existing{$i};
+	$d{"device[$i]-failure-for-non-existent"} = 0;
 }
 
 # calculate differences
-my ($shortd, $longd) = calc_delta "$WORKDIR/dockercontainers.history", $LONGTERM_H, %d;
+my ($shortd, $longd, $shortdiff, $longdiff) = calc_delta "$WORKDIR/smart.history", $LONGTERM_H, %d;
 foreach my $k ( keys %$shortd ){
 	my $shortv = $$shortd{$k};
 	my $longv  = $$longd {$k};
-	die unless $k =~ m"-(\w+)$";
-	if( $1 eq 'read' || $1 eq 'write' || $1 eq 'send' || $1 eq 'recv' ){
-		$r{"$`-$1-mbps"} = n $shortv / 1000000 * 8;
-		$r{"longtermavg-of-$`-$1-mbps"} = n $longv / 1000000 * 8;
+	my $shortdiffv = $$shortdiff{$k};
+	my $longdiffv  = $$longdiff {$k};
+
+	if    ( $k =~m"(Power|Start|Shutdown)" ){
+		$r{"recently-$k"} = n $longdiffv;
+	}elsif( $k =~m"(Read|Write)" ){
+		$r{"$k-mbps"}          = nMB $shortv / 1024 / 1024 * 8;
+		$r{"longterm-$k-mbps"} = nMB $longv / 1024 / 1024 * 8;
 	}else{
-		die;
 	}
 }
 

@@ -30,13 +30,13 @@ my $f = "$WORKDIR/measurements";
 open my $h, '>>', $f or do {
 	die "$f: cannot open, stopped";
 };
-print $h "dockercontainers	agent	display_name=\"Docker Containers\"\n";
+print $h "smart	agent	display_name=\"SMART Monitoring\"\n";
 close $h;
 
 #### read setting file
 my @rules;
 my $entries = [];
-my $f = "$CONFDIR/agent/dockercontainers.conf";
+my $f = "$CONFDIR/agent/smart.conf";
 if( open my $h, '<', $f ){
 	while( <$h> ){
 		chomp;
@@ -67,7 +67,7 @@ if( open my $h, '<', $f ){
 	open my $h, '>>', $f or do {
 		die "$f: cannot open, stopped";
 	};
-	print $h "dockercontainers	agent	dockercontainers.conf	default\n";
+	print $h "smart	agent	smart.conf	default\n";
 	close $h;
 }
 
@@ -80,8 +80,8 @@ while( my ($host, undef) = each %candidate_hosts ){
 		my $host_regexp    = $$r{host_regexp};
 		my $service_regexp = $$r{service_regexp};
 		my $entries        = $$r{entries};
-		next unless $host              =~ $host_regexp;
-		next unless "dockercontainers" =~ $service_regexp;
+		next unless $host   =~ $host_regexp;
+		next unless "smart" =~ $service_regexp;
 
 		$target_hosts{$host} = 1;
 		$setting_entries_of_host{$host} = [] unless defined $setting_entries_of_host{$host};
@@ -99,7 +99,7 @@ while( my ($host, undef) = each %candidate_hosts ){
 }
 
 #### generate sudoers file
-my $f = "$PLAYBOOKDIR/plugin_agent_dockercontainers_vars.yml";
+my $f = "$PLAYBOOKDIR/plugin_agent_smart_vars.yml";
 open my $h, '>', $f or do {
 	die "$f: cannot open, stopped";
 };
@@ -111,10 +111,18 @@ if( %hosts_using_sudo ){
 }else{
 	print $h "  'hosts_using_sudo' : []\n";
 }
+if( %target_hosts ){
+	print $h "  'hosts_using_smart' :\n";
+	foreach my $host ( sort keys %target_hosts ){
+		print $h "    - '$host'\n";
+	}
+}else{
+	print $h "  'hosts_using_smart' : []\n";
+}
 close $h;
 
 while( my ($host, undef) = each %hosts_using_sudo ){
-	my $f = "$PLAYBOOKDIR/plugin_agent_dockercontainers_sudoers_setting_of_$host";
+	my $f = "$PLAYBOOKDIR/plugin_agent_smart_sudoers_setting_of_$host";
 	open my $h, '>', $f or do {
 		die "$f: cannot open, stopped";
 	};
@@ -122,8 +130,8 @@ while( my ($host, undef) = each %hosts_using_sudo ){
 		"########\n",
 		"######## This file is auto-generated. Don't modify.\n",
 		"########\n";
-	print $h "ncrtagent ALL = (root) NOPASSWD: /usr/bin/docker container stats*\n";
-	print $h "ncrtagent ALL = (root) NOPASSWD: /usr/bin/curl --silent --unix-socket /var/run/docker.sock http\\://localhost/containers/*/stats?stream=false\n";
+	print $h "ncrtagent ALL = (root) NOPASSWD: /usr/sbin/smartctl --scan\n";
+	print $h "ncrtagent ALL = (root) NOPASSWD: /usr/sbin/smartctl -a * -d *\n";
 	close $h;
 }
 
@@ -134,7 +142,7 @@ open my $h, '>>', $f or do {
 };
 foreach my $i ( keys %target_hosts ){
 	next unless exists $setting_entries_of_host{$i};
-	print $h "$i	dockercontainers	dockercontainers\n";
+	print $h "$i	smart	smart\n";
 }
 close $h;
 
