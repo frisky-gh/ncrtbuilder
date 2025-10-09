@@ -71,6 +71,7 @@ my %server_settings = (
 
 	'SYSLOG_SERVER' => '',
 	'SMTP_SERVER' => '',
+	'SMTP_ORIGINDOMAIN' => '',
 	'MTU' => '',
 );
 my %server_settings_which_must_be_specified_by_user = (

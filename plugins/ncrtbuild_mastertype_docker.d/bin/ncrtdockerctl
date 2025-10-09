@@ -1091,13 +1091,16 @@ sub setup_grafana_dashboard_helper_conf () {
 
 sub setup_nullmailer_conf () {
 	my $smtp_server = $CONFIG{SMTP_SERVER};
+	my $smtp_origindomain = $CONFIG{SMTP_ORIGINDOMAIN};
 	return if $smtp_server eq "";
 
 	return if -f "$SETTINGSDIR/naemon_etc_nullmailer/ncrt_has_setup_these_conf_files";
 	print "[setup_nullmailer_conf]\n";
 
-	write_or_die "$SETTINGSDIR/naemon_etc_nullmailer/remotes",
-		"$smtp_server\n";
+	write_or_die "$SETTINGSDIR/naemon_etc_nullmailer/remotes", "$smtp_server\n";
+
+	write_or_die "$SETTINGSDIR/naemon_etc_nullmailer/defaulthost", "$smtp_origindomain\n"
+		if $smtp_origindomain ne "";
 
 	create_or_die "$SETTINGSDIR/naemon_etc_nullmailer/ncrt_has_setup_these_conf_files";
 
@@ -1382,6 +1385,21 @@ sub stop () {
 	}
 }
 
+sub cron_job () {
+	if( docker_is_exited ){
+		return;
+	}
+
+        my $r = ` docker inspect ncrt-naemon | jq -r '.[0].State.Health.Status, .[0].State.Health.FailingStreak' `;
+        my ($status, $failnum) = split m"\n", $r;
+        if    ( $status eq "healthy" ){
+        }elsif( $status eq "unhealthy" ){
+                if( $failnum > 3 ){ system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG restart ncrt-naemon"; }
+        }else{
+                die;
+        }
+}
+
 
 ####
 
@@ -1491,6 +1509,8 @@ if    ( $subcmd eq "start" ){
 	die if @ARGV < 4;
 	my ($name, $type, $url, $org) = @ARGV;
 	create_grafana_datasource $name, $type, $url, $org;
+}elsif( $subcmd eq "cron" ){
+	cron_job;
 
 ##
 }else{
