@@ -23,4 +23,9 @@ print $h "alertqueue	reporter	alertqueue_web.tt		simple\n";
 print $h "alertqueue	reporter	alertqueue_slack.tt		simple\n";
 close $h;
 
+my $f = "$WORKDIR/reporters";
+open my $h, '>>', $f or do { die "$f: cannot open, stopped"; };
+print $h "alertqueue\n";
+close $h;
+
 exit 0;

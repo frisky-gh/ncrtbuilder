@@ -32,5 +32,10 @@ foreach my $f ( "mail", "slack_open", "slack_close" ){
 }
 close $h;
 
+my $f = "$WORKDIR/reporters";
+open my $h, '>>', $f or do { die "$f: cannot open, stopped"; };
+print $h "servicegroup\n";
+close $h;
+
 exit 0;
 
