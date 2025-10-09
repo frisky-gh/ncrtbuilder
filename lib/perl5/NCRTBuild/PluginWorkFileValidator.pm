@@ -42,6 +42,7 @@ sub load ($) {
 	$this->loadMeasurements;
 	$this->loadMonitoredHost2Service2Measurement;
 	$this->loadPlugin2Type2PluginConf2Format;
+	$this->loadReporters;
 	$this->loadGroups;
 	$this->loadUsers;
 	$this->loadMonitoredHostGroups;
@@ -198,6 +199,22 @@ sub loadPlugin2Type2PluginConf2Format ($) {
 	}
 	$$this{type2plugin2pluginconfs} = \%type2plugin2pluginconfs;
 	$$this{type2pluginconf2format} = \%type2pluginconf2format;
+}
+
+sub loadReporters ($) {
+	my ($this) = @_;
+	my $inputdir =  $$this{inputdir};
+
+	my %reporters;
+
+	my @content = $inputdir->read( "reporters" );
+	foreach( @content ){
+		my ($err, $reporter, $params) = parse_item_with_params $_;
+		print "reporters: $err\n" if $err;
+		next unless defined $reporter;
+		$reporters{$reporter} = $params;
+	}
+	$$this{reporters} = \%reporters;
 }
 
 sub loadGroups ($) {
@@ -600,6 +617,12 @@ sub listPseudoHostServiceBackendHosts ($) {
 		}
 	}
 	return @r;
+}
+
+sub listReporters ($) {
+	my ($this) = @_;
+	my $reporters = $$this{reporters};
+	return sort keys %$reporters;
 }
 
 sub listGroups ($) {

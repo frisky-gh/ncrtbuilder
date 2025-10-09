@@ -72,6 +72,9 @@ sub create ($) {
 	# username list
 	create_or_die "$workdir/users";
 
+	# reporter list
+	create_or_die "$workdir/reporters";
+
 	# pseudo host, service -> backend host (agent host) for indirect measurement
 	create_or_die "$workdir/pseudohost2service2backendhost";
 }

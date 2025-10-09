@@ -244,6 +244,7 @@ my @hostservicegroup;
 my @user;
 my @hostuser;
 my @hostserviceuser;
+my @reporter;
 if( $plan{Step6} ){
 	$workvalid->load();
 
@@ -259,6 +260,7 @@ if( $plan{Step6} ){
 	@user             = $workvalid->listUsers;
 	@hostuser         = $workvalid->listMonitoredHostUsers;
 	@hostserviceuser  = $workvalid->listMonitoredHostServiceUsers;
+	@reporter         = $workvalid->listReporters;
 
 	#$pluginworkdir4masters->setMasterHosts( @masterhost );
 	#$pluginworkdir4agents ->setAgentHosts ( @agenthost );
@@ -476,7 +478,7 @@ if( $plan{Step14} ){
 	$resourcedist->setDistributedDirPathForMasters( $DISTRIBUTEDMASTERBASEDIR );
 	$resourcedist->setAgentHosts                  ( @agenthost );
 	$resourcedist->setMasterHosts                 ( @masterhost );
-	$resourcedist->setReporterPlugins             ( @reporterplugins );
+	$resourcedist->setReporterPlugins             ( @reporter );
 	$resourcedist->run;
 }
 
@@ -494,7 +496,7 @@ if( $plan{Step15} ){
 	$playbookexec->setHosts( @masterhost );
 	$playbookexec->setPlugins( 'agentless', @agentlessplugins );
 	$playbookexec->setPlugins( 'indirect',  @indirectplugins );
-	$playbookexec->setPlugins( 'reporter',  @reporterplugins );
+	$playbookexec->setPlugins( 'reporter',  @reporter );
 	$playbookexec->setTargetPattern( $target_master );
 	$playbookexec->setQuick if $quick;
 	$playbookexec->setDryRun if $dryrun;
