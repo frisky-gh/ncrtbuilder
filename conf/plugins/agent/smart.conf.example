@@ -1,0 +1,6 @@
+=== dockerdhost.* dockercontainers ===
+
+#SUDO=yes
+#MUST_EXIST=conteiner001 container002
+#MUST_NOT_EXIST=container005
+
