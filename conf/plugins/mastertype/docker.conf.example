@@ -24,6 +24,7 @@ BROWSERSIDE_URL_PREFIX=http://example.com/monitoring/ncrt/
 #SYSLOG_SERVER=syslog001vm
 ## If you want to send alert messages by email, SYSLOG_SERVER must be set.
 #SMTP_SERVER=smtp001vm
+#SMTP_ORIGINDOMAIN=smtp.example.com
 ## If you want to change MTU of the container network, MTU must be set.
 #MTU=1300
 
