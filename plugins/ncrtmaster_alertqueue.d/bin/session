@@ -53,6 +53,7 @@ if    ( $subcmd eq "open" ){
 
 		my $uuid = mkuuid;
 		write_alertid $alertgroup, $uuid, $latest_unixtime;
+		debuglog "session: $subcmd: done for a session $uuid.";
 	}
 	debuglog "session: $subcmd: complete.";
 
@@ -85,6 +86,7 @@ if    ( $subcmd eq "open" ){
 		next if $alert_has_continued;
 
 		remove_alertid $alertgroup;
+		debuglog "session: $subcmd: done for a session $last_uuid.";
 	}
 	debuglog "session: $subcmd: complete.";
 
@@ -102,6 +104,7 @@ if    ( $subcmd eq "open" ){
 
 		my $uuid = mkuuid;
 		write_alertid $alertgroup, $uuid, $now, $last_uuid;
+		debuglog "session: $subcmd: done for a session $last_uuid -> $uuid.";
 	}
 	debuglog "session: $subcmd: complete.";
 
