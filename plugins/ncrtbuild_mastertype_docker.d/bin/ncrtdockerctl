@@ -81,6 +81,11 @@ sub usage () {
 	exit 1;
 }
 
+sub timestamp ($) {
+	my ($sec, $min, $hour, $day, $mon, $year) = localtime shift;
+	return sprintf "%04d-%02d-%02d_%02d:%02d:%02d", $year+1900, $mon+1, $day, $hour, $min, $sec;
+}
+
 sub create_or_die ($) {
 	my ($f) = @_;
 	open my $h, '>', $f or die "$f: cannot create, stopped";
@@ -1394,7 +1399,12 @@ sub cron_job () {
         my ($status, $failnum) = split m"\n", $r;
         if    ( $status eq "healthy" ){
         }elsif( $status eq "unhealthy" ){
-                if( $failnum > 3 ){ system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG restart ncrt-naemon"; }
+                if( $failnum > 3 ){
+			my $now = timestamp time;
+			print "[$now] restarting...";
+			system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG restart ncrt-naemon";
+			print "\n";
+		}
         }else{
                 die;
         }
