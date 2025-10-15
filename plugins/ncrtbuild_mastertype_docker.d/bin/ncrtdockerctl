@@ -1122,10 +1122,10 @@ sub setup_syslog_conf () {
 	my $syslog_server = $CONFIG{SYSLOG_SERVER};
 	return if $syslog_server eq "";
 
-	return if -f "$SETTINGSDIR/naemon_etc_syslog.conf";
+	return if -f "$SETTINGSDIR/naemon_etc_syslog.d/ncrt_has_setup_these_conf_files";
 	print "[setup_syslog_conf]\n";
 
-	write_or_die "$SETTINGSDIR/naemon_etc_syslog.conf",
+	write_or_die "$SETTINGSDIR/naemon_etc_syslog.d/syslog.conf",
 		"auth,authpriv.*        /var/log/auth.log\n" .
 		"syslog.*               -/var/log/syslog\n" .
 		"cron.*                 /var/log/cron.log\n" .
@@ -1134,13 +1134,14 @@ sub setup_syslog_conf () {
 		"user.*                 -/var/log/user.log\n" .
 		"lpr,news,uucp.*        -/var/log/messages\n" .
 		"auth,authpriv,syslog,cron,daemon,mail,user.* \@$syslog_server\n";
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG cp $SETTINGSDIR/naemon_etc_syslog.conf ncrt-naemon:/etc/syslog.conf";
 
 	system_or_die "sed -i " .
-		"-e 's|^SYSLOGD_OPTS=.*|SYSLOGD_OPTS=\"\"|' " .
+		"-e 's|^SYSLOGD_OPTS=.*|SYSLOGD_OPTS=\"-f /dev/null\"|' " .
 		"$SETTINGSDIR/naemon_etc_default/inetutils-syslogd";
 
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/inetutils-syslogd reload";
+	create_or_die "$SETTINGSDIR/naemon_etc_syslog.d/ncrt_has_setup_these_conf_files";
+
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/inetutils-syslogd restart";
 	sleep 1;
 }
 

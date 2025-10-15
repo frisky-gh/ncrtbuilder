@@ -76,6 +76,14 @@
       shell: "{{NCRTMASTERHOME}}/bin/ncrtdockerctl start"
       tags: [ commoninstall ]
 
+    - name: setup cron job
+      cron:
+        name: NCRT docker plugin job
+        user: root
+        minute: "*/20"
+        job: "{{NCRTMASTERHOME}}/bin/ncrtdockerctl cron 2>> ~/.ncrt.cronerror 1>&2"
+      tags: [ commoninstall ]
+
   handlers:
 
     - name: rebuild ncrtmaster
