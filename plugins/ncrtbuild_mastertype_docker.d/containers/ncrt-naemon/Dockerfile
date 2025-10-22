@@ -39,7 +39,7 @@ RUN curl -L -o /root/grafana-dashboard-helper_1.0-rc5_amd64.deb \
 
 # sysv init
 RUN apt update && apt install --no-install-recommends -y \
-	sysvinit-core inetutils-syslogd \
+	sysvinit-core syslog-ng \
 	&& update-rc.d grafana-dashboard-helper defaults ; \
 	echo "ulimit -n 1024" >> /etc/default/inetutils-syslogd
 
@@ -67,7 +67,8 @@ RUN echo "#!/bin/sh\nexit 0" > /usr/sbin/policy-rc.d ; \
 	&& rsync -aSx /etc/thruk/ /etc/thruk_orig/ \
 	&& rsync -aSx /etc/grafana-dashboard-helper/ /etc/grafana-dashboard-helper_orig/ \
 	&& rsync -aSx /var/lib/grafana-dashboard-helper/ /var/lib/grafana-dashboard-helper_orig/ \
-	&& rsync -aSx /etc/nullmailer/ /etc/nullmailer_orig/
+	&& rsync -aSx /etc/nullmailer/ /etc/nullmailer_orig/ \
+	&& rsync -aSx /etc/syslog-ng/ /etc/syslog-ng_orig/
 
 COPY --chown=root:root ./startup.sh ./healthcheck.sh /
 

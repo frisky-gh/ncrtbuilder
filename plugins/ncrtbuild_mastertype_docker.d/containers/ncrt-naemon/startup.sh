@@ -39,6 +39,11 @@ if [ "`ls /etc/nullmailer/`" = "" ] ;then
 	rsync -aSvx /etc/nullmailer_orig/ /etc/nullmailer/
 fi
 
+# setup syslog-ng
+if [ "`ls /etc/syslig-ng/`" = "" ] ;then
+	rsync -aSvx /etc/syslog-ng_orig/ /etc/syslog-ng/
+fi
+
 ##
 if [ "$LANG" = "" ] ; then
 	echo "LANG=$LANG" > /etc/default/locale

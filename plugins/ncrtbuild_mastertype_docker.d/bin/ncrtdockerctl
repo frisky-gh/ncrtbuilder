@@ -1118,30 +1118,45 @@ sub setup_nullmailer_conf () {
 	die "nullmailer is not running, stopped";
 }
 
-sub setup_syslog_conf () {
+sub setup_syslogng () {
 	my $syslog_server = $CONFIG{SYSLOG_SERVER};
 	return if $syslog_server eq "";
 
-	return if -f "$SETTINGSDIR/naemon_etc_syslog.d/ncrt_has_setup_these_conf_files";
-	print "[setup_syslog_conf]\n";
+	return if -f "$SETTINGSDIR/naemon_etc_syslog-ng/ncrt_has_setup_these_conf_files";
+	print "[setup_syslog-ng]\n";
 
-	write_or_die "$SETTINGSDIR/naemon_etc_syslog.d/syslog.conf",
-		"auth,authpriv.*        /var/log/auth.log\n" .
-		"syslog.*               -/var/log/syslog\n" .
-		"cron.*                 /var/log/cron.log\n" .
-		"daemon.*               -/var/log/daemon.log\n" .
-		"mail.*                 -/var/log/mail.log\n" .
-		"user.*                 -/var/log/user.log\n" .
-		"lpr,news,uucp.*        -/var/log/messages\n" .
-		"auth,authpriv,syslog,cron,daemon,mail,user.* \@$syslog_server\n";
+	write_or_die "$SETTINGSDIR/naemon_etc_syslog-ng/syslog.conf",
+		"\@version: 3.38\n" .
+		"\n" .
+		"options { chain_hostnames(off); flush_lines(0); use_dns(no); use_fqdn(no); dns_cache(no); owner(\"root\"); group(\"adm\"); perm(0640); stats_freq(0); };\n" .
 
-	system_or_die "sed -i " .
-		"-e 's|^SYSLOGD_OPTS=.*|SYSLOGD_OPTS=\"-f /dev/null\"|' " .
-		"$SETTINGSDIR/naemon_etc_default/inetutils-syslogd";
+		"\n" .
+		"source s_src { system(); };\n" .
+		"\n" .
+		"destination d_syslog { file(\"/var/log/syslog\"); };\n" .
+		"destination d_auth { file(\"/var/log/auth.log\"); };\n" .
+		"destination d_cron { file(\"/var/log/cron.log\"); };\n" .
+		"destination d_mail { file(\"/var/log/mail.log\"); };\n" .
+		"destination d_user { file(\"/var/log/user.log\"); };\n" .
+		"\n" .
+		"filter f_syslog { facility(syslog, daemon) and not level(debug); };\n" .
+		"filter f_auth { facility(auth, authpriv) and not level(debug); };\n" .
+		"filter f_cron { facility(cron) and not level(debug); };\n" .
+		"filter f_mail { facility(mail) and not level(debug); };\n" .
+		"filter f_user { not facility(syslog, daemon, auth, authpriv, cron, mail) and not level(debug); };\n" .
+		"\n" .
+		"log { source(s_src); filter(f_syslog); destination(d_syslog); };\n" .
+		"log { source(s_src); filter(f_auth); destination(d_auth); };\n" .
+		"log { source(s_src); filter(f_cron); destination(d_cron); };\n" .
+		"log { source(s_src); filter(f_mail); destination(d_mail); };\n" .
+		"log { source(s_src); filter(f_user); destination(d_user); };\n" .
+		"\n" .
+		"\@include \"/etc/syslog-ng/conf.d/*.conf\"\n" .
+		"\n";
 
-	create_or_die "$SETTINGSDIR/naemon_etc_syslog.d/ncrt_has_setup_these_conf_files";
+	create_or_die "$SETTINGSDIR/naemon_etc_syslog-ng/ncrt_has_setup_these_conf_files";
 
-	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/inetutils-syslogd restart";
+	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/syslog-ng restart";
 	sleep 1;
 }
 
@@ -1264,7 +1279,7 @@ sub setup () {
 	setup_thruk_conf;
 	setup_naemon2influx_conf;
 	setup_grafana_dashboard_helper_conf;
-	setup_syslog_conf;
+	setup_syslogng;
 	setup_nullmailer_conf;
 	setup_cron;
 	setup_userprofiles;
@@ -1279,11 +1294,12 @@ sub unsetup () {
 		"naemon_etc_grafana-dashboard-helper",
 		"naemon_etc_naemon",
 		"naemon_etc_nullmailer",
-		"naemon_etc_thruk"
+		"naemon_etc_thruk",
+		"naemon_etc_syslog-ng",
 	) {
 		rm_r_or_die "$SETTINGSDIR/$d";
 	}
-	foreach my $f ("naemon_etc_cron.d_ncrtmaster", "userprofiles", "naemon_etc_syslog.conf"){
+	foreach my $f ("naemon_etc_cron.d_ncrtmaster", "userprofiles"){
 		next unless -f "$SETTINGSDIR/$f";
 		unlink "$SETTINGSDIR/$f" or die "cannot remove, stopped";
 	}
@@ -1392,23 +1408,34 @@ sub stop () {
 }
 
 sub cron_job () {
-	if( docker_is_exited ){
-		return;
-	}
+	my $r = ` docker inspect ncrt-naemon | jq -r '.[0].State.Status, .[0].State.Health.Status, .[0].State.Health.FailingStreak' `;
+	my ($container_status, $status, $failnum) = split m"\n", $r;
+	my $now = timestamp time;
+	my $restart_status_file = "$DATADIR/ncrt-naemon_is_restaring_now";
 
-        my $r = ` docker inspect ncrt-naemon | jq -r '.[0].State.Health.Status, .[0].State.Health.FailingStreak' `;
-        my ($status, $failnum) = split m"\n", $r;
-        if    ( $status eq "healthy" ){
-        }elsif( $status eq "unhealthy" ){
-                if( $failnum > 3 ){
-			my $now = timestamp time;
-			print "[$now] restarting...";
-			system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG restart ncrt-naemon";
-			print "\n";
+	if( $container_status eq "exited" ){
+		if( -f $restart_status_file ){
+		        print "[$now] starting...";
+			system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG start ncrt-naemon";
+		        print "\n";
+			unlink $restart_status_file;
 		}
-        }else{
-                die;
-        }
+
+	}elsif( $status eq "healthy" ){
+		unlink $restart_status_file if -f $restart_status_file;
+
+	}elsif( $status eq "unhealthy" ){
+		if( $failnum > 3 ){
+		        print "[$now] restarting...";
+			create_or_die $restart_status_file;
+			system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG restart ncrt-naemon";
+		        print "\n";
+			unlink $restart_status_file;
+		}
+
+	}else{
+		die;
+	}
 }
 
 
