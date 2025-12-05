@@ -1107,6 +1107,9 @@ sub setup_nullmailer_conf () {
 	write_or_die "$SETTINGSDIR/naemon_etc_nullmailer/defaulthost", "$smtp_origindomain\n"
 		if $smtp_origindomain ne "";
 
+	write_or_die "$SETTINGSDIR/naemon_etc_nullmailer/defaultdomain", "$smtp_origindomain\n"
+		if $smtp_origindomain ne "";
+
 	create_or_die "$SETTINGSDIR/naemon_etc_nullmailer/ncrt_has_setup_these_conf_files";
 
 	system_or_die "$DOCKER_COMPOSE_CMD -f $CONFIG exec ncrt-naemon /etc/init.d/nullmailer reload";
