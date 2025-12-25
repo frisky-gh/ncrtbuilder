@@ -15,13 +15,14 @@
 </head>
 <body>
 [% IF ACTION == "open" || ACTION == "update" || ACTION == "close" -%]
-  [%- IF FIRED_HOSTS_IN_LIST_FORM.size > 0 -%]
+  [%- IF FIRED_HOSTS_IN_LIST_FORM.defind && FIRED_HOSTS_IN_LIST_FORM.size > 0 -%]
   <h3>Alert Group "[% ALERTGROUP %]" Current Host Status</h3>
   <table>
     <tr>
       <th>host</th>
       <th>service</th>
       <th>status</th>
+      <th>highest severity</th>
       <th>links</th>
     </tr>
     [%- FOREACH i IN FIRED_HOSTS_IN_LIST_FORM -%]
@@ -29,21 +30,23 @@
     <tr>
       <td>[% i.host %]</td>
       <td>[% s.state %]</td>
+      <td>[% i.highest_severity %]</td>
       <td>
         <a href="/tng/thruk/cgi-bin/extinfo.cgi?type=2&host=[% i.host %]&service=[% i.service %]">Thruk</a>
-        <a href="/tng/grafana-dashboard-helper/jump_to_dashboard.html?dashboard=[% i.host %],[% i.service %]">Grafana</a>
+        <a href="/tng/grafana-dashboard-helper/jump_to_dashboard_by_series_name.html?q=ncrt_[% i.service %],host%3d[% i.host %]">Grafana</a>
       </td>
     </tr>
     [%- END -%]
   </table>
   [%- END -%]
-  [%- IF FIRED_SERVICES_IN_LIST_FORM.size > 0 -%]
+  [%- IF FIRED_SERVICES_IN_LIST_FORM.defined && FIRED_SERVICES_IN_LIST_FORM.size > 0 -%]
   <h3>Alert Group "[% ALERTGROUP %]" Current Service Status</h3>
   <table>
     <tr>
       <th>host</th>
       <th>service</th>
       <th>status</th>
+      <th>highest severity</th>
       <th>links</th>
     </tr>
     [%- FOREACH i IN FIRED_SERVICES_IN_LIST_FORM -%]
@@ -52,6 +55,7 @@
       <td>[% i.host %]</td>
       <td>[% i.service %]</td>
       <td>[% s.state %]</td>
+      <td>[% i.highest_severity %]</td>
       <td>
         <a href="/tng/thruk/cgi-bin/extinfo.cgi?type=2&host=[% i.host %]&service=[% i.service %]">Thruk</a>
         <a href="/tng/grafana-dashboard-helper/jump_to_dashboard.html?dashboard=[% i.host %],[% i.service %]">Grafana</a>
@@ -60,7 +64,7 @@
     [%- END -%]
   </table>
   [%- END -%]
-  [%- IF FIRED_PERFS_IN_LIST_FORM.size > 0 -%]
+  [%- IF FIRED_PERFS_IN_LIST_FORM.defined && FIRED_PERFS_IN_LIST_FORM.size > 0 -%]
   <h3>Current Performance Status</h3>
   <table>
     <tr>
@@ -69,6 +73,8 @@
       <th>performance name</th>
       <th>state</th>
       <th>value</th>
+      <th>highest severity</th>
+      <th>lowest / highest value</th>
       <th>links</th>
     </tr>
     [% FOREACH i IN FIRED_PERFS_IN_LIST_FORM %]
@@ -85,12 +91,14 @@
       <td>[% i.perf %]</td>
       <td>[% s.state %]</td>
       <td>[% state %]</td>
+      <td>[% i.highest_severity %]</td>
+      <td>[% i.lowest_value %] / [% i.highest_value %]</td>
       <td><a href="#[%= s.host _ "/" _ s.service _ "/" _ s.perf %]">Graphs</a></td>
     </tr>
     [% END %]
   </table>
   [%- END -%]
-  [%- IF PANELS.size > 0 -%]
+  [%- IF PANELS.defined && PANELS.size > 0 -%]
   <h3>Graphs</h3>
   <ul>
     [% FOREACH i IN PANELS %]
