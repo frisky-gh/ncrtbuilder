@@ -57,7 +57,7 @@ sub prepare ($) {
 				"lower" => $lower,
 			};
 		}else{
-			die "thresholds:$linenum: illegal format, stopped";
+			die "conf/ncrt/thresholds/*.thresholds:$linenum: illegal format, stopped";
 		}
 	}
 

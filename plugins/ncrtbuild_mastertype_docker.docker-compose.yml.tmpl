@@ -87,8 +87,10 @@ services:
       - ../containersettings/naemon_etc_default:/etc/default
       - ../containersettings/naemon_etc_nullmailer:/etc/nullmailer
       - ../containersettings/naemon_etc_grafana-dashboard-helper:/etc/grafana-dashboard-helper
-      - ../containerdata/naemon_var_lib_grafana-dashboard-helper:/var/lib/grafana-dashboard-helper
       - ../containersettings/naemon_etc_syslog-ng:/etc/syslog-ng
+      - ../containerdata/naemon_var_lib_grafana-dashboard-helper:/var/lib/grafana-dashboard-helper
+      - ../containerdata/naemon_var_lib_naemon:/var/lib/naemon
+      - ../containerdata/naemon_var_log_naemon:/var/log/naemon
 
 {% if MTU != "" %} 
 networks:
