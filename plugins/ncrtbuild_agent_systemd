@@ -1,0 +1,59 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 3 ){
+	print "usage: % $0 CONFDIR WORKDIR PLAYBOOKDIR\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $PLAYBOOKDIR = $ARGV[2];
+
+####
+my $f = "$CONFDIR/agent/systemd.conf";
+exit 0 unless -f $f;
+
+#### load linuxhosts.
+my %candidate_hosts;
+my $f = "$WORKDIR/agenthosts";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	my ($host, $agenttype) = split m"\s+";
+	next unless $agenttype =~ m"^(linux)$";
+	$candidate_hosts{$host} = $1;
+}
+close $f;
+
+#### append measure info.
+my $f = "$WORKDIR/measurements";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "systemd	agent	display_name=\"Systemd Status\"\n";
+close $h;
+
+#### append conf info.
+my $f = "$WORKDIR/plugin2type2pluginconf2format";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+print $h "systemd	agent	systemd.conf	default\n";
+close $h;
+
+#### append service mapping
+my $f = "$WORKDIR/monitoredhost2service2measurement";
+open my $h, '>>', $f or do {
+	die "$f: cannot open, stopped";
+};
+foreach my $i ( keys %candidate_hosts ){
+	print $h "$i	systemd	systemd\n";
+}
+close $h;
+
+exit 0;
+

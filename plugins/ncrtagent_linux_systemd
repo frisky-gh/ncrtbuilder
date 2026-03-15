@@ -1,0 +1,252 @@
+#!/usr/bin/perl
+
+use strict;
+
+if( @ARGV < 5 ){
+	print "usage: % $0 CONFDIR WORKDIR MEASURE HOST SERVICE\n";
+	exit 1;
+}
+
+our $CONFDIR = $ARGV[0];
+our $WORKDIR = $ARGV[1];
+our $MEASURE = $ARGV[2];
+our $HOST    = $ARGV[3];
+our $SERVICE = $ARGV[4];
+
+####
+sub n ($) {
+	return sprintf "%.2f", $_[0];
+}
+sub nP ($) {
+	return sprintf "%.2f%%", $_[0];
+}
+sub nMB ($) {
+	return sprintf "%.2fMB", $_[0];
+}
+
+sub var2ltsv ( \% ){
+	my ($var) = @_;
+	my @ltsv;
+	push @ltsv, "timestamp:".$var->{timestamp} if defined $var->{timestamp};
+	foreach my $k ( sort {$a cmp $b} keys %$var ){
+		next if $k eq 'timestamp';
+		push @ltsv, "$k:".$var->{$k};
+	}
+	return join "\t", @ltsv;
+}
+
+sub ltsv2var ( $ ){
+	my ($ltsv) = @_;
+	my %var;
+	foreach my $kv ( split m"\t", $ltsv ){
+		$kv =~ m"^([-./\[\]\w]+):(.*)$" or do {
+			next;
+		};
+		my $k = $1;
+		my $v = $2;
+		$var{$k} = $v;
+	}
+	return %var;
+}
+
+sub calc_delta ($$\%) {
+	my ($f, $longterm_h, $curr) = @_;
+	my @history;
+
+	my $now = time;
+	my $longterm_limit  = $now - $longterm_h * 60 * 60;
+	my $shortterm_limit = $now - 59;
+
+	# load history
+	if( open my $h, '<', $f ){
+		while( <$h> ){
+			chomp;
+			my %v = ltsv2var $_;
+			push @history, \%v;
+		}
+		close $h;
+	}
+
+	# search origin
+	my $shortterm_origin;
+	foreach my $e ( @history ){
+		last	if $e->{timestamp} > $shortterm_limit;
+		$shortterm_origin = $e;
+	}
+	my $longterm_origin;
+	foreach my $e ( @history ){
+		last	if $e->{timestamp} > $shortterm_limit;
+		last	if $e->{timestamp} > $longterm_limit and
+			defined $longterm_origin;
+		$longterm_origin = $e;
+	}
+
+	# store history
+	open my $h, '>', "$f.$$" or do {
+		die "$f.$$: cannot open, stopped";
+	};
+	push @history, { 'timestamp' => $now,  %$curr };
+	foreach my $e ( @history ){
+		next if $e->{timestamp} < $longterm_limit;
+		print $h var2ltsv( %$e ), "\n";
+	}
+	close $h;
+	unlink $f;
+	rename "$f.$$", $f;
+
+	# calc difference
+	my %shortterm_delta;
+	if( $shortterm_origin ){
+		my $deltat = $now - $shortterm_origin->{timestamp};
+		while( my ($k, $v) = each %$curr ){
+			my $v2 = $shortterm_origin->{$k} // next;
+			my $deltav = $v - $v2;
+			next if $deltav < 0;
+			$shortterm_delta{$k} = $deltav / $deltat;
+		}
+	}
+	my %longterm_delta;
+	if( $longterm_origin ){
+		my $deltat = $now - $longterm_origin->{timestamp};
+		while( my ($k, $v) = each %$curr ){
+			my $v2 = $longterm_origin->{$k} // next;
+			my $deltav = $v - $v2;
+			next if $deltav < 0;
+			$longterm_delta{$k} = $deltav / $deltat;
+		}
+	}
+
+	return \%shortterm_delta, \%longterm_delta;
+}
+
+sub toMiB (@) {
+	my @r;
+	foreach( @_ ){
+		unless( m"^(\d+(?:\.\d+)?)(k|ki|M|Mi|G|Gi)B$" ){
+			push @r, $_;
+			next;
+		}
+		if   ( $2 eq "k"  ){ push @r, $1 * 1000 / 1024 / 1024; }
+		elsif( $2 eq "ki" ){ push @r, $1 / 1024 ; }
+		elsif( $2 eq "M"  ){ push @r, $1 * 1000 * 1000 / 1024 / 1024; }
+		elsif( $2 eq "Mi" ){ push @r, $1 ; }
+		elsif( $2 eq "G"  ){ push @r, $1 * 1000 * 1000 * 1000 / 1024 / 1024 / 1024; }
+		elsif( $2 eq "Gi" ){ push @r, $1 * 1024 ; }
+	}
+	return @r;
+}
+
+sub toGiB (@) {
+	my @r;
+	foreach( @_ ){
+		unless( m"^(\d+(?:\.\d+)?)(k|ki|M|Mi|G|Gi)B$" ){
+			push @r, $_;
+			next;
+		}
+		if   ( $2 eq "k"  ){ push @r, $1 * 1000 / 1024 / 1024 / 1024; }
+		elsif( $2 eq "ki" ){ push @r, $1 / 1024 / 1024 ; }
+		elsif( $2 eq "M"  ){ push @r, $1 * 1000 * 1000 / 1024 / 1024 / 1024; }
+		elsif( $2 eq "Mi" ){ push @r, $1 / 1024 ; }
+		elsif( $2 eq "G"  ){ push @r, $1 * 1000 * 1000 * 1000 / 1024 / 1024 / 1024 / 1024; }
+		elsif( $2 eq "Gi" ){ push @r, $1 ; }
+	}
+	return @r;
+}
+
+#### parse setting
+my $sudo;
+my %essential_units;
+my %unimportant_units;
+
+my $f = "$CONFDIR/agent/systemd.conf.$HOST.$SERVICE";
+open my $h, '<', $f or do {
+	die "$f: cannot open, stopped";
+};
+while( <$h> ){
+	chomp;
+	next if m"^\s*(#|$)";
+	if( m"^(\w+)=(.*)$" ){
+		my $paramname = $1;
+		my $paramvalue = $2;
+
+		if    ( $paramname eq "ESSENTIAL_UNIT" ){
+			%essential_units = ( $paramvalue => 1 );
+		}elsif( $paramname eq "UNIMPORTANT_UNIT" ){
+			%unimportant_units = ( $paramvalue => 1 );
+		}
+
+	}elsif( m"^(\w+)\+=(.*)$" ){
+		my $paramname = $1;
+		my $paramvalue = $2;
+
+		if    ( $paramname eq "ESSENTIAL_UNIT" ){
+			$essential_units  {$paramvalue} = 1;
+		}elsif( $paramname eq "UNIMPORTANT_UNIT" ){
+			$unimportant_units{$paramvalue} = 1;
+		}
+
+	}else{
+		die "$f:$.: illegal format, stopped";
+	}
+}
+close $h;
+
+####
+my $unit_num;
+my %failed_units;
+my $failed_unit_num;
+my %failed_unit_num_of_type;
+my %active_units;
+my %active_services;
+my %active_mounts;
+
+my $cmd = "systemctl list-units --no-legend";
+open my $h, '-|', $cmd or do {
+	die "$cmd: cannot execute, stopped";
+};
+while( <$h> ){
+	$unit_num++;
+	next unless m"^(\S*)\s+((\S+)\.(\w+))\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S.*|)$";
+	my ($unit, $load, $active, $sub, $desc) = ($2, $5, $6, $7, $8);
+	my $type = $4;
+	if( $active eq "failed" ){
+		next if $unimportant_units{$unit};
+		$failed_units{$unit} = 1;
+		$failed_unit_num++;
+		$failed_unit_num_of_type{$type}++;
+	}else{
+		$active_units{$unit} = 1;
+	}
+	
+}
+close $h;
+
+# calculate
+
+my %r;
+$r{"units"}        = int $unit_num;
+$r{"failed-units"} = int $failed_unit_num;
+
+$r{"failed-services"}   = int $failed_unit_num_of_type{"service"};
+$r{"failed-automounts"} = int $failed_unit_num_of_type{"automount"};
+$r{"failed-mounts"}     = int $failed_unit_num_of_type{"mount"};
+$r{"failed-devices"}    = int $failed_unit_num_of_type{"device"};
+$r{"failed-slices"}     = int $failed_unit_num_of_type{"slice"};
+$r{"failed-sockets"}    = int $failed_unit_num_of_type{"socket"};
+$r{"failed-timers"}     = int $failed_unit_num_of_type{"timer"};
+$r{"failed-targets"}    = int $failed_unit_num_of_type{"target"};
+
+while( my ($k, $v) = %essential_units ){
+	next if $k eq "";
+	$r{"essential-unit[$k]-is-active"} = $active_units{$k} ? 1 : 0;
+}
+
+# output
+foreach my $perfname ( sort keys %r ){
+	my $value = $r{$perfname};
+	print "$perfname=$value\n";
+}
+
+exit 0;
+
+
