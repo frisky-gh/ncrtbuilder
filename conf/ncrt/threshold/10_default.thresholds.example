@@ -42,21 +42,33 @@ longtermavg-of-link\[lo\]-tx-throughput-mbps		warn	[0,50]
 longtermavg-of-cpu-idle-pct				warn	[20.00,99.99]
 loadavg							warn	[0.00,10.00]
 loadavg							crit	[0.00,100.00]
-procs							warn	[20,400]
-procs							crit	[20,1000]
+procs							warn	[100,400]
+procs							crit	[50,1000]
 mem-available-pct      					warn	[10.00,99.99]
 mem-available						crit	[100.0,99999.9]
-swap-free-pct						warn	[40.00,99.99]
+swap-free-pct						warn	[40.00,100.00]
 swap-free						crit	[100.0,99999.9]
-threads							warn	[20,500]
-threads							crit	[20,2000]
+threads							warn	[180,500]
+threads							crit	[50,2000]
 
 === .* proc ===
 proc\[postfix\]-procs					crit	[1,1]
 proc\[sshd\]-procs					crit	[1,2]
 proc\[rsyslog\]-procs					crit	[1,1]
-proc\[cron\]-procs					crit	[1,1]
+proc\[cron\]-procs					crit	[1,3]
 proc\[td-agent\]-procs					crit	[2,2]
+
+=== .* dockercontainers ===
+container\[.*\]-failure-for-existing			crit	[0,0]
+container\[.*\]-failure-for-non-existing		crit	[0,0]
+
+=== .* systemd ===
+failed-units						crit	[0,0]
+failed-mounts						crit	[0,0]
+failed-services						crit	[0,0]
+
+=== .* filecount ===
+fluentd-buffers						warn	[0,30000]
 
 === .* .*HTTP.* ===
 web\[.*\]-status					crit	[0,0]
@@ -66,9 +78,12 @@ web\[.*\]-elapsed					warn	[0.00,30.00]
 heapmax-avail-pct				warn	[5.00,100.00]
 permmax-avail-pct				warn	[5.00,100.00]
 fd-avail-pct					warn	[40.00,100.00]
-thread-avail-pct				warn	[40.00,100.00]
+thread-avail-pct				warn	[20.00,100.00]
 
 === .* TableSpace ===
 
 tablespace\[.*\]-avail				warn	[1.00,999.99]
 tablespace\[UNDO\]-avail			warn	[0.00,999.99]
+
+quota\[.*\]-avail				warn	[0.10,999.99]
+filesystem\[.*\]-avail				warn	[1.10,999.99]
