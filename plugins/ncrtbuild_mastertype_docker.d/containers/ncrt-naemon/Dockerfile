@@ -30,9 +30,9 @@ RUN curl -L -o /root/naemon2influx-1.4-rc2.deb \
 	https://github.com/frisky-gh/naemon2influx/releases/download/v1.4.2/naemon2influx-1.4-2.deb \
 	&& dpkg -i /root/naemon2influx-1.4-rc2.deb
 
-RUN curl -L -o /root/grafana-dashboard-helper_1.0-rc5_amd64.deb \
-	https://github.com/frisky-gh/grafana-dashboard-helper/releases/download/v1.0-RC5/grafana-dashboard-helper_1.0_amd64.deb \
-	&& dpkg -i /root/grafana-dashboard-helper_1.0-rc5_amd64.deb && \
+RUN curl -L -o /root/grafana-dashboard-helper_1.0-rc6_amd64.deb \
+	https://github.com/frisky-gh/grafana-dashboard-helper/releases/download/v1.0-RC6/grafana-dashboard-helper_1.0_amd64.deb \
+	&& dpkg -i /root/grafana-dashboard-helper_1.0-rc6_amd64.deb && \
 	echo "ulimit -n 1024" > /etc/default/grafana-dashboard-helper
 
 #### Init System Option
@@ -66,9 +66,12 @@ RUN echo "#!/bin/sh\nexit 0" > /usr/sbin/policy-rc.d ; \
 	&& rsync -aSx /etc/naemon/ /etc/naemon_orig/ \
 	&& rsync -aSx /etc/thruk/ /etc/thruk_orig/ \
 	&& rsync -aSx /etc/grafana-dashboard-helper/ /etc/grafana-dashboard-helper_orig/ \
-	&& rsync -aSx /var/lib/grafana-dashboard-helper/ /var/lib/grafana-dashboard-helper_orig/ \
 	&& rsync -aSx /etc/nullmailer/ /etc/nullmailer_orig/ \
-	&& rsync -aSx /etc/syslog-ng/ /etc/syslog-ng_orig/
+	&& rsync -aSx /etc/syslog-ng/ /etc/syslog-ng_orig/ \
+	&& rsync -aSx /var/lib/grafana-dashboard-helper/ /var/lib/grafana-dashboard-helper_orig/ \
+	&& rsync -aSx /var/log/grafana-dashboard-helper/ /var/log/grafana-dashboard-helper_orig/ \
+	&& rsync -aSx /var/lib/naemon/ /var/lib/naemon_orig/ \
+	&& rsync -aSx /var/log/naemon/ /var/log/naemon_orig/
 
 COPY --chown=root:root ./startup.sh ./healthcheck.sh /
 

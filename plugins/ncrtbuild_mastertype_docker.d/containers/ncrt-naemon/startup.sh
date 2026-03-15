@@ -33,6 +33,9 @@ fi
 if [ "`ls /var/lib/grafana-dashboard-helper/`" = "" ] ;then
 	rsync -aSvx /var/lib/grafana-dashboard-helper_orig/ /var/lib/grafana-dashboard-helper/
 fi
+if [ "`ls /var/log/grafana-dashboard-helper/`" = "" ] ;then
+	rsync -aSvx /var/log/grafana-dashboard-helper_orig/ /var/log/grafana-dashboard-helper/
+fi
 
 # setup nullmailer
 if [ "`ls /etc/nullmailer/`" = "" ] ;then
@@ -42,6 +45,16 @@ fi
 # setup syslog-ng
 if [ "`ls /etc/syslig-ng/`" = "" ] ;then
 	rsync -aSvx /etc/syslog-ng_orig/ /etc/syslog-ng/
+fi
+
+# setup naemon status
+if [ "`ls /var/lib/naemon/`" = "" ] ;then
+	rsync -aSvx /var/lib/naemon_orig/ /var/lib/naemon/
+fi
+
+# setup naemon log
+if [ "`ls /var/log/naemon/`" = "" ] ;then
+	rsync -aSvx /var/log/naemon_orig/ /var/log/naemon/
 fi
 
 ##
