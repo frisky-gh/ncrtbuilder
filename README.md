@@ -7,6 +7,16 @@ NCRT (Nagios / Naemon CRT Monitor) is a plugin-based simple framework. It bases 
 
 You can write plugins by your favorite language on NCRT framework. Since NCRT needs only simple rules for plugins, plugins can be also described by shell script.
 
+## Features
+
+NCRT Builder generates Naemon definitions and plugin configurations from monitoring targets and rules, then distributes them to monitoring masters and agents with Ansible. Its main features include:
+
+* **Multiple monitoring methods** — Monitor hosts with agents, check services such as HTTP without agents, or combine agents and masters for indirect monitoring.
+* **Automated configuration generation** — Generate Naemon definitions for hosts, services, groups, and contacts, as well as plugin configurations, thresholds, and metric and threshold filters.
+* **Distribution and deployment** — Assign the required configurations and plugins to each target host and deploy them to masters and agents with Ansible.
+* **Plugin extensibility** — Extend functionality with plugins for agent types, master types, monitoring, contacts, and reporting.
+* **Deployment controls** — Run deployments for masters or agents only, select target hosts, or use dry-run mode.
+
 ## Requirement
 
 * Perl
@@ -28,6 +38,24 @@ You can write plugins by your favorite language on NCRT framework. Since NCRT ne
 4. complete.
 
 ## Usage
+
+```
+    % bin/ncrtbuild [options]
+```
+
+### Command-line options
+
+| Option | Description |
+|---|---|
+| `--workdir DIR`, `--work-dir DIR` | Use `DIR` as the work directory instead of `/tmp/ncrt_work.<PID>`. Implies `--no-cleanup`. |
+| `--no-cleanup` | Keep the work directory after the run. |
+| `--master-only` | Deploy only to NCRT Masters (skip Agents). |
+| `--agent-only` | Deploy only to NCRT Agents (skip Masters). |
+| `--target-master REGEX` | Deploy only to Masters whose name matches `REGEX` (anchored as `^REGEX$`). |
+| `--target-agent REGEX` | Deploy only to Agents whose name matches `REGEX` (anchored as `^REGEX$`). |
+| `--dryrun`, `--dry-run` | Print the `ansible-playbook` commands without running them. |
+| `--quick` | Skip the `commoninstall` tag in Ansible, omitting package installation steps. |
+| `--threshold-only` | Accepted, but currently has no effect. |
 
 
 ## for Users
@@ -102,4 +130,3 @@ NCRT has 7 plugin types. All plugins require  their own builder module and also 
 ## Author
 
 [frisky-gh](https://github.com/frisky-gh)
-
