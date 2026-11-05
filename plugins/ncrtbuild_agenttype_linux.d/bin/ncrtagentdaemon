@@ -21,15 +21,29 @@ use HTTP::Status;
 use LWP::UserAgent;
 use IPC::Open2;
 use Template;
+use IO::Select;
+use POSIX qw(setsid setpgid WNOHANG);
+use Time::HiRes qw(time sleep);
 use strict;
 
 our $NAME = 'ncrtagentdaemon';
 our $LOGFILE  = '/var/log/naemon/ncrtagentdaemon.log';
 our $WORKDIR;
+our $PING_RENEWAL_SEC = 900;
+our $PONG_EXPIRATION_SEC = 180;
 
 ####
 our $LOGFH = *STDERR;
 our $DEBUG = 0;
+
+sub reopen_log () {
+	if( open my $h, '>>', $LOGFILE ){
+		$h->autoflush;
+		$LOGFH = $h;
+	}else{
+		$LOGFH = *STDERR;
+	}
+}
 
 sub debuglog ($;@) {
 	return unless $DEBUG;
@@ -117,6 +131,10 @@ sub setup_workdir () {
 
 sub setup_workdir_of ($) {
 	my ($daemon_user) = @_;
+	unless( defined $daemon_user and $daemon_user ne '' ){
+		setup_workdir;
+		return;
+	}
 	my ($name, $pw, $uid, $gid, $quota, $comment, $gcos,
 	    $home, $shell, $expire ) = getpwnam $daemon_user;
 	if    ( $< != $uid ){
@@ -196,6 +214,7 @@ sub read_pidfile () {
 	open my $h, '<', $f or return undef;
 	my $pid = int <$h>;
 	close $h;
+	return undef unless $pid > 1;
 	# check the process existence.
 	return undef unless kill 0, $pid;
 	# check the process name.
@@ -245,58 +264,39 @@ sub cmd_cron ($) {
 	my ($conf) = @_;
 }
 
-sub cmd_daemon ($) {
-	my ($conf) = @_;
-
-	my $daemon_user = $$conf{daemon_user};
-	if( $daemon_user ne '' ){
-		my ($name, $pw, $uid, $gid, $quota, $comment, $gcos,
-		    $home, $shell) = getpwnam $daemon_user;
-		unless( defined $uid and defined $gid ){
-			die "setuid: $daemon_user: not found, stopped";
-		}
-		
-		$( = $gid unless $( == $gid;
-		$) = $gid unless $) == $gid;
-		$< = $uid unless $< == $uid;
-		$> = $uid unless $> == $uid;
-		$ENV{HOME} = $home;
-	}
-	setup_workdir;
-	$LOGFILE  = "$WORKDIR/ncrtagentdaemon.log";
-	if( open $LOGFH, '>>', $LOGFILE ){ $LOGFH->autoflush; }
-
+sub keep_child_daemon ($$) {
+	my ($conf, $d) = @_;
+	$0 = "$NAME [child]";
+	setpgid 0, 0 or die "setpgid: $OS_ERROR, stopped";
 	my @allow = compile_allow( $$conf{allow} // "0.0.0.0/0" );
-
-	my $pid = fork;
-	if( $pid != 0 ){
-		write_pidfile $pid;
-		return;
-	}
-
-	$0 = $NAME;
-	my $d = HTTP::Daemon->new(
-		'ReuseAddr' => 1,
-		'LocalAddr' => $$conf{listen_address},
-		'LocalPort' => $$conf{listen_port}
-	) or do {
-		die sprintf 'cannot listen %s:%d: %s, stopped',
-			$$conf{listen_address}, $$conf{listen_port}, $OS_ERROR;
-	};
-
+	my $stopping = 0;
+	my $ping_pending = 0;
+	my $parent_pid = getppid;
 	$SIG{'TERM'} = sub {
-		#$d->shutdown;
+		$stopping = 1;
 		$d->close;
 	};
-	$SIG{'HUP'} = sub {
-		if( open $LOGFH, '>>', $LOGFILE ){ $LOGFH->autoflush; }
-		else{ $LOGFH = *STDERR; }
-	};
+	$SIG{'HUP'} = sub { reopen_log; };
 	$SIG{'CHLD'} = 'IGNORE';
+	$SIG{'USR1'} = sub { $ping_pending = 1; };
+	my $select = IO::Select->new($d);
 
-	while (my ($conn, $peer_addr) = $d->accept) {
+	while( not $stopping ){
+		# Reply from the request loop, not a signal handler, to detect stalled I/O.
+		if( $ping_pending ){
+			last unless kill 'USR1', $parent_pid;
+			$ping_pending = 0;
+		}
+		last if getppid != $parent_pid;
+		next unless $select->can_read(1);
+		last if $stopping;
+		my ($conn, $peer_addr) = $d->accept;
+		next unless $conn;
 		my $req = $conn->get_request;
-		next unless $req;
+		unless( $req ){
+			$conn->close;
+			next;
+		}
 		my $method = $req->method;
 		my $path = uri_unescape $req->uri->path;
 		my ($port, $bin_addr) = unpack_sockaddr_in $peer_addr;
@@ -317,9 +317,14 @@ sub cmd_daemon ($) {
 			my $host = $2;
 			my $service = $3;
 			my $pid = fork;
-			if( $pid == 0 ){
+			if( not defined $pid ){
+				accesslog 'cannot fork measurement: %s', $OS_ERROR;
+				$conn->send_error(RC_INTERNAL_SERVER_ERROR);
+			}elsif( $pid == 0 ){
 				$d->close;
 				$SIG{'CHLD'} = 'DEFAULT';
+				$SIG{'TERM'} = 'DEFAULT';
+				$SIG{'USR1'} = 'IGNORE';
 				action_measure $conf, $conn,
 					$measure, $host, $service;
 				exit 0;
@@ -334,6 +339,150 @@ sub cmd_daemon ($) {
 	}
 }
 
+sub stop_child_from_parent ($) {
+	my ($pid) = @_;
+	return unless defined $pid;
+	kill 'TERM', -$pid;
+	my $deadline = time + 10;
+	while( time < $deadline ){
+		my $exited = waitpid $pid, WNOHANG;
+		if( $exited == $pid or $exited == -1 ){
+			kill 'KILL', -$pid;
+			return;
+		}
+		sleep 0.1;
+	}
+	kill 'KILL', -$pid;
+	$deadline = time + 10;
+	while( time < $deadline ){
+		my $exited = waitpid $pid, WNOHANG;
+		return if $exited == $pid or $exited == -1;
+		sleep 0.1;
+	}
+	accesslog 'child %d did not exit after KILL; detaching', $pid;
+}
+
+sub keep_parent_daemon ($$$) {
+	my ($conf, $d, $ready) = @_;
+	my $stopping = 0;
+	my $reload = 0;
+	my $pong_received = 0;
+	$SIG{'TERM'} = sub { $stopping = 1; };
+	$SIG{'HUP'} = sub { $reload = 1; };
+	$SIG{'USR1'} = sub { $pong_received = 1; };
+	$SIG{'CHLD'} = sub {};
+	print $ready "READY\n";
+	close $ready;
+	my ($child_pid, $last_ping_time, $ping_sent);
+
+	while( not $stopping ){
+		while( (my $exited = waitpid -1, WNOHANG) > 0 ){
+			if( defined $child_pid and $exited == $child_pid ){
+				accesslog 'child %d exited (status %d); restarting', $exited, $?;
+				kill 'KILL', -$child_pid;
+				$child_pid = undef;
+			}
+		}
+		if( $reload ){
+			reopen_log;
+			kill 'HUP', $child_pid if defined $child_pid;
+			$reload = 0;
+		}
+		unless( defined $child_pid ){
+			my $pid = fork;
+			unless( defined $pid ){
+				accesslog 'cannot fork child: %s', $OS_ERROR;
+				sleep 1;
+				next;
+			}
+			if( $pid == 0 ){
+				eval { keep_child_daemon $conf, $d; };
+				accesslog 'child error: %s', $@ if $@;
+				exit($@ ? 1 : 0);
+			}
+			setpgid $pid, $pid;
+			$child_pid = $pid;
+			accesslog 'started child %d', $child_pid;
+			$last_ping_time = time;
+			$ping_sent = $pong_received = 0;
+		}
+		if( $ping_sent ){
+			if( $pong_received ){
+				$ping_sent = 0;
+				debuglog 'received pong from child %d', $child_pid;
+			}elsif( time >= $last_ping_time + $PONG_EXPIRATION_SEC ){
+				accesslog 'child %d did not respond to ping; restarting', $child_pid;
+				stop_child_from_parent $child_pid;
+				$child_pid = undef;
+				next;
+			}
+		}elsif( time >= $last_ping_time + $PING_RENEWAL_SEC ){
+			$pong_received = 0;
+			kill 'USR1', $child_pid;
+			$last_ping_time = time;
+			$ping_sent = 1;
+			debuglog 'sent ping to child %d', $child_pid;
+		}
+		sleep 1 unless $stopping;
+	}
+	stop_child_from_parent $child_pid;
+	$d->close;
+}
+
+sub cmd_daemon ($) {
+	my ($conf) = @_;
+	my $daemon_user = $$conf{daemon_user};
+	if( $daemon_user ne '' ){
+		my ($name, $pw, $uid, $gid, $quota, $comment, $gcos,
+		    $home, $shell) = getpwnam $daemon_user;
+		unless( defined $uid and defined $gid ){
+			die "setuid: $daemon_user: not found, stopped";
+		}
+		$( = $gid unless $( == $gid;
+		$) = $gid unless $) == $gid;
+		$< = $uid unless $< == $uid;
+		$> = $uid unless $> == $uid;
+		$ENV{HOME} = $home;
+	}
+	setup_workdir;
+	die "pid found, stopped" if read_pidfile;
+	$LOGFILE = "$WORKDIR/ncrtagentdaemon.log";
+	reopen_log;
+	my $d = HTTP::Daemon->new(
+		'ReuseAddr' => 1,
+		'LocalAddr' => $$conf{listen_address},
+		'LocalPort' => $$conf{listen_port}
+	) or die sprintf 'cannot listen %s:%d: %s, stopped',
+		$$conf{listen_address}, $$conf{listen_port}, $OS_ERROR;
+
+	pipe my $ready, my $notify or die "pipe: $OS_ERROR, stopped";
+	my $pid = fork;
+	die "fork: $OS_ERROR, stopped" unless defined $pid;
+	if( $pid != 0 ){
+		close $notify;
+		$d->close;
+		my $status = <$ready>;
+		close $ready;
+		unless( defined $status and $status eq "READY\n" ){
+			waitpid $pid, 0;
+			die "daemon startup failed; see $LOGFILE, stopped";
+		}
+		return;
+	}
+	close $ready;
+	$0 = $NAME;
+	setsid() >= 0 or die "setsid: $OS_ERROR, stopped";
+	open STDIN, '<', '/dev/null' or die;
+	open STDOUT, '>', '/dev/null' or die;
+	open STDERR, '>', '/dev/null' or die;
+	write_pidfile $$;
+	eval { keep_parent_daemon $conf, $d, $notify; };
+	my $error = $@;
+	accesslog 'parent error: %s', $error if $error;
+	unlink "$WORKDIR/ncrtagentdaemon.pid";
+	exit($error ? 1 : 0);
+}
+
 sub cmd_alive ($) {
 	my ($conf) = @_;
 	my $pid = read_pidfile;
@@ -345,9 +494,10 @@ sub cmd_kill ($) {
 	my $pid = read_pidfile;
 	exit 1 unless defined $pid;
 	kill 'TERM', $pid;
-	for( my $i = 0; $i < 8; ++$i ){
-		sleep (1 << $i) * 0.05;
-		kill 0, $pid or exit 0;
+	my $deadline = time + 25;
+	while( time < $deadline ){
+		exit 0 unless defined read_pidfile;
+		sleep 0.1;
 	}
 	exit 1;
 }
@@ -393,6 +543,3 @@ if    ( $ARGV[0] eq "daemon" ){
 	print "usage: % $0 {daemon|cron}\n";
 	exit 0;
 }
-
-
-

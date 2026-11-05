@@ -58,6 +58,26 @@ NCRT Builder generates Naemon definitions and plugin configurations from monitor
 | `--threshold-only` | Accepted, but currently has no effect. |
 
 
+## Testing
+
+Tests are located in `t/` and use Perl's `Test::More`.
+
+Prerequisites: Perl with `prove` (Test::Harness), `LWP::UserAgent`, and Linux (the daemon test is skipped on other OSes).
+
+Run all tests from the repository root:
+
+```
+    % prove t/
+```
+
+Run a single test with verbose output:
+
+```
+    % prove -v t/ncrtagentdaemon.t
+```
+
+`t/ncrtagentdaemon.t` starts the Linux agent daemon (`plugins/ncrtbuild_agenttype_linux.d/bin/ncrtagentdaemon`) on a local port with a temporary `HOME` and checks start/stop, supervision, and restart behavior. It takes about 30 seconds. No Ansible or Naemon is needed.
+
 ## for Users
 
 The NCRT framework consists of three departments:
