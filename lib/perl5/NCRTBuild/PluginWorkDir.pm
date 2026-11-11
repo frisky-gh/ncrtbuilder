@@ -72,8 +72,8 @@ sub create ($) {
 	# username list
 	create_or_die "$workdir/users";
 
-	# reporter list
-	create_or_die "$workdir/reporters";
+	# Plugins registered for ncrtreport
+	create_or_die "$workdir/plugins_for_ncrtreport";
 
 	# pseudo host, service -> backend host (agent host) for indirect measurement
 	create_or_die "$workdir/pseudohost2service2backendhost";

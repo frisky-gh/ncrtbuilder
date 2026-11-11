@@ -42,7 +42,7 @@ sub load ($) {
 	$this->loadMeasurements;
 	$this->loadMonitoredHost2Service2Measurement;
 	$this->loadPlugin2Type2PluginConf2Format;
-	$this->loadReporters;
+	$this->loadPluginsForNCRTReport;
 	$this->loadGroups;
 	$this->loadUsers;
 	$this->loadMonitoredHostGroups;
@@ -201,20 +201,20 @@ sub loadPlugin2Type2PluginConf2Format ($) {
 	$$this{type2pluginconf2format} = \%type2pluginconf2format;
 }
 
-sub loadReporters ($) {
+sub loadPluginsForNCRTReport ($) {
 	my ($this) = @_;
-	my $inputdir =  $$this{inputdir};
+	my $inputdir = $$this{inputdir};
+	my %plugins_for_type = map { $_ => {} } qw(reporter session notify);
 
-	my %reporters;
-
-	my @content = $inputdir->read( "reporters" );
-	foreach( @content ){
-		my ($err, $reporter, $params) = parse_item_with_params $_;
-		print "reporters: $err\n" if $err;
-		next unless defined $reporter;
-		$reporters{$reporter} = $params;
+	foreach my $line ( $inputdir->read("plugins_for_ncrtreport") ){
+		my ($err, $plugin, $type, $params) = parse_2items_with_params $line;
+		print "plugins_for_ncrtreport: $err\n" if $err;
+		next unless defined $plugin;
+		die "plugins_for_ncrtreport: invalid plugin type '$type', stopped"
+			unless exists $plugins_for_type{$type};
+		$plugins_for_type{$type}->{$plugin} = $params;
 	}
-	$$this{reporters} = \%reporters;
+	$$this{plugins_for_ncrtreport} = \%plugins_for_type;
 }
 
 sub loadGroups ($) {
@@ -619,10 +619,19 @@ sub listPseudoHostServiceBackendHosts ($) {
 	return @r;
 }
 
-sub listReporters ($) {
+sub listReporterPluginsForNCRTReport ($) {
 	my ($this) = @_;
-	my $reporters = $$this{reporters};
-	return sort keys %$reporters;
+	return sort keys %{$$this{plugins_for_ncrtreport}->{reporter}};
+}
+
+sub listSessionPluginsForNCRTReport ($) {
+	my ($this) = @_;
+	return sort keys %{$$this{plugins_for_ncrtreport}->{session}};
+}
+
+sub listNotifyPluginsForNCRTReport ($) {
+	my ($this) = @_;
+	return sort keys %{$$this{plugins_for_ncrtreport}->{notify}};
 }
 
 sub listGroups ($) {

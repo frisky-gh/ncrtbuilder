@@ -45,7 +45,7 @@ sub create ($) {
 				mkdir_or_die "$workdir/$host/pluginsconf/$i";
 			}
 		}elsif( defined $$e{masterhost} ){
-			foreach my $i ( "agentless", "reporter", "mastertype" ){
+			foreach my $i ( "agentless", "reporter", "session", "notify", "mastertype" ){
 				mkdir_or_die "$workdir/$host/pluginsconf/$i";
 			}
 		}

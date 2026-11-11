@@ -17,6 +17,9 @@ sub new ($$) {
 		'generator'  => undef,
 		'host_service'  => undef,
 		'masterhosts'  => undef,
+		'reporterpluginsforncrtreport' => [],
+		'sessionpluginsforncrtreport' => [],
+		'notifypluginsforncrtreport' => [],
 	};
 }
 
@@ -42,9 +45,19 @@ sub setDistributedDirPathForMasters ($$) {
 	$$this{workdir4m} = $workdir4m;
 }
 
-sub setReporterPlugins ($@) {
-	my ($this, @reporterplugins) = @_;
-	$$this{reporterplugins} = \@reporterplugins;
+sub setReporterPluginsForNCRTReport ($@) {
+	my ($this, @plugins) = @_;
+	$$this{reporterpluginsforncrtreport} = \@plugins;
+}
+
+sub setSessionPluginsForNCRTReport ($@) {
+	my ($this, @plugins) = @_;
+	$$this{sessionpluginsforncrtreport} = \@plugins;
+}
+
+sub setNotifyPluginsForNCRTReport ($@) {
+	my ($this, @plugins) = @_;
+	$$this{notifypluginsforncrtreport} = \@plugins;
 }
 
 sub setAgentHosts ($@) {
@@ -65,7 +78,9 @@ sub run ($) {
 	my $workdir4m   = $$this{workdir4m};
 	my $agenthosts  = $$this{agenthosts};
 	my $masterhosts = $$this{masterhosts};
-	my $reporterplugins = $$this{reporterplugins};
+	my $reporterplugins = $$this{reporterpluginsforncrtreport};
+	my $sessionplugins = $$this{sessionpluginsforncrtreport};
+	my $notifyplugins = $$this{notifypluginsforncrtreport};
 
 	foreach( @$agenthosts ){
 		my $host = $$_{agenthost};
@@ -97,13 +112,17 @@ sub run ($) {
 		}
 		close $h;
 
-		# create reportes configuration file.
-		my $f = "$workdir4m/$host/ncrtconf/reporters";
-		open my $h, ">", $f or die "$f: cannot open, stopped";
-		foreach my $pluginname ( sort @$reporterplugins ){
-			print $h join("\t", $pluginname), "\n";
+		foreach my $entry (
+			[ "reporter_plugins", $reporterplugins ],
+			[ "session_plugins", $sessionplugins ],
+			[ "notify_plugins", $notifyplugins ],
+		){
+			my ($filename, $plugins) = @$entry;
+			my $f = "$workdir4m/$host/ncrtconf/$filename";
+			open my $h, ">", $f or die "$f: cannot open, stopped";
+			print $h "$_\n" foreach sort @$plugins;
+			close $h or die "$f: cannot close, stopped";
 		}
-		close $h;
 	}
 }
 

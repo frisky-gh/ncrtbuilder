@@ -30,6 +30,8 @@ sub new ($) {
 		'indirect_plugins'	=> [],
 		'contact_plugins'	=> [],
 		'reporter_plugins'	=> [],
+		'session_builder_plugins'	=> [],
+		'notify_builder_plugins'	=> [],
 	};
 }
 
@@ -83,16 +85,14 @@ sub loadPlugins ($) {
 		die "$pluginsdir: cannot open, stopped";
 	};
 	while( my $e = readdir $d ){
-		next unless $e =~ m"^ncrtbuild_(?:(agent)|(agentless)|(indirect)|(agenttype)|(mastertype)|(contact)|(reporter))_([-\w]+)$";
-		push @{ $$this{agent_plugins} },      $e if $1;
-		push @{ $$this{agentless_plugins} },  $e if $2;
-		push @{ $$this{indirect_plugins} },   $e if $3;
-		push @{ $$this{agenttype_plugins} },  $e if $4;
-		push @{ $$this{agenttypes} },	 $8 if $4;
-		push @{ $$this{mastertype_plugins} }, $e if $5;
-		push @{ $$this{mastertypes} },	$8 if $5;
-		push @{ $$this{contact_plugins} },    $e if $6;
-		push @{ $$this{reporter_plugins} },   $e if $7;
+		next unless $e =~ m"\Ancrtbuild_(agent|agentless|indirect|agenttype|mastertype|contact|reporter|session|notify)_([-\w]+)\z";
+		my ($type, $name) = ($1, $2);
+		my $field = $type eq "session" || $type eq "notify"
+			? "${type}_builder_plugins"
+			: "${type}_plugins";
+		push @{ $$this{$field} }, $e;
+		push @{ $$this{agenttypes} },  $name if $type eq "agenttype";
+		push @{ $$this{mastertypes} }, $name if $type eq "mastertype";
 	}
 	closedir $d;
 }
@@ -189,11 +189,37 @@ sub execReporterPlugins ($) {
 	}
 }
 
+sub execSessionBuilderPlugins ($) {
+	my ($this) = @_;
+	my $confdir = $$this{confdir};
+	my $workdir = $$this{workdir};
+	my $pluginsdir = $$this{pluginsdir};
+	my $playbookdir = $$this{playbookdir};
+	my @plugins = sort @{ $$this{session_builder_plugins} };
+	foreach my $e ( @plugins ){
+		print "$pluginsdir/$e $confdir $workdir $playbookdir\n";
+		system_or_die "$pluginsdir/$e $confdir $workdir $playbookdir";
+	}
+}
+
+sub execNotifyBuilderPlugins ($) {
+	my ($this) = @_;
+	my $confdir = $$this{confdir};
+	my $workdir = $$this{workdir};
+	my $pluginsdir = $$this{pluginsdir};
+	my $playbookdir = $$this{playbookdir};
+	my @plugins = sort @{ $$this{notify_builder_plugins} };
+	foreach my $e ( @plugins ){
+		print "$pluginsdir/$e $confdir $workdir $playbookdir\n";
+		system_or_die "$pluginsdir/$e $confdir $workdir $playbookdir";
+	}
+}
+
 ####
 
 sub strip_pluginname (@) {
 	my @r = @_;
-	foreach( @r ){ s/^ncrtbuild_(agenttype|mastertype|agent|agentless|indirect|contact|reporter)_//; }
+	foreach( @r ){ s/^ncrtbuild_(agenttype|mastertype|agent|agentless|indirect|contact|reporter|session|notify)_//; }
 	return sort @r;
 }
 
@@ -230,6 +256,16 @@ sub listContactPlugins ($) {
 sub listReporterPlugins ($) {
 	my ($this) = @_;
 	return strip_pluginname @{ $$this{reporter_plugins} };
+}
+
+sub listSessionBuilderPlugins ($) {
+	my ($this) = @_;
+	return strip_pluginname @{ $$this{session_builder_plugins} };
+}
+
+sub listNotifyBuilderPlugins ($) {
+	my ($this) = @_;
+	return strip_pluginname @{ $$this{notify_builder_plugins} };
 }
 
 sub listMeasurementPlugins ($) {

@@ -168,6 +168,8 @@ my @indirectplugins;
 my @mastertypeplugins;
 my @agenttypeplugins;
 my @reporterplugins;
+my @sessionbuilderplugins;
+my @notifybuilderplugins;
 if( $plan{Step4} ){
 	$pluginexec->load;
 	$pluginexec->execAgentTypePlugins;
@@ -177,6 +179,8 @@ if( $plan{Step4} ){
 	$pluginexec->execIndirectPlugins;
 	$pluginexec->execContactPlugins;
 	$pluginexec->execReporterPlugins;
+	$pluginexec->execSessionBuilderPlugins;
+	$pluginexec->execNotifyBuilderPlugins;
 
 	@mastertypeplugins = $pluginexec->listMasterTypePlugins;
 	@agenttypeplugins  = $pluginexec->listAgentTypePlugins;
@@ -184,6 +188,8 @@ if( $plan{Step4} ){
 	@agentlessplugins  = $pluginexec->listAgentlessPlugins;
 	@indirectplugins   = $pluginexec->listIndirectPlugins;
 	@reporterplugins   = $pluginexec->listReporterPlugins;
+	@sessionbuilderplugins = $pluginexec->listSessionBuilderPlugins;
+	@notifybuilderplugins  = $pluginexec->listNotifyBuilderPlugins;
 }
 
 ######## Step5. ########
@@ -244,7 +250,9 @@ my @hostservicegroup;
 my @user;
 my @hostuser;
 my @hostserviceuser;
-my @reporter;
+my @reporterpluginsforncrtreport;
+my @sessionpluginsforncrtreport;
+my @notifypluginsforncrtreport;
 if( $plan{Step6} ){
 	$workvalid->load();
 
@@ -260,7 +268,9 @@ if( $plan{Step6} ){
 	@user             = $workvalid->listUsers;
 	@hostuser         = $workvalid->listMonitoredHostUsers;
 	@hostserviceuser  = $workvalid->listMonitoredHostServiceUsers;
-	@reporter         = $workvalid->listReporters;
+	@reporterpluginsforncrtreport = $workvalid->listReporterPluginsForNCRTReport;
+	@sessionpluginsforncrtreport = $workvalid->listSessionPluginsForNCRTReport;
+	@notifypluginsforncrtreport  = $workvalid->listNotifyPluginsForNCRTReport;
 
 	#$pluginworkdir4masters->setMasterHosts( @masterhost );
 	#$pluginworkdir4agents ->setAgentHosts ( @agenthost );
@@ -403,15 +413,22 @@ if( $plan{Step11} ){
 			$dist->addGenerator( 'mastertype', $plugin, $pluginconf, $generator );
 		}
 	}
-	foreach my $plugin ( @reporterplugins ){
-		my @pluginconffile = $pluginconfvalid->loadPluginConfigFileOf( 'reporter', $plugin );
-		foreach my $pluginconffile ( @pluginconffile ){
-			my $format     = $$pluginconffile{format};
-			my $pluginconf = $$pluginconffile{pluginconf};
-			my $content    = $$pluginconffile{content};
-			my ($generator, $dist) = &{ $generator_and_distributor{$format} };
-			$generator->setOriginConfig( @$content );
-			$dist->addGenerator( 'reporter', $plugin, $pluginconf, $generator );
+	foreach my $type_plugins (
+		[ 'reporter', \@reporterplugins ],
+		[ 'session',  \@sessionbuilderplugins ],
+		[ 'notify',   \@notifybuilderplugins ],
+	){
+		my ($type, $plugins) = @$type_plugins;
+		foreach my $plugin ( @$plugins ){
+			my @pluginconffile = $pluginconfvalid->loadPluginConfigFileOf( $type, $plugin );
+			foreach my $pluginconffile ( @pluginconffile ){
+				my $format     = $$pluginconffile{format};
+				my $pluginconf = $$pluginconffile{pluginconf};
+				my $content    = $$pluginconffile{content};
+				my ($generator, $dist) = &{ $generator_and_distributor{$format} };
+				$generator->setOriginConfig( @$content );
+				$dist->addGenerator( $type, $plugin, $pluginconf, $generator );
+			}
 		}
 	}
 }
@@ -478,7 +495,9 @@ if( $plan{Step14} ){
 	$resourcedist->setDistributedDirPathForMasters( $DISTRIBUTEDMASTERBASEDIR );
 	$resourcedist->setAgentHosts                  ( @agenthost );
 	$resourcedist->setMasterHosts                 ( @masterhost );
-	$resourcedist->setReporterPlugins             ( @reporter );
+	$resourcedist->setReporterPluginsForNCRTReport( @reporterpluginsforncrtreport );
+	$resourcedist->setSessionPluginsForNCRTReport ( @sessionpluginsforncrtreport );
+	$resourcedist->setNotifyPluginsForNCRTReport  ( @notifypluginsforncrtreport );
 	$resourcedist->run;
 }
 
@@ -496,7 +515,9 @@ if( $plan{Step15} ){
 	$playbookexec->setHosts( @masterhost );
 	$playbookexec->setPlugins( 'agentless', @agentlessplugins );
 	$playbookexec->setPlugins( 'indirect',  @indirectplugins );
-	$playbookexec->setPlugins( 'reporter',  @reporter );
+	$playbookexec->setPlugins( 'reporter',  @reporterpluginsforncrtreport );
+	$playbookexec->setPlugins( 'session',   @sessionpluginsforncrtreport );
+	$playbookexec->setPlugins( 'notify',    @notifypluginsforncrtreport );
 	$playbookexec->setTargetPattern( $target_master );
 	$playbookexec->setQuick if $quick;
 	$playbookexec->setDryRun if $dryrun;
