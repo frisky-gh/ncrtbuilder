@@ -66,8 +66,7 @@ if    ( $subcmd eq "open" ){
 		my ($last_uuid, $creation_unixtime) = read_alertid $alertgroup;
 		next unless defined $last_uuid;
 
-		my @entry = list_eventbasket $alertgroup;
-		my @sorted_entry = sort { $$b{unixtime} <=> $$a{unixtime} } @entry;
+		my @sorted_entry = list_sorted_eventbasket $alertgroup;
 
 		my $reportparam = get_report_param $rules, $alertgroup;
 		my $coolingperiod_unixtime = $now - $$reportparam{SESSION_CLOSING_TIMESPAN}*60;

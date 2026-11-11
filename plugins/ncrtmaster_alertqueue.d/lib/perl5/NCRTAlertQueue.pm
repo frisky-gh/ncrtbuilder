@@ -38,6 +38,7 @@ our @EXPORT = (
 
 	"output_course_of_events",
 	"list_eventbasket",
+	"list_sorted_eventbasket",
 	"write_eventbasket",
 	"read_eventbasket",
 	"unlink_eventbasket",
@@ -449,6 +450,11 @@ sub list_eventbasket ($) {
 	return @r;
 }
 
+sub list_sorted_eventbasket ($) {
+	my ($alertgroup) = @_;
+	return sort { $$a{unixtime} <=> $$b{unixtime} } list_eventbasket $alertgroup;
+}
+
 sub write_eventbasket ($$$) {
 	my ($alertgroup, $timestamp, $eventbasket) = @_;
 	my $d = "$main::WORKDIR/aq_event/$alertgroup";
@@ -827,8 +833,7 @@ sub output_course_of_events ($$$$$$) {
 	my ($alertgroup, $start_unixtime, $end_unixtime,
 	    $fired_hosts, $fired_services, $fired_perfs) = @_;
 
-	my @names = list_eventbasket $alertgroup;
-	my @sorted_names = sort { $$a{unixtime} <=> $$b{unixtime} } @names;
+	my @sorted_names = list_sorted_eventbasket $alertgroup;
 	my @hosts_story;
 	my @services_story;
 	my @perfs_story;
@@ -863,7 +868,8 @@ sub output_course_of_events ($$$$$$) {
 
 sub read_latest_eventbasket ($) {
 	my ($alertgroup) = @_;
-	my @names = list_eventbasket $alertgroup;
+	my @names = list_sorted_eventbasket $alertgroup;
+	return unless @names;
 	my $latest_name = $names[-1];
 	my $latest_eventbaskets = read_eventbasket $alertgroup, $$latest_name{timestamp};
 	return $latest_eventbaskets, $$latest_name{unixtime}, $$latest_name{timestamp};
